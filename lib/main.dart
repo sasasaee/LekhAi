@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'services/tts_service.dart';
 import 'preferences_screen.dart';
+import 'ocr_screen.dart';
+import 'questions_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -73,6 +75,26 @@ class _HomeScreenState extends State<HomeScreen> {
                 );
               },
               child: const Text('Preferences'),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const OcrScreen()),
+                );
+              },
+              child: const Text('Scan Question'),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const QuestionsScreen()),
+                );
+              },
+              child: const Text('View Saved Questions'),
             ),
           ],
         ),
