@@ -1,4 +1,5 @@
 import 'package:flutter_tts/flutter_tts.dart';
+import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class TtsService {
@@ -7,6 +8,7 @@ class TtsService {
 
   String? _lastText;
   bool _isPaused = false;
+  bool get isPaused=>_isPaused;   //public getter for the pdf read
 
   TtsService() {
     _init();
@@ -25,6 +27,23 @@ class TtsService {
     _initialized = true;
     loadPreferences(); // auto-load saved prefs
   }
+
+  Future<void> speakAndWait(String text) async {
+  if (!_initialized) return;
+  _lastText = text;
+  _isPaused = false;
+
+  final completer = Completer<void>();
+
+  // Set a temporary completion handler that completes the future
+  _tts.setCompletionHandler(() {
+    completer.complete();
+  });
+
+  await _tts.speak(text);
+
+  return completer.future; // Wait until TTS finishes
+}
 
   Future<void> speak(String text) async {
     if (!_initialized) return;

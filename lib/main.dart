@@ -3,6 +3,11 @@ import 'services/tts_service.dart';
 import 'preferences_screen.dart';
 import 'ocr_screen.dart';
 import 'questions_screen.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter_pdf_text/flutter_pdf_text.dart';
+import 'pdf_viewer_screen.dart';
+
+
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -50,6 +55,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ElevatedButton(
               onPressed: () => widget.ttsService.speak(
                   "Your question is here, thank you. I want you to speak in English."),
+
               child: const Text('Speak English'),
             ),
             const SizedBox(height: 16),
@@ -75,6 +81,33 @@ class _HomeScreenState extends State<HomeScreen> {
                 );
               },
               child: const Text('Preferences'),
+            ),
+            
+             ElevatedButton(
+              onPressed: () async {
+                FilePickerResult? result = await FilePicker.platform.pickFiles(
+                  type: FileType.custom,
+                  allowedExtensions: ['pdf'],
+                );
+
+                if (result == null) {
+                  widget.ttsService.speak("No PDF selected.");
+                  return;
+                }
+
+                String path = result.files.single.path!;
+                 // Navigate to the PDF viewer screen
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => PdfViewerScreen(
+                      path: path,
+                      ttsService: widget.ttsService,
+                    ),
+                  ),
+                );
+              },
+              child: const Text('Read PDF'),
             ),
             const SizedBox(height: 16),
             ElevatedButton(
