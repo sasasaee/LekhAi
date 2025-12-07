@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'services/ocr_service.dart';
 import 'services/question_storage_service.dart';
+import 'services/tts_service.dart';
 import 'questions_screen.dart';
 
 class OcrScreen extends StatefulWidget {
-  const OcrScreen({super.key});
+  final TtsService ttsService;
+  const OcrScreen({super.key, required this.ttsService});
 
   @override
   State<OcrScreen> createState() => _OcrScreenState();
@@ -100,7 +102,7 @@ class _OcrScreenState extends State<OcrScreen> {
         );
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => const QuestionsScreen()),
+          MaterialPageRoute(builder: (_) => QuestionsScreen(ttsService: widget.ttsService)),
         );
       }
     }

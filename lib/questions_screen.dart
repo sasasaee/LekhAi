@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'services/question_storage_service.dart';
-
+import 'services/tts_service.dart';
 class QuestionsScreen extends StatefulWidget {
-  const QuestionsScreen({super.key});
+  final TtsService ttsService;
+  const QuestionsScreen({super.key, required this.ttsService});
 
   @override
   State<QuestionsScreen> createState() => _QuestionsScreenState();
@@ -33,6 +34,16 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
       appBar: AppBar(
         title: const Text('Saved Questions'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.volume_up),
+            tooltip: 'Read All',
+            onPressed: _questions.isEmpty
+              ? null 
+              : () {
+                final allText = _questions.join('. ');
+                widget.ttsService.speak(allText);
+              }
+          ),
           IconButton(
             icon: const Icon(Icons.delete),
             onPressed: () async {

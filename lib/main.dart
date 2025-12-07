@@ -114,7 +114,7 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const OcrScreen()),
+                  MaterialPageRoute(builder: (_) => OcrScreen(ttsService: widget.ttsService)),
                 );
               },
               child: const Text('Scan Question'),
@@ -124,7 +124,7 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const QuestionsScreen()),
+                  MaterialPageRoute(builder: (_) => QuestionsScreen(ttsService: widget.ttsService)),
                 );
               },
               child: const Text('View Saved Questions'),
