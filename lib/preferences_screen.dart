@@ -22,6 +22,9 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
         _volume = prefs['volume']!;
       });
     });
+    widget.ttsService.speak(
+      "Welcome to the Preferences screen. Here you can adjust TTS speed and volume.",
+    );
   }
 
   void _reset() {
@@ -30,6 +33,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       _volume = 0.7;
     });
     widget.ttsService.resetPreferences();
+    widget.ttsService.speak("Preferences have been reset.");
   }
 
   @override
@@ -46,43 +50,129 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            Text('Speed: ${_speed.toStringAsFixed(2)}'),
-            Slider(
-              min: 0.1,
-              max: 1.0,
-              divisions: 9,
-              value: _speed,
-              onChanged: (v) => setState(() => _speed = v),
+            // Speed Card
+            Card(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              elevation: 4,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Speed: ${_speed.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Slider(
+                      min: 0.1,
+                      max: 1.0,
+                      value: _speed,
+                      divisions: 9,
+                      onChanged: (v) => setState(() => _speed = v),
+                    ),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: IconButton(
+                        icon: const Icon(Icons.play_arrow),
+                        color: Colors.blueAccent,
+                        onPressed: () =>
+                            widget.ttsService.speak("This is a speed test"),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
             const SizedBox(height: 16),
-            Text('Volume: ${_volume.toStringAsFixed(2)}'),
-            Slider(
-              min: 0.0,
-              max: 1.0,
-              divisions: 10,
-              value: _volume,
-              onChanged: (v) => setState(() => _volume = v),
+
+            // Volume Card
+            Card(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              elevation: 4,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Volume: ${_volume.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Slider(
+                      min: 0.0,
+                      max: 1.0,
+                      value: _volume,
+                      divisions: 10,
+                      onChanged: (v) => setState(() => _volume = v),
+                    ),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: IconButton(
+                        icon: const Icon(Icons.play_arrow),
+                        color: Colors.green,
+                        onPressed: () =>
+                            widget.ttsService.speak("This is a volume test"),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
             const SizedBox(height: 32),
+
+            // Buttons
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                ElevatedButton(
-                  onPressed: () {
-                    widget.ttsService.setSpeed(_speed);
-                    widget.ttsService.setVolume(_volume);
-                    widget.ttsService.savePreferences(speed: _speed, volume: _volume);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Preferences saved!')),
-                    );
-                  },
-                  child: const Text('Save Preferences'),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () {
+                      widget.ttsService.setSpeed(_speed);
+                      widget.ttsService.setVolume(_volume);
+                      widget.ttsService.savePreferences(
+                        speed: _speed,
+                        volume: _volume,
+                      );
+                      widget.ttsService.speak(
+                        "Preferences saved successfully.",
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      backgroundColor: Colors.blueAccent,
+                    ),
+                    child: const Text(
+                      'Save Preferences',
+                      style: TextStyle(fontSize: 18),
+                    ),
+                  ),
                 ),
-                ElevatedButton(
-                  onPressed: _reset,
-                  child: const Text('Reset'),
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.redAccent),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _reset,
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      backgroundColor: Colors.redAccent,
+                    ),
+                    child: const Text('Reset', style: TextStyle(fontSize: 18)),
+                  ),
                 ),
               ],
             ),

@@ -8,7 +8,7 @@ class TtsService {
 
   String? _lastText;
   bool _isPaused = false;
-  bool get isPaused=>_isPaused;   //public getter for the pdf read
+  bool get isPaused => _isPaused; //public getter for the pdf read
 
   TtsService() {
     _init();
@@ -29,21 +29,21 @@ class TtsService {
   }
 
   Future<void> speakAndWait(String text) async {
-  if (!_initialized) return;
-  _lastText = text;
-  _isPaused = false;
+    if (!_initialized) return;
+    _lastText = text;
+    _isPaused = false;
 
-  final completer = Completer<void>();
+    final completer = Completer<void>();
 
-  // Set a temporary completion handler that completes the future
-  _tts.setCompletionHandler(() {
-    completer.complete();
-  });
+    // Set a temporary completion handler that completes the future
+    _tts.setCompletionHandler(() {
+      completer.complete();
+    });
 
-  await _tts.speak(text);
+    await _tts.speak(text);
 
-  return completer.future; // Wait until TTS finishes
-}
+    return completer.future; // Wait until TTS finishes
+  }
 
   Future<void> speak(String text) async {
     if (!_initialized) return;
@@ -72,7 +72,10 @@ class TtsService {
   Future<void> setVolume(double v) => _tts.setVolume(v.clamp(0.0, 1.0));
 
   // ---------------- Preferences ----------------
-  Future<void> savePreferences({required double speed, required double volume}) async {
+  Future<void> savePreferences({
+    required double speed,
+    required double volume,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble('speed', speed);
     await prefs.setDouble('volume', volume);
