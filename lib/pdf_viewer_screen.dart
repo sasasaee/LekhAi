@@ -7,7 +7,11 @@ import 'dart:io';
 class PdfViewerScreen extends StatefulWidget {
   final String path;
   final TtsService ttsService;
-  const PdfViewerScreen({super.key, required this.path, required this.ttsService});
+  const PdfViewerScreen({
+    super.key,
+    required this.path,
+    required this.ttsService,
+  });
 
   @override
   State<PdfViewerScreen> createState() => _PdfViewerScreenState();
@@ -34,28 +38,28 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   }
 
   void _startReading() async {
-  if (_isReading) return;
-  _isReading = true;
+    if (_isReading) return;
+    _isReading = true;
 
-  while (_currentIndex < _sentences.length) {
-    if (!mounted) break;
+    while (_currentIndex < _sentences.length) {
+      if (!mounted) break;
 
-    if (widget.ttsService.isPaused) {
-      await Future.delayed(const Duration(milliseconds: 500));
-      continue; // wait while paused
+      if (widget.ttsService.isPaused) {
+        await Future.delayed(const Duration(milliseconds: 500));
+        continue; // wait while paused
+      }
+
+      String sentence = _sentences[_currentIndex].trim();
+      if (sentence.isNotEmpty) {
+        await widget.ttsService.speakAndWait(sentence);
+      }
+
+      _currentIndex++;
+      await Future.delayed(const Duration(milliseconds: 200));
     }
 
-    String sentence = _sentences[_currentIndex].trim();
-    if (sentence.isNotEmpty) {
-      await widget.ttsService.speakAndWait(sentence);
-    }
-
-    _currentIndex++;
-    await Future.delayed(const Duration(milliseconds: 200));
+    _isReading = false;
   }
-
-  _isReading = false;
-}
 
   void _stopReading() async {
     _currentIndex = 0;
@@ -91,10 +95,22 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                ElevatedButton(onPressed: _pauseReading, child: const Text('Pause')),
-                ElevatedButton(onPressed: _resumeReading, child: const Text('Resume')),
-                ElevatedButton(onPressed: _stopReading, child: const Text('Stop')),
-                ElevatedButton(onPressed: _restartReading, child: const Text('Restart')),
+                ElevatedButton(
+                  onPressed: _pauseReading,
+                  child: const Text('Pause'),
+                ),
+                ElevatedButton(
+                  onPressed: _resumeReading,
+                  child: const Text('Resume'),
+                ),
+                ElevatedButton(
+                  onPressed: _stopReading,
+                  child: const Text('Stop'),
+                ),
+                ElevatedButton(
+                  onPressed: _restartReading,
+                  child: const Text('Restart'),
+                ),
               ],
             ),
           ),
