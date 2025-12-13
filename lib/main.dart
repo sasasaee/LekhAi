@@ -1,5 +1,3 @@
-// ---------------------- main.dart ----------------------
-
 import 'package:flutter/material.dart';
 import 'dart:ui';
 import 'services/tts_service.dart';
@@ -9,6 +7,11 @@ import 'questions_screen.dart';
 import 'pdf_viewer_screen.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:async';
+import 'package:shared_preferences/shared_preferences.dart'; // Added
+import 'package:image_picker/image_picker.dart'; // Added
+import 'services/gemini_question_service.dart'; // Added
+import 'models/question_model.dart'; // Added
+import 'paper_detail_screen.dart'; // Added
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -179,14 +182,106 @@ class _HomeScreenState extends State<HomeScreen>
 
 // ---------------------- Take Exam Screen ----------------------
 
-class TakeExamScreen extends StatelessWidget {
+class TakeExamScreen extends StatefulWidget {
   final TtsService ttsService;
   const TakeExamScreen({super.key, required this.ttsService});
 
   @override
-  Widget build(BuildContext context) {
-    ttsService.speak("Welcome to Take Exam. Choose an option.");
+  State<TakeExamScreen> createState() => _TakeExamScreenState();
+}
 
+class _TakeExamScreenState extends State<TakeExamScreen> {
+  final GeminiQuestionService _geminiService = GeminiQuestionService();
+
+  @override
+  void initState() {
+    super.initState();
+    widget.ttsService.speak("Welcome to Take Exam. Choose an option.");
+  }
+
+  Future<void> _handleScan() async {
+    final prefs = await SharedPreferences.getInstance();
+    final apiKey = prefs.getString('gemini_api_key');
+
+    if (!mounted) return;
+
+    if (apiKey != null && apiKey.isNotEmpty) {
+      // Show choice
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text("Scan Mode"),
+          content: const Text(
+              "Gemini API Key detected. Do you want to use Gemini AI for superior accuracy?"),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                _processGeminiFlow(apiKey);
+              },
+              child: const Text("Use Gemini AI"),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                _navigateToOcr();
+              },
+              child: const Text("Use Local OCR"),
+            ),
+          ],
+        ),
+      );
+    } else {
+      // Direct to OCR
+      _navigateToOcr();
+    }
+  }
+
+  void _navigateToOcr() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => OcrScreen(ttsService: widget.ttsService),
+      ),
+    );
+  }
+
+  Future<void> _processGeminiFlow(String apiKey) async {
+    final picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+
+    if (image == null) return;
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Processing with Gemini AI...")),
+    );
+
+    try {
+      final doc = await _geminiService.processImage(image.path, apiKey);
+      if (!mounted) return;
+      
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PaperDetailScreen(
+            document: doc,
+            ttsService: widget.ttsService,
+            timestamp: DateTime.now().toString(),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Image.asset('assets/images/logo.png', width: 260, height: 160),
@@ -200,14 +295,7 @@ class TakeExamScreen extends StatelessWidget {
             AnimatedButton(
               icon: Icons.camera_alt,
               label: "Scan Questions",
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => OcrScreen(ttsService: ttsService),
-                  ),
-                );
-              },
+              onTap: _handleScan,
             ),
             const SizedBox(height: 24),
 
@@ -218,7 +306,7 @@ class TakeExamScreen extends StatelessWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => QuestionsScreen(ttsService: ttsService),
+                    builder: (_) => QuestionsScreen(ttsService: widget.ttsService),
                   ),
                 );
               },
@@ -232,7 +320,7 @@ class TakeExamScreen extends StatelessWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => PreferencesScreen(ttsService: ttsService),
+                    builder: (_) => PreferencesScreen(ttsService: widget.ttsService),
                   ),
                 );
               },
