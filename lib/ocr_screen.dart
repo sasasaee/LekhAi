@@ -110,15 +110,9 @@ class _OcrScreenState extends State<OcrScreen> {
     final doc = _doc;
     if (doc == null) return;
 
-    // Save as JSON string for now (so you don't need to change storage yet)
-    // Use model serialization
-    final docJson = doc.toJson();
-    // Add timestamp for "Paper" grouping
-    docJson['timestamp'] = DateTime.now().toIso8601String();
-
-    final jsonString = jsonEncode(docJson);
-
-    await _storageService.saveQuestion(jsonString);
+    await _storageService.saveDocument(doc);
+    // Note: We might want to set a timestamp or ID before saving if not present?
+    // The storage service now handles wrapping it with creation metadata.
 
     widget.ttsService.speak("Saved successfully");
     if (!mounted) return;

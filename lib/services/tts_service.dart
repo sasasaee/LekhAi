@@ -2,6 +2,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'dart:async';
 import 'dart:ui';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'math_text_processor.dart';
 
 class TtsService {
   final FlutterTts _tts = FlutterTts();
@@ -28,7 +29,7 @@ class TtsService {
     _setupHandlers();
 
     _initialized = true;
-    loadPreferences(); // auto-load saved prefs
+    loadPreferences(); 
   }
 
   void _setupHandlers() {
@@ -71,10 +72,10 @@ class TtsService {
     });
   }
 
+  // Speaks text and waits for completion (sequential)
   Future<void> speakAndWait(String text) async {
     if (!_initialized) return;
     
-    // Stop any ongoing speech first to prevent carryover
     await _tts.stop();
     
     final processedText = _preprocessText(text);
@@ -84,12 +85,10 @@ class TtsService {
 
     final completer = Completer<void>();
 
-    // Set a temporary completion handler that completes the future
     _tts.setCompletionHandler(() {
       completer.complete();
     });
     
-    // Also complete on cancel
     _tts.setCancelHandler(() {
       if (!completer.isCompleted) completer.complete();
       _isSpeaking = false;
@@ -97,9 +96,8 @@ class TtsService {
 
     try {
       await _tts.speak(processedText);
-      await completer.future; // Wait until TTS finishes
+      await completer.future; 
     } finally {
-      // Restore default handlers
       if (_defaultCompletionHandler != null) {
         _tts.setCompletionHandler(_defaultCompletionHandler!);
       }
@@ -111,10 +109,10 @@ class TtsService {
     }
   }
 
+  // Speaks text immediately
   Future<void> speak(String text) async {
     if (!_initialized) return;
     
-    // Stop any ongoing speech first (defensive)
     await _tts.stop();
     
     final processedText = _preprocessText(text);
@@ -124,20 +122,19 @@ class TtsService {
     await _tts.speak(processedText);
   }
 
+  // Prepares text: handles blanks, lists, and math
   String _preprocessText(String text) {
     String out = text;
     
-    // Placeholder for pause to avoid regex collision with dots/dashes
     const pauseToken = "[[PAUSE]]"; 
 
     // 1. Handle "Blank with Item" i.e. (a) —, — (a), (a) -, (a) ____
-    //    We replace BOTH the marker and the dash with "pause blank char pause"
     
     // Case A: (a) followed by dash
     out = out.replaceAllMapped(
       RegExp(r'(\([a-zA-Z0-9]+\))\s*([—–_\-]+)'), 
       (match) {
-          final rawMarker = match.group(1)!; // (a)
+          final rawMarker = match.group(1)!; 
           final markerContent = rawMarker.replaceAll(RegExp(r'[()]'), '');
           return ' $pauseToken blank $markerContent $pauseToken '; 
       }
@@ -147,30 +144,31 @@ class TtsService {
     out = out.replaceAllMapped(
       RegExp(r'([—–_\-]+)\s*(\([a-zA-Z0-9]+\))'), 
       (match) {
-          final rawMarker = match.group(2)!; // (a)
+          final rawMarker = match.group(2)!; 
           final markerContent = rawMarker.replaceAll(RegExp(r'[()]'), '');
           return ' $pauseToken blank $markerContent $pauseToken '; 
       }
     );
 
-    // 2. Handle remaining List Items (a) that were NOT consumed by above
-    //    Replace (a) with "pause a pause"
+    // 2. Handle remaining List Items (a)
     out = out.replaceAllMapped(
       RegExp(r'\(([a-zA-Z0-9]+)\)'), 
       (match) => ' $pauseToken ${match.group(1)} $pauseToken '
     );
 
-    // 3. Handle remaining standalone blanks (____ or —)
-    //    Matches 2 or more underscores/dots, OR single/multiple em/en dashes
+    // 3. Handle remaining standalone blanks
     out = out.replaceAll(RegExp(r'([_\-.]{2,}|[—–]+)'), ' $pauseToken blank $pauseToken ');
 
     // 4. Vertical bars
     out = out.replaceAll('|', ',');
     
-    // 5. Finalize: Replace placeholder with actual pause (using ellipses for pause)
+    // 5. Finalize: Replace placeholder with actual pause
     out = out.replaceAll(pauseToken, '...');
+    
+    if (MathTextProcessor.isMathLine(out)) {
+       out = MathTextProcessor.prepareForSpeech(out);
+    }
 
-    // 6. Cleanup
     return out.replaceAll(RegExp(r'\s+'), ' ').trim();
   }
 
@@ -192,13 +190,11 @@ class TtsService {
 
   Future<void> stop() async {
     _isPaused = false;
-    // This stop should trigger cancel handler which resets _isSpeaking
     await _tts.stop();
   }
 
   Future<void> setSpeed(double v) async {
     await _tts.setSpeechRate(v.clamp(0.1, 1.5));
-    // Auto-restart logic removed to let UI handle state
   }
   Future<void> setVolume(double v) => _tts.setVolume(v.clamp(0.0, 1.0));
 
