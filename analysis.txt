@@ -1,0 +1,55 @@
+Resolving dependencies...
+Downloading packages...
+  characters 1.4.0 (1.4.1 available)
+  file_picker 8.3.7 (10.3.7 available)
+  image 4.5.4 (4.6.0 available)
+  image_picker_ios 0.8.13+2 (0.8.13+3 available)
+  matcher 0.12.17 (0.12.18 available)
+  material_color_utilities 0.11.1 (0.13.0 available)
+  shared_preferences 2.5.3 (2.5.4 available)
+  shared_preferences_android 2.4.17 (2.4.18 available)
+  syncfusion_flutter_core 31.2.16 (31.2.18 available)
+  syncfusion_flutter_pdf 31.2.16 (31.2.18 available)
+  syncfusion_flutter_pdfviewer 31.2.16 (31.2.18 available)
+  syncfusion_flutter_signaturepad 31.2.16 (31.2.18 available)
+  syncfusion_pdfviewer_linux 31.2.16 (31.2.18 available)
+  syncfusion_pdfviewer_macos 31.2.16 (31.2.18 available)
+  syncfusion_pdfviewer_platform_interface 31.2.16 (31.2.18 available)
+  syncfusion_pdfviewer_web 31.2.16 (31.2.18 available)
+  syncfusion_pdfviewer_windows 31.2.16 (31.2.18 available)
+  test_api 0.7.7 (0.7.8 available)
+Got dependencies!
+18 packages have newer versions incompatible with dependency constraints.
+Try `flutter pub outdated` for more information.
+Analyzing LekhAi...                                             
+
+warning • Unused import: 'models/question_model.dart' • lib/main.dart:13:8 • unused_import
+warning • The value of the field 'buttonColor' isn't used • lib/main.dart:95:22 • unused_field
+   info • Don't use 'BuildContext's across async gaps • lib/main.dart:132:7 • use_build_context_synchronously
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/main.dart:400:36 • deprecated_member_use
+warning • The '!' will have no effect because the receiver can't be null • lib/paper_detail_screen.dart:215:54 • unnecessary_non_null_assertion
+warning • The declaration '_processWithGemini' isn't referenced • lib/paper_detail_screen.dart:232:16 • unused_element
+  error • The name '_processWithGemini' is already defined • lib/paper_detail_screen.dart:232:16 • duplicate_definition
+   info • The 'child' argument should be last in widget constructor invocations • lib/questions_screen.dart:181:23 • sort_child_properties_last
+   info • Don't invoke 'print' in production code • lib/services/gemini_question_service.dart:11:5 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/gemini_question_service.dart:38:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/gemini_question_service.dart:76:7 • avoid_print
+warning • The value of the field '_isSpeaking' isn't used • lib/services/tts_service.dart:16:8 • unused_field
+   info • Don't invoke 'print' in production code • lib/services/tts_service.dart:36:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/tts_service.dart:41:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/tts_service.dart:63:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/tts_service.dart:69:7 • avoid_print
+   info • Don't invoke 'print' in production code • lib/services/tts_service.dart:107:11 • avoid_print
+   info • Don't invoke 'print' in production code • prototype_gemini_tts.dart:14:3 • avoid_print
+   info • Don't invoke 'print' in production code • prototype_gemini_tts.dart:24:7 • avoid_print
+   info • Don't invoke 'print' in production code • prototype_gemini_tts.dart:39:7 • avoid_print
+   info • Don't invoke 'print' in production code • prototype_gemini_tts.dart:42:5 • avoid_print
+   info • Don't invoke 'print' in production code • prototype_gemini_tts.dart:46:5 • avoid_print
+warning • The '!' will have no effect because the receiver can't be null • prototype_gemini_tts.dart:51:40 • unnecessary_non_null_assertion
+   info • Don't invoke 'print' in production code • prototype_gemini_tts.dart:52:3 • avoid_print
+   info • Don't invoke 'print' in production code • prototype_gemini_tts.dart:63:3 • avoid_print
+   info • Don't invoke 'print' in production code • prototype_gemini_tts.dart:66:5 • avoid_print
+   info • Don't invoke 'print' in production code • prototype_gemini_tts.dart:71:7 • avoid_print
+   info • Don't invoke 'print' in production code • prototype_gemini_tts.dart:73:7 • avoid_print
+   info • Don't invoke 'print' in production code • prototype_gemini_tts.dart:75:5 • avoid_print
+
