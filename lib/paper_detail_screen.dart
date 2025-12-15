@@ -246,12 +246,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
 
   Future<void> _savePaper(BuildContext context) async {
     try {
-      final jsonMap = _document.toJson();
-      // Ensure we preserve or set a timestamp for the saved file
-      // If the original timestamp is valid, keep it, otherwise update to now.
-      jsonMap['timestamp'] = widget.timestamp; 
-      
-      await _storageService.saveQuestion(jsonEncode(jsonMap));
+      await _storageService.saveDocument(_document);
       
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
