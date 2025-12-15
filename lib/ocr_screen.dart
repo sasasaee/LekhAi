@@ -4,6 +4,8 @@ import 'package:image_picker/image_picker.dart';
 import 'services/ocr_service.dart';
 import 'services/question_storage_service.dart';
 import 'questions_screen.dart';
+import 'services/stt_service.dart';
+
 
 class OcrScreen extends StatefulWidget {
   const OcrScreen({super.key});
@@ -26,6 +28,13 @@ class _OcrScreenState extends State<OcrScreen> {
     super.initState();
     _retrieveLostData();
   }
+  /*
+  Future<void> _initializeStt() async {
+  await _sttService.init();
+  if (!_sttService.isAvailable) {
+    widget.ttsService.speak("Speech recognition is not available on this device.");
+  }
+} */
 
   Future<void> _retrieveLostData() async {
     final LostDataResponse response = await _picker.retrieveLostData();
@@ -109,6 +118,7 @@ class _OcrScreenState extends State<OcrScreen> {
   @override
   void dispose() {
     _ocrService.dispose();
+   // _sttService.dispose(); 
     super.dispose();
   }
 
