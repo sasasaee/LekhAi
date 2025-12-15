@@ -7,7 +7,10 @@ import 'services/question_storage_service.dart';
 import 'models/question_model.dart';
 import 'services/tts_service.dart';
 import 'dart:convert';
+<<<<<<< HEAD
 import 'services/stt_service.dart';
+=======
+>>>>>>> origin/main
 
 class PaperDetailScreen extends StatefulWidget {
   final ParsedDocument document;
@@ -34,7 +37,10 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
   void initState() {
     super.initState();
     _document = widget.document;
+<<<<<<< HEAD
    
+=======
+>>>>>>> origin/main
   }
 
   Future<void> _processWithGemini(BuildContext context, String apiKey) async {
@@ -248,12 +254,16 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
 
   Future<void> _savePaper(BuildContext context) async {
     try {
+<<<<<<< HEAD
       final jsonMap = _document.toJson();
       // Ensure we preserve or set a timestamp for the saved file
       // If the original timestamp is valid, keep it, otherwise update to now.
       jsonMap['timestamp'] = widget.timestamp; 
       
       await _storageService.saveQuestion(jsonEncode(jsonMap));
+=======
+      await _storageService.saveDocument(_document);
+>>>>>>> origin/main
       
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -296,7 +306,10 @@ class SingleQuestionScreen extends StatefulWidget {
   final ParsedQuestion question;
   final String? contextText; // Clean text for reading
   final TtsService ttsService;
+<<<<<<< HEAD
   
+=======
+>>>>>>> origin/main
 
   const SingleQuestionScreen({
     super.key,
@@ -310,13 +323,17 @@ class SingleQuestionScreen extends StatefulWidget {
 }
 
 class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
+<<<<<<< HEAD
   final SttService _sttService = SttService();
   bool _isListening = false;
   late TextEditingController _answerController;
+=======
+>>>>>>> origin/main
   // States:
   // Stopped: _isReading = false, _isPaused = false
   // Reading: _isReading = true, _isPaused = false
   // Paused:  _isReading = true, _isPaused = true (User logic: "Stop" button puts it here)
+<<<<<<< HEAD
 
   void _startListening() async {
   if (!_sttService.isAvailable) {
@@ -343,6 +360,8 @@ void _stopListening() async {
   setState(() => _isListening = false);
 }
 
+=======
+>>>>>>> origin/main
   
   bool _isReading = false;
   bool _isPaused = false;
@@ -354,9 +373,12 @@ void _stopListening() async {
   void initState() {
     super.initState();
     // Stop any ongoing TTS and load settings
+<<<<<<< HEAD
      _stopAndInit();
     _sttService.init(); // Initialize STT
     _answerController = TextEditingController(text: widget.question.answer);
+=======
+>>>>>>> origin/main
     _stopAndInit();
   }
 
@@ -378,8 +400,11 @@ void _stopListening() async {
   @override
   void dispose() {
     widget.ttsService.stop(); // Stop immediately on exit
+<<<<<<< HEAD
     _sttService.dispose();
     _answerController.dispose();
+=======
+>>>>>>> origin/main
     super.dispose();
   }
 
@@ -649,6 +674,7 @@ void _stopListening() async {
                 foregroundColor: Colors.black87,
               ),
             ),
+<<<<<<< HEAD
 
             // ✅ STT ADDITION: Answer TextField
 TextField(
@@ -676,6 +702,8 @@ ElevatedButton.icon(
     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
   ),
 ),
+=======
+>>>>>>> origin/main
           ],
         ),
       ),
