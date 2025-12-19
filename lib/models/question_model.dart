@@ -56,6 +56,7 @@ class ParsedQuestion {
   final List<String> body;
   String? marks;
   final List<int> sourceLineIndices;
+  String answer;
 
   ParsedQuestion({
     required this.number,
@@ -63,6 +64,7 @@ class ParsedQuestion {
     required this.body,
     required this.marks,
     required this.sourceLineIndices,
+    this.answer = "",
   });
 
   Map<String, dynamic> toJson() => {

@@ -44,6 +44,7 @@ dependencies:
   flutter_tts: ^4.2.3
   google_generative_ai: ^0.4.7
   http: ^1.6.0
+  speech_to_text: ^7.3.0
 
 dev_dependencies:
   flutter_test:

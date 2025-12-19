@@ -47,5 +47,9 @@
 		<true/>
 		<key>UIStatusBarHidden</key>
 		<false/>
+		<key>NSMicrophoneUsageDescription</key>
+		<string>This app needs access to microphone for dictating answers.</string>
+		<key>NSSpeechRecognitionUsageDescription</key>
+		<string>This app needs access to speech recognition for dictating answers.</string>
 	</dict>
 </plist>
