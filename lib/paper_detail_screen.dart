@@ -430,6 +430,9 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     _stopAndInit();
     // Initialize answer controller
     _answerController.text = widget.question.answer;
+    _answerController.addListener(() {
+      widget.question.answer = _answerController.text;
+    });
   }
 
   Future<void> _stopAndInit() async {
@@ -678,6 +681,29 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                     ),
                     const SizedBox(height: 8),
                     ..._buildBodyWidgets(widget.question.body),
+                    const SizedBox(height: 24),
+                    const Divider(),
+                    const Text("Your Answer:", style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _answerController,
+                      maxLines: 5,
+                      decoration: InputDecoration(
+                        hintText: "Type or detect answer...",
+                        border: const OutlineInputBorder(),
+                        suffixIcon: IconButton(
+                          icon: Icon(_isListening ? Icons.mic : Icons.mic_none),
+                          color: _isListening ? Colors.red : Colors.grey,
+                          onPressed: _isListening ? _stopListening : _startListening,
+                        ),
+                      ),
+                    ),
+                    if (_isListening)
+                       const Padding(
+                         padding: EdgeInsets.only(top: 8.0),
+                         child: LinearProgressIndicator(), 
+                       ),
+                    const SizedBox(height: 20),
                   ],
                 ),
               ),
