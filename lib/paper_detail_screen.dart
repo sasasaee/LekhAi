@@ -7,6 +7,7 @@ import 'services/question_storage_service.dart';
 import 'models/question_model.dart';
 import 'services/tts_service.dart';
 import 'dart:convert';
+import 'services/stt_service.dart';
 
 class PaperDetailScreen extends StatefulWidget {
   final ParsedDocument document;
@@ -312,6 +313,111 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
 
   double _currentSpeed = 0.5;
   bool _playContext = false; // State for playing context
+
+
+  void _startListening() async {
+    // 1. Check availability
+    bool available = _sttService.isAvailable;
+    if (!available) {
+       // Attempt re-init just in case
+       available = await _sttService.init();
+    }
+
+    if (!available) {
+      widget.ttsService.speak("Microphone not available.");
+      return;
+    }
+
+    // 2. Give auditory feedback
+    await widget.ttsService.speak("Listening."); 
+    await Future.delayed(const Duration(milliseconds: 800));
+
+    setState(() {
+      _isListening = true;
+      _textBeforeListening = _answerController.text; // Snapshot current text
+    });
+
+    await _sttService.startListening(
+      localeId: 'en_US', 
+      onResult: (text) {
+        if (!mounted) return;
+        setState(() {
+          // Accumulate text: Base + New Session Text
+          // Note: 'text' from STT is the cumulative result of THIS session.
+          // So we always add it to the _textBeforeListening.
+          String spacer = (_textBeforeListening.isNotEmpty && text.isNotEmpty) ? " " : "";
+          String combined = "$_textBeforeListening$spacer$text";
+          
+          widget.question.answer = combined;
+          _answerController.text = combined;
+          _answerController.selection = TextSelection.fromPosition(
+            TextPosition(offset: _answerController.text.length),
+          );
+        });
+      },
+    );
+  }
+
+  void _stopListening() async {
+    // Manual stop
+    if (_isListening) {
+      setState(() => _isListening = false);
+      await _sttService.stopListening();
+      
+      // Small delay to allow STT to finalize any pending partial results
+      await Future.delayed(const Duration(milliseconds: 600));
+      _onDictationFinished();
+    }
+  }
+  
+  String _textBeforeListening = ""; 
+
+  void _onDictationFinished() async {
+     String answer = _answerController.text.trim();
+     if (answer.isEmpty) {
+       widget.ttsService.speak("No answer detected.");
+       return;
+     }
+
+     // Read back and show dialog simultaneously
+     widget.ttsService.speak("You wrote: $answer. Is this correct?");
+     
+     if (mounted) {
+       _showConfirmationDialog(answer);
+     }
+  }
+
+  Future<void> _showConfirmationDialog(String answer) async {
+    await showDialog(
+      context: context,
+      barrierDismissible: false, // Force choice
+      builder: (ctx) => AlertDialog(
+        title: const Text("Confirm Answer"),
+        content: Text("You wrote:\n\n$answer"),
+        actions: [
+          TextButton(
+            onPressed: () {
+               Navigator.pop(ctx);
+               // Retry logic
+               setState(() {
+                 _answerController.text = ""; 
+                 widget.question.answer = "";
+               });
+               _startListening();
+            },
+            child: const Text("Retry (Clear & Record)"),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              widget.ttsService.speak("Answer saved.");
+            },
+            child: const Text("Yes, Confirm"),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   void initState() {
