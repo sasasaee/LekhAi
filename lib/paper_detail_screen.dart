@@ -313,6 +313,10 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
 
   double _currentSpeed = 0.5;
   bool _playContext = false; // State for playing context
+  
+  final SttService _sttService = SttService();
+  bool _isListening = false;
+  final TextEditingController _answerController = TextEditingController();
 
 
   void _startListening() async {
@@ -424,6 +428,8 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     super.initState();
     // Stop any ongoing TTS and load settings
     _stopAndInit();
+    // Initialize answer controller
+    _answerController.text = widget.question.answer;
   }
 
   Future<void> _stopAndInit() async {
@@ -443,6 +449,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
 
   @override
   void dispose() {
+    _answerController.dispose();
     widget.ttsService.stop(); // Stop immediately on exit
     super.dispose();
   }
