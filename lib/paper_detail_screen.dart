@@ -6,6 +6,8 @@ import 'services/gemini_question_service.dart';
 import 'services/question_storage_service.dart';
 import 'models/question_model.dart';
 import 'services/tts_service.dart';
+import 'services/audio_recorder_service.dart';
+
 import 'dart:convert';
 import 'services/stt_service.dart';
 
@@ -284,7 +286,7 @@ class _QuestionItem extends _ListItem {
   _QuestionItem(this.question, this.context);
 }
 
-
+// ---------------- SingleQuestionScreen ----------------
 
 class SingleQuestionScreen extends StatefulWidget {
   final ParsedQuestion question;
@@ -318,8 +320,17 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
   bool _isListening = false;
   final TextEditingController _answerController = TextEditingController();
 
+  final AudioRecorderService _audioRecorder = AudioRecorderService();
+  bool _isRecordingAudio = false;
+
+  String? _audioFilePath;
+  String _textBeforeListening = "";
+  int _lastSpeechOffset = 0;
+
 
   void _startListening() async {
+
+    await widget.ttsService.stop();
     // 1. Check availability
     bool available = _sttService.isAvailable;
     if (!available) {
@@ -334,32 +345,43 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
 
     // 2. Give auditory feedback
     await widget.ttsService.speak("Listening."); 
-    await Future.delayed(const Duration(milliseconds: 800));
+    await Future.delayed(const Duration(milliseconds: 1000));
+
+    final String currentText = _answerController.text;
 
     setState(() {
       _isListening = true;
-      _textBeforeListening = _answerController.text; // Snapshot current text
+      _textBeforeListening = currentText;
     });
 
     await _sttService.startListening(
       localeId: 'en_US', 
       onResult: (text) {
         if (!mounted) return;
+
+        String spacer = (_textBeforeListening.isNotEmpty && text.isNotEmpty) ? " " : "";
+          String combined = "$_textBeforeListening$spacer$text";
         setState(() {
           // Accumulate text: Base + New Session Text
           // Note: 'text' from STT is the cumulative result of THIS session.
           // So we always add it to the _textBeforeListening.
-          String spacer = (_textBeforeListening.isNotEmpty && text.isNotEmpty) ? " " : "";
-          String combined = "$_textBeforeListening$spacer$text";
-          
+        
           widget.question.answer = combined;
-          _answerController.text = combined;
-          _answerController.selection = TextSelection.fromPosition(
-            TextPosition(offset: _answerController.text.length),
+          _answerController.value = TextEditingValue(
+              text: combined,
+              selection: TextSelection.collapsed(offset: combined.length),
           );
         });
       },
     );
+
+    await Future.delayed(const Duration(milliseconds: 300));
+    try {
+      await _startAudioRecording();
+    } catch (e) {
+      print("Recording conflict: $e");
+    // If this fails, STT will still work, which is better than nothing.
+     }
   }
 
   void _stopListening() async {
@@ -367,17 +389,22 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     if (_isListening) {
       setState(() => _isListening = false);
       await _sttService.stopListening();
+
+      await _stopAudioRecording();
       
       // Small delay to allow STT to finalize any pending partial results
       await Future.delayed(const Duration(milliseconds: 600));
       _onDictationFinished();
     }
   }
-  
-  String _textBeforeListening = ""; 
+
 
   void _onDictationFinished() async {
      String answer = _answerController.text.trim();
+
+     widget.question.answer = answer;
+     widget.question.audioPath = _audioFilePath;
+
      if (answer.isEmpty) {
        widget.ttsService.speak("No answer detected.");
        return;
@@ -390,6 +417,29 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
        _showConfirmationDialog(answer);
      }
   }
+
+  Future<void> _startAudioRecording() async {
+  if (_isRecordingAudio) return;
+  final path = await _audioRecorder.startRecording();
+  setState(() {
+    _isRecordingAudio = true;
+    _audioFilePath = path;
+  });
+}
+
+Future<void> _stopAudioRecording() async {
+  if (!_isRecordingAudio) return;
+  final path = await _audioRecorder.stopRecording();
+  setState(() {
+    _isRecordingAudio = false;
+    _audioFilePath = path;
+
+    widget.question.audioPath = path;
+  });
+  // Optional: feedback
+  widget.ttsService.speak("Audio answer saved.");
+}
+
 
   Future<void> _showConfirmationDialog(String answer) async {
     await showDialog(
@@ -427,12 +477,24 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
   void initState() {
     super.initState();
     // Stop any ongoing TTS and load settings
-    _stopAndInit();
-    // Initialize answer controller
+    _initServices();
+
     _answerController.text = widget.question.answer;
+    _audioFilePath = widget.question.audioPath;
     _answerController.addListener(() {
       widget.question.answer = _answerController.text;
     });
+  }
+
+  Future<void> _initServices() async {
+  await widget.ttsService.stop();
+  await _loadPreferences();
+  await _audioRecorder.init();
+}
+
+  Future<void> _loadPreferences() async {
+  final prefs = await widget.ttsService.loadPreferences();
+  if (mounted) setState(() => _currentSpeed = prefs['speed'] ?? 0.5);
   }
 
   Future<void> _stopAndInit() async {
@@ -454,6 +516,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
   void dispose() {
     _answerController.dispose();
     widget.ttsService.stop(); // Stop immediately on exit
+    _sttService.stopListening();
     super.dispose();
   }
 
@@ -478,68 +541,45 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     // Current absolute = Offset of current chunk + Progress within current chunk
     return _lastSpeechStartOffset + widget.ttsService.currentWordStart;
   }
+  
 
-  Future<void> _speakFromPosition(int start) async {
-      String textToSpeak = _fullText;
-      if (start > 0 && start < textToSpeak.length) {
-         textToSpeak = textToSpeak.substring(start);
-      }
-      
-      // Update offset for this new chunk
-      _lastSpeechStartOffset = start;
-      
-      setState(() {
-       _isReading = true; 
-       _isPaused = false;
-      });
-      
-      await widget.ttsService.speakAndWait(textToSpeak);
-      
-      if (mounted) {
-        // Only reset if we are NOT paused. 
-        // If we were paused by _onStopPressed, _isPaused will be true.
-        if (!_isPaused) {
-          setState(() {
-            _isReading = false;
-            // _isPaused = false; // Already false if we are here
-          });
-        }
-      }
+  Future<void> _speakFromOffset(int offset) async {
+      final textToSpeak = offset > 0 && offset < _fullText.length
+        ? _fullText.substring(offset)
+        : _fullText;
+
+    setState(() {
+      _isReading = true;
+      _isPaused = false;
+    });
+    _lastSpeechOffset = offset;
+
+    await widget.ttsService.setSpeed(_currentSpeed);
+    await widget.ttsService.speakAndWait(textToSpeak);
+
+    if (mounted && !_isPaused) setState(() => _isReading = false);
   }
+
 
   void _onReadPressed() async {
     if (_isPaused) {
        // Resume from tracked position
-       await _speakFromPosition(_lastSpeechStartOffset); 
+       await _speakFromOffset(_lastSpeechStartOffset); 
     } else {
        // Start fresh
        _lastSpeechStartOffset = 0;
-       await _speakFromPosition(0);
+       await _speakFromOffset(0);
     }
   }
 
   void _onStopPressed() async {
-    if (!_isPaused) {
-      // Pause action
-      
-      // Capture current position before pausing/stopping
-      int currentPos = _currentAbsolutePosition;
-      
-      setState(() {
-        _isPaused = true;
-        _lastSpeechStartOffset = currentPos; // Save for resume
-      });
-      
-      await widget.ttsService.stop(); // Stop completely
-      
-    } else {
-      // Restart action
-      await widget.ttsService.stop(); 
-      setState(() {
-        _isPaused = false;
-        _lastSpeechStartOffset = 0;
-      });
-      // Start fresh
+    if (!_isPaused && _isReading) {
+      _lastSpeechOffset = _currentAbsolutePosition;
+      setState(() => _isPaused = true);
+      await widget.ttsService.stop();
+    } else if (_isPaused) {
+      _lastSpeechOffset = 0;
+      setState(() => _isPaused = false);
       _onReadPressed();
     }
   }
@@ -566,7 +606,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
 
     if (wasReading) {
        // Auto-resume if we were actively reading
-       await _speakFromPosition(currentPos);
+       await _speakFromOffset(currentPos);
     } else if (wasPaused) {
        // Just update offset so Resume works correctly
        _lastSpeechStartOffset = currentPos;
@@ -703,6 +743,22 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                          padding: EdgeInsets.only(top: 8.0),
                          child: LinearProgressIndicator(), 
                        ),
+
+                    const SizedBox(height: 10),
+                    if (_audioFilePath != null) 
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: ElevatedButton.icon(
+                          onPressed: () => _audioRecorder.playRecordedFile(_audioFilePath!),
+                          icon: const Icon(Icons.play_circle_fill),
+                          label: const Text("Listen to your recorded voice"),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green.shade50,
+                            foregroundColor: Colors.green.shade800,
+                            side: BorderSide(color: Colors.green.shade200),
+                          ),
+                        ),
+                      ),
                     const SizedBox(height: 20),
                   ],
                 ),

@@ -66,4 +66,5 @@ class SttService {
   void dispose() {
     _speech.stop();
   }
+
 }

@@ -12,6 +12,7 @@ import 'package:image_picker/image_picker.dart'; // Added
 import 'services/gemini_question_service.dart'; // Added
 import 'models/question_model.dart'; // Added
 import 'paper_detail_screen.dart'; // Added
+import 'services/audio_recorder_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -331,6 +332,88 @@ class _TakeExamScreenState extends State<TakeExamScreen> {
     );
   }
 }
+
+// //------------------------------------------Speech Recorder and saving-----------------------------------------
+
+
+// class SpeechPage extends StatefulWidget {
+//   @override
+//   _SpeechPageState createState() => _SpeechPageState();
+// }
+
+// class _SpeechPageState extends State<SpeechPage> {
+//   final SttService sttService = SttService();
+//   final AudioRecorderService recorder = AudioRecorderService();
+
+//   bool isListening = false;
+//   String recognizedText = "";
+//   String? lastAudioPath;
+
+//   @override
+//   void initState() {
+//     super.initState();
+//     initServices();
+//   }
+
+//   Future<void> initServices() async {
+//     await sttService.init(
+//       onStatus: (status) => print("STT Status: $status"),
+//       onError: (err) => print("STT Error: $err"),
+//     );
+
+//     await recorder.init();
+//   }
+
+//   void startListening() async {
+//     setState(() => isListening = true);
+
+//     // Start audio recording
+//     lastAudioPath = await recorder.startRecording();
+//     print("Recording started at: $lastAudioPath");
+
+//     // Start STT
+//     await sttService.startListening(
+//       onResult: (text) {
+//         setState(() => recognizedText = text);
+//       },
+//       localeId: 'en_US',
+//     );
+//   }
+
+//   void stopListening() async {
+//     await sttService.stopListening();
+
+//     // Stop audio recording
+//     final savedPath = await recorder.stopRecording();
+//     print("Recording saved at: $savedPath");
+
+//     setState(() => isListening = false);
+//   }
+
+//   @override
+//   void dispose() {
+//     sttService.dispose();
+//     recorder.dispose();
+//     super.dispose();
+//   }
+
+//   @override
+//   Widget build(BuildContext context) {
+//     return Scaffold(
+//       appBar: AppBar(title: Text("Speech Recorder")),
+//       body: Column(
+//         children: [
+//           Text("Recognized: $recognizedText"),
+//           SizedBox(height: 20),
+//           ElevatedButton(
+//             onPressed: isListening ? stopListening : startListening,
+//             child: Text(isListening ? "Stop" : "Start"),
+//           ),
+//         ],
+//       ),
+//     );
+//   }
+// }
 
 // ---------------------- Animated Button ----------------------
 

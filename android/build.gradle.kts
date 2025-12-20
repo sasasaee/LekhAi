@@ -22,3 +22,21 @@ subprojects {
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }
+
+subprojects {
+    // This function will run for every subproject (plugin) in your app
+    project.configurations.all {
+        resolutionStrategy.eachDependency {
+            // We use this block to hook into the subproject lifecycle safely
+        }
+    }
+    
+    // Check if the subproject is an Android library (like 'record')
+    plugins.withType<com.android.build.gradle.LibraryPlugin> {
+        extensions.configure<com.android.build.gradle.LibraryExtension> {
+            if (namespace == null) {
+                namespace = project.group.toString()
+            }
+        }
+    }
+}
