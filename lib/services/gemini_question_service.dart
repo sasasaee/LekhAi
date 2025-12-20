@@ -140,7 +140,8 @@ class GeminiQuestionService {
 
   ParsedDocument _parseResponse(String jsonString) {
     // Clean up potential markdown blocks if API returns ```json ... ```
-    final cleanJson = jsonString.replaceAll(RegExp(r'^```json|```$'), '').trim();
+    final initialClean = jsonString.replaceAll(RegExp(r'^```json\s*'), ''); // Remove start
+    final cleanJson = initialClean.replaceAll(RegExp(r'\s*```$'), '').trim(); // Remove end
     
     final Map<String, dynamic> data = jsonDecode(cleanJson);
     final sectionsList = data['sections'] as List;
@@ -169,5 +170,33 @@ class GeminiQuestionService {
       header: [], 
       sections: parsedSections,
     );
+  }
+
+  Future<String> transcribeAudio(String audioPath, String apiKey) async {
+    final modelName = await _findValidModel(apiKey) ?? 'gemini-1.5-flash';
+    final model = GenerativeModel(
+      model: modelName,
+      apiKey: apiKey,
+    );
+
+    final audioBytes = await File(audioPath).readAsBytes();
+    final prompt = "Transcribe the following audio exactly as spoken. Do not add any commentary or extra text.";
+
+    try {
+      final response = await model.generateContent([
+        Content.multi([
+          TextPart(prompt),
+          DataPart('audio/mp4', audioBytes), // Assuming standard format, Gemini handles most
+        ])
+      ]);
+
+      if (response.text == null) {
+         throw Exception("Empty transcription from Gemini");
+      }
+      return response.text!;
+    } catch (e) {
+      print("Gemini Transcription Error: $e");
+      rethrow;
+    }
   }
 }

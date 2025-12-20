@@ -8,6 +8,10 @@ import 'models/question_model.dart';
 import 'services/tts_service.dart';
 import 'dart:convert';
 import 'services/stt_service.dart';
+import 'services/audio_recorder_service.dart';
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
+import 'package:audioplayers/audioplayers.dart';
 
 class PaperDetailScreen extends StatefulWidget {
   final ParsedDocument document;
@@ -313,79 +317,103 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
 
   double _currentSpeed = 0.5;
   bool _playContext = false; // State for playing context
+
   
-  final SttService _sttService = SttService();
+  // ignore: unused_field
+  final SttService _sttService = SttService(); // Kept for legacy or fallback if needed
   bool _isListening = false;
   final TextEditingController _answerController = TextEditingController();
 
+  final AudioRecorderService _audioRecorderService = AudioRecorderService();
+  bool _isProcessingAudio = false;
+  String? _tempAudioPath;
+  final AudioPlayer _audioPlayer = AudioPlayer(); // Player for playback
 
   void _startListening() async {
-    // 1. Check availability
-    bool available = _sttService.isAvailable;
-    if (!available) {
-       // Attempt re-init just in case
-       available = await _sttService.init();
-    }
-
-    if (!available) {
-      widget.ttsService.speak("Microphone not available.");
+    // 1. Check permissions
+    if (!await _audioRecorderService.hasPermission()) {
+      widget.ttsService.speak("Microphone permission needed.");
       return;
     }
 
-    // 2. Give auditory feedback
-    await widget.ttsService.speak("Listening."); 
-    await Future.delayed(const Duration(milliseconds: 800));
+    // 2. Feedback
+    await widget.ttsService.speak("Listening.");
+    await Future.delayed(const Duration(milliseconds: 600));
 
-    setState(() {
-      _isListening = true;
-      _textBeforeListening = _answerController.text; // Snapshot current text
-    });
+    // 3. Prepare Temp Path
+    final tempDir = await getTemporaryDirectory();
+    _tempAudioPath = '${tempDir.path}/temp_answer_${DateTime.now().millisecondsSinceEpoch}.m4a';
 
-    await _sttService.startListening(
-      localeId: 'en_US', 
-      onResult: (text) {
-        if (!mounted) return;
-        setState(() {
-          // Accumulate text: Base + New Session Text
-          // Note: 'text' from STT is the cumulative result of THIS session.
-          // So we always add it to the _textBeforeListening.
-          String spacer = (_textBeforeListening.isNotEmpty && text.isNotEmpty) ? " " : "";
-          String combined = "$_textBeforeListening$spacer$text";
-          
-          widget.question.answer = combined;
-          _answerController.text = combined;
-          _answerController.selection = TextSelection.fromPosition(
-            TextPosition(offset: _answerController.text.length),
-          );
-        });
-      },
-    );
+    // 4. Start Recording
+    try {
+      await _audioRecorderService.startRecording(_tempAudioPath!);
+      setState(() {
+        _isListening = true;
+        _isProcessingAudio = false;
+      });
+    } catch (e) {
+      widget.ttsService.speak("Failed to start recording.");
+    }
   }
 
   void _stopListening() async {
-    // Manual stop
     if (_isListening) {
-      setState(() => _isListening = false);
-      await _sttService.stopListening();
-      
-      // Small delay to allow STT to finalize any pending partial results
-      await Future.delayed(const Duration(milliseconds: 600));
-      _onDictationFinished();
+      // Stop Recorder
+      final path = await _audioRecorderService.stopRecording();
+      setState(() {
+        _isListening = false;
+        _isProcessingAudio = true; // Show loading
+      });
+
+      if (path == null) {
+        widget.ttsService.speak("Recording failed.");
+        setState(() => _isProcessingAudio = false);
+        return;
+      }
+
+      // Transcribe via Gemini
+      await _processAudioAnswer(path);
     }
   }
-  
-  String _textBeforeListening = ""; 
 
+  Future<void> _processAudioAnswer(String audioPath) async {
+    final prefs = await SharedPreferences.getInstance();
+    final apiKey = prefs.getString('gemini_api_key');
+
+    String transcribedText = "";
+    
+    if (apiKey != null && apiKey.isNotEmpty) {
+       try {
+         final geminiService = GeminiQuestionService(); // Or pass from parent
+         transcribedText = await geminiService.transcribeAudio(audioPath, apiKey);
+       } catch (e) {
+         transcribedText = "[Transcription Failed: $e]";
+       }
+    } else {
+       transcribedText = "[No API Key - Audio Saved. Type answer manually.]";
+       widget.ttsService.speak("No API Key found. Audio saved, please type answer.");
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _isProcessingAudio = false;
+      _answerController.text = transcribedText;
+      // Do NOT save to model yet. Wait for confirmation.
+    });
+    
+    // Allow UI to repaint so text appears before dialog
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    _onDictationFinished();
+  }
+  
   void _onDictationFinished() async {
      String answer = _answerController.text.trim();
-     if (answer.isEmpty) {
-       widget.ttsService.speak("No answer detected.");
-       return;
-     }
-
-     // Read back and show dialog simultaneously
-     widget.ttsService.speak("You wrote: $answer. Is this correct?");
      
+     // Read back
+     widget.ttsService.speak("You wrote: $answer. Is this correct?");
+      
      if (mounted) {
        _showConfirmationDialog(answer);
      }
@@ -394,26 +422,45 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
   Future<void> _showConfirmationDialog(String answer) async {
     await showDialog(
       context: context,
-      barrierDismissible: false, // Force choice
+      barrierDismissible: false, 
       builder: (ctx) => AlertDialog(
         title: const Text("Confirm Answer"),
-        content: Text("You wrote:\n\n$answer"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text("You wrote:\n\n$answer"),
+            if (_tempAudioPath != null)
+              const Padding(
+                padding: EdgeInsets.only(top: 10),
+                child: Text("(Audio recorded)", style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey)),
+              ),
+            if (_tempAudioPath != null)
+              TextButton.icon(
+                icon: const Icon(Icons.play_arrow),
+                label: const Text("Play Preview"),
+                onPressed: () async {
+                  await _audioPlayer.play(DeviceFileSource(_tempAudioPath!));
+                },
+              ),
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () {
+               // DISCARD LOGIC
                Navigator.pop(ctx);
-               // Retry logic
+               _discardAudio(); // Delete temp file
                setState(() {
                  _answerController.text = ""; 
-                 widget.question.answer = "";
                });
-               _startListening();
+               _startListening(); // Auto-retry
             },
             child: const Text("Retry (Clear & Record)"),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(ctx);
+              await _handleConfirmedAnswer();
               widget.ttsService.speak("Answer saved.");
             },
             child: const Text("Yes, Confirm"),
@@ -421,6 +468,43 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         ],
       ),
     );
+  }
+
+  void _discardAudio() {
+    if (_tempAudioPath != null) {
+      final file = File(_tempAudioPath!);
+      if (file.existsSync()) {
+        file.deleteSync();
+      }
+      _tempAudioPath = null;
+    }
+  }
+
+  Future<void> _handleConfirmedAnswer() async {
+    // 1. Save Answer Text
+    widget.question.answer = _answerController.text;
+
+    // 2. Move Audio to Permanent Storage
+    if (_tempAudioPath != null) {
+      try {
+        final appDir = await getApplicationDocumentsDirectory();
+        final fileName = 'answer_q${widget.question.number ?? "x"}_${DateTime.now().millisecondsSinceEpoch}.m4a';
+        final permPath = '${appDir.path}/$fileName';
+        
+        await File(_tempAudioPath!).copy(permPath);
+        
+        // 3. Save Audio Path to Model
+        setState(() {
+           widget.question.audioPath = permPath;
+        });
+
+        // Cleanup temp
+        _discardAudio(); 
+
+      } catch (e) {
+        print("Error saving permanent audio: $e");
+      }
+    }
   }
 
   @override
@@ -454,6 +538,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
   void dispose() {
     _answerController.dispose();
     widget.ttsService.stop(); // Stop immediately on exit
+    _audioPlayer.dispose();
     super.dispose();
   }
 
@@ -691,13 +776,29 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                       decoration: InputDecoration(
                         hintText: "Type or detect answer...",
                         border: const OutlineInputBorder(),
-                        suffixIcon: IconButton(
-                          icon: Icon(_isListening ? Icons.mic : Icons.mic_none),
-                          color: _isListening ? Colors.red : Colors.grey,
-                          onPressed: _isListening ? _stopListening : _startListening,
-                        ),
+                        suffixIcon: _isProcessingAudio 
+                          ? const Padding(
+                              padding: EdgeInsets.all(12.0),
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : IconButton(
+                              icon: Icon(_isListening ? Icons.stop : Icons.mic), // Changed to Stop icon while recording
+                              color: _isListening ? Colors.red : Colors.grey,
+                              onPressed: _isListening ? _stopListening : _startListening,
+                            ),
                       ),
                     ),
+                    if (widget.question.audioPath != null && widget.question.audioPath!.isNotEmpty)
+                       Padding(
+                         padding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
+                         child: OutlinedButton.icon(
+                           icon: const Icon(Icons.play_circle_fill),
+                           label: const Text("Play Saved Answer"),
+                           onPressed: () async {
+                              await _audioPlayer.play(DeviceFileSource(widget.question.audioPath!));
+                           },
+                         ),
+                       ),
                     if (_isListening)
                        const Padding(
                          padding: EdgeInsets.only(top: 8.0),

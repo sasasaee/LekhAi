@@ -57,6 +57,7 @@ class ParsedQuestion {
   String? marks;
   final List<int> sourceLineIndices;
   String answer;
+  String? audioPath;
 
   ParsedQuestion({
     required this.number,
@@ -65,6 +66,7 @@ class ParsedQuestion {
     required this.marks,
     required this.sourceLineIndices,
     this.answer = "",
+    this.audioPath,
   });
 
   Map<String, dynamic> toJson() => {
@@ -73,6 +75,8 @@ class ParsedQuestion {
     "body": body,
     "marks": marks,
     "sourceLineIndices": sourceLineIndices,
+    "answer": answer,
+    "audioPath": audioPath,
   };
 
   factory ParsedQuestion.fromJson(Map<String, dynamic> json) {
@@ -83,6 +87,8 @@ class ParsedQuestion {
       marks: json['marks'] as String?,
       sourceLineIndices:
           (json['sourceLineIndices'] as List?)?.cast<int>() ?? [],
+      answer: json['answer'] as String? ?? "",
+      audioPath: json['audioPath'] as String?,
     );
   }
 }
