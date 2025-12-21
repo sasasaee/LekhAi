@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
 import 'services/gemini_question_service.dart';
-
 import 'services/question_storage_service.dart';
 import 'models/question_model.dart';
 import 'services/tts_service.dart';
@@ -12,6 +11,8 @@ import 'services/audio_recorder_service.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'package:audioplayers/audioplayers.dart';
+
+// --- PAPER DETAIL SCREEN ---
 
 class PaperDetailScreen extends StatefulWidget {
   final ParsedDocument document;
@@ -55,8 +56,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       final newDoc = await _geminiService.processImage(image.path, apiKey);
       
       setState(() {
-         // Merge new sections into existing document
-         _document.sections.addAll(newDoc.sections);
+          _document.sections.addAll(newDoc.sections);
       });
       
       if (context.mounted) {
@@ -75,29 +75,23 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Build a flat list of display items
     final items = <_ListItem>[];
     
-    // 1. Document Header
     if (_document.header.isNotEmpty) {
       items.add(_HeaderItem(_document.header.join("\n")));
     }
 
-    // 2. Sections and Questions
     for (var section in _document.sections) {
-      // Add Section Header if it has title or context
       if ((section.title != null && section.title!.isNotEmpty) || 
           (section.context != null && section.context!.isNotEmpty)) {
         items.add(_SectionItem(section.title, section.context));
       }
       
-      // Add Questions
       for (var q in section.questions) {
         items.add(_QuestionItem(q, section.context));
       }
     }
 
-    // Format date for title
     String dateStr = "Unknown Date";
     try {
       final dt = DateTime.parse(widget.timestamp);
@@ -194,7 +188,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
                     MaterialPageRoute(
                       builder: (_) => SingleQuestionScreen(
                         question: q,
-                        contextText: item.context, // Pass context if available
+                        contextText: item.context,
                         ttsService: widget.ttsService,
                       ),
                     ),
@@ -213,6 +207,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       ),
     );
   }
+
   Future<void> _onAddPage(BuildContext context) async {
     final prefs = await SharedPreferences.getInstance();
     final apiKey = prefs.getString('gemini_api_key');
@@ -247,12 +242,9 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
     }
   }
 
-
-
   Future<void> _savePaper(BuildContext context) async {
     try {
       await _storageService.saveDocument(_document);
-      
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Paper saved successfully!")),
@@ -268,7 +260,8 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
   }
 }
 
-// Helper classes for ListView
+// --- HELPER CLASSES ---
+
 abstract class _ListItem {}
 
 class _HeaderItem extends _ListItem {
@@ -284,15 +277,15 @@ class _SectionItem extends _ListItem {
 
 class _QuestionItem extends _ListItem {
   final ParsedQuestion question;
-  final String? context; // Context from the parent section
+  final String? context;
   _QuestionItem(this.question, this.context);
 }
 
-
+// --- SINGLE QUESTION SCREEN ---
 
 class SingleQuestionScreen extends StatefulWidget {
   final ParsedQuestion question;
-  final String? contextText; // Clean text for reading
+  final String? contextText; 
   final TtsService ttsService;
 
   const SingleQuestionScreen({
@@ -307,71 +300,193 @@ class SingleQuestionScreen extends StatefulWidget {
 }
 
 class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
-  // States:
-  // Stopped: _isReading = false, _isPaused = false
-  // Reading: _isReading = true, _isPaused = false
-  // Paused:  _isReading = true, _isPaused = true (User logic: "Stop" button puts it here)
-  
   bool _isReading = false;
   bool _isPaused = false;
-
-  double _currentSpeed = 0.5;
-  bool _playContext = false; // State for playing context
-
   
-  // ignore: unused_field
-  final SttService _sttService = SttService(); // Kept for legacy or fallback if needed
+  // Mapped Speed: 1.0 (Display) = 0.5 (Engine)
+  double _displaySpeed = 1.0; 
+  double _currentVolume = 1.0;
+  bool _playContext = false;
+
+  final SttService _sttService = SttService(); 
   bool _isListening = false;
   final TextEditingController _answerController = TextEditingController();
 
   final AudioRecorderService _audioRecorderService = AudioRecorderService();
   bool _isProcessingAudio = false;
   String? _tempAudioPath;
-  final AudioPlayer _audioPlayer = AudioPlayer(); // Player for playback
+  final AudioPlayer _audioPlayer = AudioPlayer();
+
+  @override
+  void initState() {
+    super.initState();
+    _stopAndInit();
+    _answerController.text = widget.question.answer;
+    _answerController.addListener(() {
+      widget.question.answer = _answerController.text;
+    });
+  }
+
+  Future<void> _stopAndInit() async {
+    await widget.ttsService.stop();
+    await _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final prefs = await widget.ttsService.loadPreferences();
+    if (mounted) {
+      setState(() {
+        _displaySpeed = prefs['speed'] ?? 1.0;
+        _currentVolume = prefs['volume'] ?? 1.0;
+      });
+      // Apply mapped speed to engine
+      await widget.ttsService.setSpeed(_displaySpeed * 0.5);
+      await widget.ttsService.setVolume(_currentVolume);
+    }
+  }
+
+  @override
+  void dispose() {
+    _answerController.dispose();
+    widget.ttsService.stop();
+    _audioPlayer.dispose();
+    super.dispose();
+  }
+
+  // --- VOLUME LOGIC ---
+  void _changeVolume() async {
+    double newVolume = _currentVolume + 0.2;
+    if (newVolume > 1.01) newVolume = 0.2;
+
+    int currentPos = _currentAbsolutePosition;
+    bool wasReading = _isReading && !_isPaused;
+    bool wasPaused = _isPaused;
+
+    await widget.ttsService.stop(); 
+    
+    setState(() => _currentVolume = newVolume);
+    await widget.ttsService.setVolume(newVolume);
+    await widget.ttsService.savePreferences(speed: _displaySpeed, volume: newVolume);
+
+    if (wasReading) {
+        await _speakFromPosition(currentPos);
+    } else if (wasPaused) {
+        _lastSpeechStartOffset = currentPos;
+    }
+  }
+
+  // --- SPEED LOGIC ---
+  void _changeSpeed() async {
+    double nextDisplaySpeed = _displaySpeed + 0.25;
+    if (nextDisplaySpeed > 1.75) {
+      nextDisplaySpeed = 0.5;
+    }
+    
+    int currentPos = _currentAbsolutePosition;
+    bool wasReading = _isReading && !_isPaused;
+    bool wasPaused = _isPaused;
+
+    await widget.ttsService.stop(); 
+    
+    setState(() => _displaySpeed = nextDisplaySpeed);
+    
+    // Engine gets Display * 0.5
+    await widget.ttsService.setSpeed(nextDisplaySpeed * 0.5);
+    await widget.ttsService.savePreferences(speed: nextDisplaySpeed, volume: _currentVolume);
+
+    if (wasReading) {
+        await _speakFromPosition(currentPos);
+    } else if (wasPaused) {
+        _lastSpeechStartOffset = currentPos;
+    }
+  }
+
+  String get _fullText {
+    final sb = StringBuffer();
+    if (_playContext && widget.contextText != null && widget.contextText!.isNotEmpty) {
+        sb.write("Context: ${widget.contextText}. ");
+        sb.write("\n\n");
+    }
+    if (widget.question.number != null) sb.write("Question ${widget.question.number}. ");
+    sb.write(widget.question.prompt);
+    sb.write("\n");
+    sb.write(widget.question.body.join("\n"));
+    return sb.toString();
+  }
+
+  int _lastSpeechStartOffset = 0;
+  int get _currentAbsolutePosition => _lastSpeechStartOffset + widget.ttsService.currentWordStart;
+
+  Future<void> _speakFromPosition(int start) async {
+      String textToSpeak = _fullText;
+      if (start > 0 && start < textToSpeak.length) {
+          textToSpeak = textToSpeak.substring(start);
+      }
+      _lastSpeechStartOffset = start;
+      setState(() {
+       _isReading = true; 
+       _isPaused = false;
+      });
+      await widget.ttsService.speakAndWait(textToSpeak);
+      if (mounted && !_isPaused) {
+          setState(() => _isReading = false);
+      }
+  }
+
+  void _onReadPressed() async {
+    if (_isPaused) {
+       await _speakFromPosition(_lastSpeechStartOffset); 
+    } else {
+       _lastSpeechStartOffset = 0;
+       await _speakFromPosition(0);
+    }
+  }
+
+  void _onStopPressed() async {
+    if (!_isPaused) {
+      int currentPos = _currentAbsolutePosition;
+      setState(() {
+        _isPaused = true;
+        _lastSpeechStartOffset = currentPos;
+      });
+      await widget.ttsService.stop();
+    } else {
+      await widget.ttsService.stop(); 
+      setState(() {
+        _isPaused = false;
+        _lastSpeechStartOffset = 0;
+      });
+      _onReadPressed();
+    }
+  }
 
   void _startListening() async {
-    // 1. Check permissions
     if (!await _audioRecorderService.hasPermission()) {
       widget.ttsService.speak("Microphone permission needed.");
       return;
     }
-
-    // 2. Feedback
     await widget.ttsService.speak("Listening.");
     await Future.delayed(const Duration(milliseconds: 600));
-
-    // 3. Prepare Temp Path
     final tempDir = await getTemporaryDirectory();
     _tempAudioPath = '${tempDir.path}/temp_answer_${DateTime.now().millisecondsSinceEpoch}.m4a';
-
-    // 4. Start Recording
     try {
       await _audioRecorderService.startRecording(_tempAudioPath!);
       setState(() {
         _isListening = true;
         _isProcessingAudio = false;
       });
-    } catch (e) {
-      widget.ttsService.speak("Failed to start recording.");
-    }
+    } catch (e) { widget.ttsService.speak("Failed to start recording."); }
   }
 
   void _stopListening() async {
     if (_isListening) {
-      // Stop Recorder
       final path = await _audioRecorderService.stopRecording();
-      setState(() {
-        _isListening = false;
-        _isProcessingAudio = true; // Show loading
-      });
-
+      setState(() { _isListening = false; _isProcessingAudio = true; });
       if (path == null) {
         widget.ttsService.speak("Recording failed.");
         setState(() => _isProcessingAudio = false);
         return;
       }
-
-      // Transcribe via Gemini
       await _processAudioAnswer(path);
     }
   }
@@ -379,44 +494,29 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
   Future<void> _processAudioAnswer(String audioPath) async {
     final prefs = await SharedPreferences.getInstance();
     final apiKey = prefs.getString('gemini_api_key');
-
     String transcribedText = "";
-    
     if (apiKey != null && apiKey.isNotEmpty) {
-       try {
-         final geminiService = GeminiQuestionService(); // Or pass from parent
-         transcribedText = await geminiService.transcribeAudio(audioPath, apiKey);
-       } catch (e) {
-         transcribedText = "[Transcription Failed: $e]";
-       }
+        try {
+          final geminiService = GeminiQuestionService();
+          transcribedText = await geminiService.transcribeAudio(audioPath, apiKey);
+        } catch (e) { transcribedText = "[Transcription Failed: $e]"; }
     } else {
-       transcribedText = "[No API Key - Audio Saved. Type answer manually.]";
-       widget.ttsService.speak("No API Key found. Audio saved, please type answer.");
+        transcribedText = "[No API Key - Audio Saved. Type answer manually.]";
+        widget.ttsService.speak("No API Key found. Audio saved, please type answer.");
     }
-
     if (!mounted) return;
-
     setState(() {
       _isProcessingAudio = false;
       _answerController.text = transcribedText;
-      // Do NOT save to model yet. Wait for confirmation.
     });
-    
-    // Allow UI to repaint so text appears before dialog
     await Future.delayed(const Duration(milliseconds: 100));
-
     _onDictationFinished();
   }
-  
+
   void _onDictationFinished() async {
      String answer = _answerController.text.trim();
-     
-     // Read back
      widget.ttsService.speak("You wrote: $answer. Is this correct?");
-      
-     if (mounted) {
-       _showConfirmationDialog(answer);
-     }
+     if (mounted) { _showConfirmationDialog(answer); }
   }
 
   Future<void> _showConfirmationDialog(String answer) async {
@@ -430,11 +530,6 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
           children: [
             Text("You wrote:\n\n$answer"),
             if (_tempAudioPath != null)
-              const Padding(
-                padding: EdgeInsets.only(top: 10),
-                child: Text("(Audio recorded)", style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey)),
-              ),
-            if (_tempAudioPath != null)
               TextButton.icon(
                 icon: const Icon(Icons.play_arrow),
                 label: const Text("Play Preview"),
@@ -447,15 +542,12 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         actions: [
           TextButton(
             onPressed: () {
-               // DISCARD LOGIC
                Navigator.pop(ctx);
-               _discardAudio(); // Delete temp file
-               setState(() {
-                 _answerController.text = ""; 
-               });
-               _startListening(); // Auto-retry
+               _discardAudio();
+               setState(() { _answerController.text = ""; });
+               _startListening();
             },
-            child: const Text("Retry (Clear & Record)"),
+            child: const Text("Retry"),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -463,7 +555,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
               await _handleConfirmedAnswer();
               widget.ttsService.speak("Answer saved.");
             },
-            child: const Text("Yes, Confirm"),
+            child: const Text("Confirm"),
           ),
         ],
       ),
@@ -473,227 +565,34 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
   void _discardAudio() {
     if (_tempAudioPath != null) {
       final file = File(_tempAudioPath!);
-      if (file.existsSync()) {
-        file.deleteSync();
-      }
+      if (file.existsSync()) file.deleteSync();
       _tempAudioPath = null;
     }
   }
 
   Future<void> _handleConfirmedAnswer() async {
-    // 1. Save Answer Text
     widget.question.answer = _answerController.text;
-
-    // 2. Move Audio to Permanent Storage
     if (_tempAudioPath != null) {
       try {
         final appDir = await getApplicationDocumentsDirectory();
         final fileName = 'answer_q${widget.question.number ?? "x"}_${DateTime.now().millisecondsSinceEpoch}.m4a';
         final permPath = '${appDir.path}/$fileName';
-        
         await File(_tempAudioPath!).copy(permPath);
-        
-        // 3. Save Audio Path to Model
-        setState(() {
-           widget.question.audioPath = permPath;
-        });
-
-        // Cleanup temp
+        setState(() { widget.question.audioPath = permPath; });
         _discardAudio(); 
-
-      } catch (e) {
-        print("Error saving permanent audio: $e");
-      }
-    }
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    // Stop any ongoing TTS and load settings
-    _stopAndInit();
-    // Initialize answer controller
-    _answerController.text = widget.question.answer;
-    _answerController.addListener(() {
-      widget.question.answer = _answerController.text;
-    });
-  }
-
-  Future<void> _stopAndInit() async {
-    // Ensure TTS stops before doing anything else
-    await widget.ttsService.stop();
-    await _loadSettings();
-  }
-
-  Future<void> _loadSettings() async {
-    final prefs = await widget.ttsService.loadPreferences();
-    if (mounted) {
-      setState(() {
-        _currentSpeed = prefs['speed'] ?? 0.5;
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _answerController.dispose();
-    widget.ttsService.stop(); // Stop immediately on exit
-    _audioPlayer.dispose();
-    super.dispose();
-  }
-
-  String get _fullText {
-    final sb = StringBuffer();
-    // 1. Prepend Context if enabled and available
-    if (_playContext && widget.contextText != null && widget.contextText!.isNotEmpty) {
-       sb.write("Context: ${widget.contextText}. ");
-       sb.write("\n\n");
-    }
-
-    if (widget.question.number != null) sb.write("Question ${widget.question.number}. ");
-    sb.write(widget.question.prompt);
-    sb.write("\n");
-    sb.write(widget.question.body.join("\n"));
-    return sb.toString();
-  }
-
-  int _lastSpeechStartOffset = 0; // Tracks the absolute offset in the text where the LAST chunk started
-  
-  int get _currentAbsolutePosition {
-    // Current absolute = Offset of current chunk + Progress within current chunk
-    return _lastSpeechStartOffset + widget.ttsService.currentWordStart;
-  }
-
-  Future<void> _speakFromPosition(int start) async {
-      String textToSpeak = _fullText;
-      if (start > 0 && start < textToSpeak.length) {
-         textToSpeak = textToSpeak.substring(start);
-      }
-      
-      // Update offset for this new chunk
-      _lastSpeechStartOffset = start;
-      
-      setState(() {
-       _isReading = true; 
-       _isPaused = false;
-      });
-      
-      await widget.ttsService.speakAndWait(textToSpeak);
-      
-      if (mounted) {
-        // Only reset if we are NOT paused. 
-        // If we were paused by _onStopPressed, _isPaused will be true.
-        if (!_isPaused) {
-          setState(() {
-            _isReading = false;
-            // _isPaused = false; // Already false if we are here
-          });
-        }
-      }
-  }
-
-  void _onReadPressed() async {
-    if (_isPaused) {
-       // Resume from tracked position
-       await _speakFromPosition(_lastSpeechStartOffset); 
-    } else {
-       // Start fresh
-       _lastSpeechStartOffset = 0;
-       await _speakFromPosition(0);
-    }
-  }
-
-  void _onStopPressed() async {
-    if (!_isPaused) {
-      // Pause action
-      
-      // Capture current position before pausing/stopping
-      int currentPos = _currentAbsolutePosition;
-      
-      setState(() {
-        _isPaused = true;
-        _lastSpeechStartOffset = currentPos; // Save for resume
-      });
-      
-      await widget.ttsService.stop(); // Stop completely
-      
-    } else {
-      // Restart action
-      await widget.ttsService.stop(); 
-      setState(() {
-        _isPaused = false;
-        _lastSpeechStartOffset = 0;
-      });
-      // Start fresh
-      _onReadPressed();
-    }
-  }
-  
-  void _changeSpeed() async {
-    // Cycle: 0.5 -> 0.75 -> 1.0 -> 1.25 -> 1.5 -> 0.5
-    double newSpeed = _currentSpeed + 0.25;
-    if (newSpeed > 1.5) newSpeed = 0.5;
-    
-    // Capture absolute position BEFORE stopping
-    int currentPos = _currentAbsolutePosition;
-    
-    // Check state
-    bool wasReading = _isReading && !_isPaused;
-    bool wasPaused = _isPaused;
-
-    // Stop to apply settings safely
-    await widget.ttsService.stop(); 
-    
-    // Update setting
-    setState(() => _currentSpeed = newSpeed);
-    await widget.ttsService.setSpeed(newSpeed);
-    await widget.ttsService.savePreferences(speed: newSpeed, volume: 0.7);
-
-    if (wasReading) {
-       // Auto-resume if we were actively reading
-       await _speakFromPosition(currentPos);
-    } else if (wasPaused) {
-       // Just update offset so Resume works correctly
-       _lastSpeechStartOffset = currentPos;
+      } catch (e) { print("Error saving audio: $e"); }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Labels logic:
-    // If Reading (and not paused): Read="Scanning..."(disabled?), Stop="Stop"
-    // Wait, user said "Read button should say Resume".
-    // State: Reading (Active) -> Read="Reading", Stop="Stop"
-    // State: Paused -> Read="Resume", Stop="Restart"
-    // State: Idle -> Read="Read", Stop="Stop"(Disabled?) or Hidden?
-    
-    String readLabel = "Read";
-    IconData readIcon = Icons.volume_up;
-    VoidCallback? onRead = _onReadPressed;
+    String readLabel = _isPaused ? "Resume" : (_isReading ? "Reading..." : "Read");
+    IconData readIcon = _isPaused ? Icons.play_arrow : Icons.volume_up;
+    VoidCallback? onRead = (_isReading && !_isPaused) ? null : _onReadPressed;
 
-    String stopLabel = "Stop";
-    IconData stopIcon = Icons.stop;
-    VoidCallback? onStop = _onStopPressed;
-
-    if (_isReading && !_isPaused) {
-      readLabel = "Reading...";
-      readIcon = Icons.volume_up;
-      onRead = null; // Disable read button while reading? Or allow it to Restart?
-      // User didn't specify, but typically disabled.
-      
-      stopLabel = "Stop"; // Acts as Pause based on user request
-      onStop = _onStopPressed;
-    } else if (_isPaused) {
-      readLabel = "Resume";
-      readIcon = Icons.play_arrow;
-      
-      stopLabel = "Restart";
-      stopIcon = Icons.replay;
-    } else {
-      // Idle
-      readLabel = "Read";
-      onStop = null; // Can't stop if not playing
-    }
+    String stopLabel = _isPaused ? "Restart" : "Stop";
+    IconData stopIcon = _isPaused ? Icons.replay : Icons.stop;
+    VoidCallback? onStop = (!_isReading && !_isPaused) ? null : _onStopPressed;
 
     return Scaffold(
       appBar: AppBar(title: const Text("Question Detail")),
@@ -717,25 +616,13 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              "Shared Context:",
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.amber.shade900
-                              ),
-                            ),
+                            Text("Shared Context:", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.amber.shade900)),
                             const SizedBox(height: 4),
-                            Text(
-                              widget.contextText!,
-                              style: const TextStyle(fontSize: 15, height: 1.4),
-                            ),
+                            Text(widget.contextText!, style: const TextStyle(fontSize: 15, height: 1.4)),
                             SwitchListTile(
                               title: const Text("Read this context too?", style: TextStyle(fontSize: 14)),
                               value: _playContext, 
-                              onChanged: (val) {
-                                setState(() => _playContext = val);
-                              },
+                              onChanged: (val) => setState(() => _playContext = val),
                               contentPadding: EdgeInsets.zero,
                               visualDensity: VisualDensity.compact,
                             )
@@ -744,26 +631,12 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                        ),
                        const SizedBox(height: 16),
                     ],
-
                     if (widget.question.number != null)
-                      Text(
-                        "Question ${widget.question.number}",
-                        style: const TextStyle(
-                            fontSize: 22, fontWeight: FontWeight.bold),
-                      ),
+                      Text("Question ${widget.question.number}", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
                     if (widget.question.marks != null)
-                      Text(
-                        "Marks: ${widget.question.marks}",
-                        style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey.shade700,
-                            fontStyle: FontStyle.italic),
-                      ),
+                      Text("Marks: ${widget.question.marks}", style: TextStyle(fontSize: 14, color: Colors.grey.shade700, fontStyle: FontStyle.italic)),
                     const SizedBox(height: 16),
-                    Text(
-                      widget.question.prompt,
-                      style: const TextStyle(fontSize: 18),
-                    ),
+                    Text(widget.question.prompt, style: const TextStyle(fontSize: 18)),
                     const SizedBox(height: 8),
                     ..._buildBodyWidgets(widget.question.body),
                     const SizedBox(height: 24),
@@ -777,12 +650,9 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                         hintText: "Type or detect answer...",
                         border: const OutlineInputBorder(),
                         suffixIcon: _isProcessingAudio 
-                          ? const Padding(
-                              padding: EdgeInsets.all(12.0),
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
+                          ? const Padding(padding: EdgeInsets.all(12.0), child: CircularProgressIndicator(strokeWidth: 2))
                           : IconButton(
-                              icon: Icon(_isListening ? Icons.stop : Icons.mic), // Changed to Stop icon while recording
+                              icon: Icon(_isListening ? Icons.stop : Icons.mic),
                               color: _isListening ? Colors.red : Colors.grey,
                               onPressed: _isListening ? _stopListening : _startListening,
                             ),
@@ -790,40 +660,28 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                     ),
                     if (widget.question.audioPath != null && widget.question.audioPath!.isNotEmpty)
                        Padding(
-                         padding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
+                         padding: const EdgeInsets.symmetric(vertical: 8.0),
                          child: OutlinedButton.icon(
                            icon: const Icon(Icons.play_circle_fill),
                            label: const Text("Play Saved Answer"),
-                           onPressed: () async {
-                              await _audioPlayer.play(DeviceFileSource(widget.question.audioPath!));
-                           },
+                           onPressed: () async => await _audioPlayer.play(DeviceFileSource(widget.question.audioPath!)),
                          ),
                        ),
-                    if (_isListening)
-                       const Padding(
-                         padding: EdgeInsets.only(top: 8.0),
-                         child: LinearProgressIndicator(), 
-                       ),
-                    const SizedBox(height: 20),
                   ],
                 ),
               ),
             ),
-            // Controls
+            
+            // Audio Action Buttons
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                // Read / Resume
                 ElevatedButton.icon(
                   onPressed: onRead,
                   icon: Icon(readIcon),
                   label: Text(readLabel),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  ),
+                  style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12)),
                 ),
-                
-                // Stop / Restart
                 ElevatedButton.icon(
                   onPressed: onStop,
                   icon: Icon(stopIcon),
@@ -837,15 +695,33 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
               ],
             ),
             const SizedBox(height: 16),
-            // Speed Control
-            ElevatedButton.icon(
-              onPressed: _changeSpeed,
-              icon: const Icon(Icons.speed),
-              label: Text("Speed: ${_currentSpeed.toStringAsFixed(2)}x"),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blueGrey.shade100,
-                foregroundColor: Colors.black87,
-              ),
+
+            // Speed and Volume Controls
+            Row(
+              children: [
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 4.0),
+                    child: ElevatedButton.icon(
+                      onPressed: _changeSpeed,
+                      icon: const Icon(Icons.speed, size: 18),
+                      label: Text("${_displaySpeed.toStringAsFixed(2)}x"),
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey.shade100, foregroundColor: Colors.black87),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 4.0),
+                    child: ElevatedButton.icon(
+                      onPressed: _changeVolume,
+                      icon: Icon(_currentVolume < 0.5 ? Icons.volume_down : Icons.volume_up, size: 18),
+                      label: Text("Vol: ${(_currentVolume * 100).toInt()}%"),
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey.shade100, foregroundColor: Colors.black87),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -853,97 +729,37 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     );
   }
 
-
   List<Widget> _buildBodyWidgets(List<String> body) {
     List<Widget> widgets = [];
     List<String> currentBoxItems = [];
     String? currentBoxTitle;
     bool inBox = false;
-
-    for (var i = 0; i < body.length; i++) {
-        final line = body[i];
+    for (var line in body) {
         final trimmed = line.trim();
-
         if (trimmed.startsWith("[[BOX:") && trimmed.endsWith("]]")) {
-            if (inBox) {
-               widgets.add(_buildBoxWidget(currentBoxTitle, currentBoxItems));
-               currentBoxItems = [];
-            }
+            if (inBox) widgets.add(_buildBoxWidget(currentBoxTitle, currentBoxItems));
             inBox = true;
             currentBoxTitle = trimmed.substring(6, trimmed.length - 2).trim(); 
+            currentBoxItems = [];
         } else if (trimmed == "[[BOX END]]") {
-            if (inBox) {
-                widgets.add(_buildBoxWidget(currentBoxTitle, currentBoxItems));
-                inBox = false;
-                currentBoxItems = [];
-                currentBoxTitle = null;
-            }
+            if (inBox) { widgets.add(_buildBoxWidget(currentBoxTitle, currentBoxItems)); inBox = false; }
         } else {
-            if (inBox) {
-                currentBoxItems.add(line);
-            } else {
-                if (line.startsWith("Word Box:")) {
-                   widgets.add(_buildBoxWidget("Word Box", [line.replaceFirst("Word Box:", "")]));
-                } else {
-                   widgets.add(Padding(
-                     padding: const EdgeInsets.only(bottom: 4),
-                     child: Text(line, style: const TextStyle(fontSize: 16)),
-                   ));
-                }
-            }
+            if (inBox) { currentBoxItems.add(line); } 
+            else { widgets.add(Padding(padding: const EdgeInsets.only(bottom: 4), child: Text(line, style: const TextStyle(fontSize: 16)))); }
         }
     }
-    
-    if (inBox && currentBoxItems.isNotEmpty) {
-        widgets.add(_buildBoxWidget(currentBoxTitle, currentBoxItems));
-    }
-    
+    if (inBox) widgets.add(_buildBoxWidget(currentBoxTitle, currentBoxItems));
     return widgets;
   }
 
   Widget _buildBoxWidget(String? title, List<String> items) {
     return Container(
-       width: double.infinity,
-       margin: const EdgeInsets.symmetric(vertical: 8),
-       decoration: BoxDecoration(
-         color: Colors.white,
-         border: Border.all(color: Colors.blueGrey.shade300),
-         borderRadius: BorderRadius.circular(8),
-         boxShadow: [
-            BoxShadow(color: Colors.grey.withOpacity(0.1), blurRadius: 4, offset: const Offset(0, 2))
-         ]
-       ),
-       child: Column(
-         crossAxisAlignment: CrossAxisAlignment.stretch,
-         children: [
-            Container(
-               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-               decoration: BoxDecoration(
-                  color: Colors.blueGrey.shade50,
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
-                  border: Border(bottom: BorderSide(color: Colors.blueGrey.shade200))
-               ),
-               child: Text(
-                  title ?? "Box",
-                  style: TextStyle(
-                     fontSize: 14, 
-                     fontWeight: FontWeight.bold,
-                     color: Colors.blueGrey.shade800
-                  ),
-               ),
-            ),
-            Padding(
-               padding: const EdgeInsets.all(12.0),
-               child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: items.map((item) => Padding(
-                     padding: const EdgeInsets.only(bottom: 4),
-                     child: Text(item, style: const TextStyle(fontSize: 15, height: 1.3)),
-                  )).toList(),
-               ),
-            ),
-         ],
-       ),
+        width: double.infinity, margin: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(color: Colors.white, border: Border.all(color: Colors.blueGrey.shade300), borderRadius: BorderRadius.circular(8)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.blueGrey.shade50, borderRadius: const BorderRadius.vertical(top: Radius.circular(8))), child: Text(title ?? "Box", style: const TextStyle(fontWeight: FontWeight.bold))),
+            Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: items.map((i) => Text(i)).toList())),
+        ]),
     );
   }
 }
