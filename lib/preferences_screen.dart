@@ -11,7 +11,8 @@ class PreferencesScreen extends StatefulWidget {
 }
 
 class _PreferencesScreenState extends State<PreferencesScreen> {
-  double _speed = 0.5;
+  // Track what the user sees (Human-readable speed)
+  double _displaySpeed = 1.0; 
   double _volume = 0.7;
 
   final TextEditingController _apiKeyController = TextEditingController();
@@ -21,7 +22,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     super.initState();
     _loadPreferences();
     widget.ttsService.speak(
-      "Welcome to the Preferences screen. Here you can adjust TTS speed and volume, and set your API key.",
+      "Welcome to the Preferences screen. Here you can adjust speed and volume.",
     );
   }
 
@@ -30,18 +31,26 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     final sp = await SharedPreferences.getInstance();
     if (mounted) {
       setState(() {
-        _speed = prefs['speed']!;
-        _volume = prefs['volume']!;
+        // Load the human-readable speed, default to 1.0
+        _displaySpeed = prefs['speed'] ?? 1.0;
+        _volume = prefs['volume'] ?? 0.7;
         _apiKeyController.text = sp.getString('gemini_api_key') ?? '';
       });
+      // Ensure engine is synced with mapped value immediately
+      await widget.ttsService.setSpeed(_displaySpeed * 0.5);
+      await widget.ttsService.setVolume(_volume);
     }
   }
 
   Future<void> _savePreferences() async {
-    widget.ttsService.setSpeed(_speed);
-    widget.ttsService.setVolume(_volume);
+    // 1. Map display speed to engine speed for the session
+    double engineSpeed = _displaySpeed * 0.5;
+    await widget.ttsService.setSpeed(engineSpeed);
+    await widget.ttsService.setVolume(_volume);
+
+    // 2. Save the display speed (so other screens load 1.0, 1.25, etc.)
     await widget.ttsService.savePreferences(
-      speed: _speed,
+      speed: _displaySpeed,
       volume: _volume,
     );
     
@@ -49,7 +58,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     await sp.setString('gemini_api_key', _apiKeyController.text.trim());
 
     widget.ttsService.speak(
-      "Preferences and API key saved successfully.",
+      "Preferences saved successfully.",
     );
     
     if (mounted) {
@@ -61,10 +70,12 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
 
   void _reset() async {
     setState(() {
-      _speed = 1.0;
+      _displaySpeed = 1.0; // Reset to normal human speed
       _volume = 0.7;
       _apiKeyController.clear();
     });
+    
+    // Reset TTS engine to internal defaults
     await widget.ttsService.resetPreferences();
     final sp = await SharedPreferences.getInstance();
     await sp.remove('gemini_api_key');
@@ -100,10 +111,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                   children: [
                     const Text(
                       'Gemini API Key',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
                     TextField(
@@ -133,18 +141,19 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Speed: ${_speed.toStringAsFixed(2)}',
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      'Speed: ${_displaySpeed.toStringAsFixed(2)}x',
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                     Slider(
-                      min: 0.1,
-                      max: 1.5,
-                      value: _speed,
-                      divisions: 14,
-                      onChanged: (v) => setState(() => _speed = v),
+                      min: 0.5,
+                      max: 1.75,
+                      value: _displaySpeed,
+                      divisions: 5, // Creates steps of 0.25 (0.5, 0.75, 1.0, 1.25, 1.5, 1.75)
+                      onChanged: (v) {
+                        setState(() => _displaySpeed = v);
+                        // Real-time engine update with mapping
+                        widget.ttsService.setSpeed(v * 0.5);
+                      },
                     ),
                     Align(
                       alignment: Alignment.centerRight,
@@ -152,7 +161,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                         icon: const Icon(Icons.play_arrow),
                         color: Colors.blueAccent,
                         onPressed: () =>
-                            widget.ttsService.speak("This is a speed test"),
+                            widget.ttsService.speak("This is a speed test at ${_displaySpeed.toStringAsFixed(2)} speed"),
                       ),
                     ),
                   ],
@@ -173,18 +182,18 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Volume: ${_volume.toStringAsFixed(2)}',
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      'Volume: ${(_volume * 100).toInt()}%',
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                     Slider(
                       min: 0.0,
                       max: 1.0,
                       value: _volume,
                       divisions: 10,
-                      onChanged: (v) => setState(() => _volume = v),
+                      onChanged: (v) {
+                        setState(() => _volume = v);
+                        widget.ttsService.setVolume(v);
+                      },
                     ),
                     Align(
                       alignment: Alignment.centerRight,

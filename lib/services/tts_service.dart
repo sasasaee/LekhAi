@@ -194,7 +194,7 @@ class TtsService {
   }
 
   Future<void> setSpeed(double v) async {
-    await _tts.setSpeechRate(v.clamp(0.1, 1.5));
+    await _tts.setSpeechRate(v.clamp(0.1, 2.0));
   }
   Future<void> setVolume(double v) => _tts.setVolume(v.clamp(0.0, 1.0));
 
