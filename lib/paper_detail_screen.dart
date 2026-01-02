@@ -8,6 +8,7 @@ import 'services/tts_service.dart';
 import 'dart:convert';
 import 'services/stt_service.dart';
 import 'services/audio_recorder_service.dart';
+import 'services/voice_command_service.dart'; // Added
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'package:audioplayers/audioplayers.dart';
@@ -17,12 +18,14 @@ import 'package:audioplayers/audioplayers.dart';
 class PaperDetailScreen extends StatefulWidget {
   final ParsedDocument document;
   final TtsService ttsService;
+  final VoiceCommandService voiceService; // Added
   final String timestamp;
 
   const PaperDetailScreen({
     super.key,
     required this.document,
     required this.ttsService,
+    required this.voiceService, // Added
     required this.timestamp,
   });
 
@@ -34,11 +37,115 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
   late ParsedDocument _document;
   final GeminiQuestionService _geminiService = GeminiQuestionService();
   final QuestionStorageService _storageService = QuestionStorageService();
-
+  final SttService _sttService = SttService(); 
+  bool _isListening = false;
   @override
   void initState() {
     super.initState();
     _document = widget.document;
+    
+    // Initialize the listener for this screen
+    _initVoiceCommandListener();
+  }
+
+  @override
+  void dispose() {
+    _sttService.stopListening(); // Stop listening when leaving the screen
+    super.dispose();
+  }
+
+  // --- VOICE COMMAND LOGIC FOR LIST SCREEN ---
+  void _initVoiceCommandListener() async {
+    bool available = await _sttService.init(
+      onStatus: (status) {
+        print("Paper List STT Status: $status");
+        // Keep-alive loop for the listener
+        if ((status == 'notListening' || status == 'done') && !_isListening) {
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (mounted && !_isListening) _startCommandStream();
+          });
+        }
+      },
+      onError: (error) => print("Paper List STT Error: $error"),
+    );
+
+    if (available) {
+      _startCommandStream();
+    }
+  }
+
+  void _startCommandStream() {
+    if (!_sttService.isAvailable || _isListening) return;
+
+    _sttService.startListening(
+      localeId: "en-US",
+      onResult: (text) {
+        final result = widget.voiceService.parse(text);
+        if (result.action != VoiceAction.unknown) {
+          _executeVoiceCommand(result);
+        }
+      },
+    );
+  }
+
+  void _executeVoiceCommand(CommandResult result) async {
+    switch (result.action) {
+      case VoiceAction.goToQuestion:
+        // payload contains the question number (e.g., 1, 2, 3)
+        final int? qNum = result.payload;
+        if (qNum != null) {
+          _openQuestionByNumber(qNum);
+        }
+        break;
+
+      case VoiceAction.goBack:
+        await widget.ttsService.speak("Going back to home.");
+        if (mounted) Navigator.pop(context);
+        break;
+
+      case VoiceAction.submitExam: // Use this as "Save" for this screen
+        await widget.ttsService.speak("Saving paper progress.");
+        _savePaper(context);
+        break;
+
+      default:
+        widget.voiceService.performGlobalNavigation(result);
+        break;
+    }
+  }
+
+  // Helper to open a question via voice
+  void _openQuestionByNumber(int number) {
+    ParsedQuestion? target;
+    String? contextText;
+
+    // Search through sections for the question number
+    for (var section in _document.sections) {
+      for (var q in section.questions) {
+        if (q.number == number.toString()) {
+          target = q;
+          contextText = section.context;
+          break;
+        }
+      }
+    }
+
+    if (target != null) {
+      widget.ttsService.speak("Opening question $number.");
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => SingleQuestionScreen(
+            question: target!,
+            contextText: contextText,
+            ttsService: widget.ttsService,
+            voiceService: widget.voiceService,
+          ),
+        ),
+      );
+    } else {
+      widget.ttsService.speak("Question $number not found.");
+    }
   }
 
   Future<void> _processWithGemini(BuildContext context, String apiKey) async {
@@ -190,6 +297,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
                         question: q,
                         contextText: item.context,
                         ttsService: widget.ttsService,
+                        voiceService: widget.voiceService, // Pass service
                       ),
                     ),
                   );
@@ -287,12 +395,14 @@ class SingleQuestionScreen extends StatefulWidget {
   final ParsedQuestion question;
   final String? contextText; 
   final TtsService ttsService;
+  final VoiceCommandService voiceService; // Added
 
   const SingleQuestionScreen({
     super.key,
     required this.question,
     this.contextText,
     required this.ttsService,
+    required this.voiceService, // Added
   });
 
   @override
@@ -303,7 +413,6 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
   bool _isReading = false;
   bool _isPaused = false;
   
-  // Mapped Speed: 1.0 (Display) = 0.5 (Engine)
   double _displaySpeed = 1.0; 
   double _currentVolume = 1.0;
   bool _playContext = false;
@@ -322,10 +431,92 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     super.initState();
     _stopAndInit();
     _answerController.text = widget.question.answer;
+    
+    // Start Command Listener
+    _initVoiceCommandListener();
+
     _answerController.addListener(() {
       widget.question.answer = _answerController.text;
     });
   }
+
+  // --- VOICE COMMAND LOGIC ---
+  void _initVoiceCommandListener() async {
+    bool available = await _sttService.init(
+      onStatus: (status) {
+        print("STT Status: $status");
+        // FIX: If the engine stops (status 'done' or 'notListening') and 
+        // the student isn't currently dictating an answer, restart it.
+        if ((status == 'notListening' || status == 'done') && !_isListening) {
+          // A 500ms delay ensures the OS has fully released the mic before we re-acquire it
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (mounted && !_isListening) _startCommandStream();
+          });
+        }
+      },
+      onError: (error) => print("STT Error: $error"),
+    );
+
+    if (available) {
+      _startCommandStream();
+    }
+  }
+
+  // NEW: Helper method to handle the actual listening call
+  void _startCommandStream() {
+    // Ensure the service is ready and we aren't recording an answer (Gemini mode)
+    if (!_sttService.isAvailable || _isListening) return;
+
+    _sttService.startListening(
+      localeId: "en-US",
+      onResult: (text) {
+        // Block command execution if the student is currently dictating an answer
+        if (_isListening) return;
+
+        final result = widget.voiceService.parse(text);
+        if (result.action != VoiceAction.unknown) {
+          _executeVoiceCommand(result);
+        }
+      },
+    );
+  }
+
+  void _executeVoiceCommand(CommandResult result) async {
+  switch (result.action) {
+    case VoiceAction.readQuestion:
+      await widget.ttsService.speak("Reading question."); // Added feedback
+      _onReadPressed();
+      break;
+      
+    case VoiceAction.startDictation:
+      await widget.ttsService.speak("Starting dictation."); // Added feedback
+      _startListening();
+      break;
+      
+    case VoiceAction.stopDictation:
+      await widget.ttsService.speak("Stopping dictation."); // Added feedback
+      _stopListening();
+      break;
+      
+    case VoiceAction.readAnswer:
+      widget.ttsService.speak("Your current answer is: ${_answerController.text}"); //
+      break;
+      
+    case VoiceAction.changeSpeed:
+      _changeSpeed();
+      await widget.ttsService.speak("Speed changed to ${_displaySpeed.toStringAsFixed(2)}."); // Added feedback
+      break;
+      
+    case VoiceAction.goBack:
+      await widget.ttsService.speak("Going back."); // Added feedback
+      Navigator.pop(context);
+      break;
+      
+    default:
+      widget.voiceService.performGlobalNavigation(result);
+      break;
+  }
+}
 
   Future<void> _stopAndInit() async {
     await widget.ttsService.stop();
@@ -339,7 +530,6 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         _displaySpeed = prefs['speed'] ?? 1.0;
         _currentVolume = prefs['volume'] ?? 1.0;
       });
-      // Apply mapped speed to engine
       await widget.ttsService.setSpeed(_displaySpeed * 0.5);
       await widget.ttsService.setVolume(_currentVolume);
     }
@@ -347,6 +537,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
 
   @override
   void dispose() {
+    _sttService.stopListening(); // Stop command listener
     _answerController.dispose();
     widget.ttsService.stop();
     _audioPlayer.dispose();
@@ -390,7 +581,6 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     
     setState(() => _displaySpeed = nextDisplaySpeed);
     
-    // Engine gets Display * 0.5
     await widget.ttsService.setSpeed(nextDisplaySpeed * 0.5);
     await widget.ttsService.savePreferences(speed: nextDisplaySpeed, volume: _currentVolume);
 
@@ -465,6 +655,9 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
       widget.ttsService.speak("Microphone permission needed.");
       return;
     }
+    // Briefly stop command listener to free mic for recording
+    await _sttService.stopListening();
+    
     await widget.ttsService.speak("Listening.");
     await Future.delayed(const Duration(milliseconds: 600));
     final tempDir = await getTemporaryDirectory();
@@ -475,7 +668,10 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         _isListening = true;
         _isProcessingAudio = false;
       });
-    } catch (e) { widget.ttsService.speak("Failed to start recording."); }
+    } catch (e) { 
+      widget.ttsService.speak("Failed to start recording."); 
+      _initVoiceCommandListener(); // Resume listener on fail
+    }
   }
 
   void _stopListening() async {
@@ -485,9 +681,12 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
       if (path == null) {
         widget.ttsService.speak("Recording failed.");
         setState(() => _isProcessingAudio = false);
+        _initVoiceCommandListener();
         return;
       }
       await _processAudioAnswer(path);
+      // Resume Command Listener
+      _initVoiceCommandListener();
     }
   }
 
@@ -672,7 +871,6 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
               ),
             ),
             
-            // Audio Action Buttons
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
@@ -696,7 +894,6 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
             ),
             const SizedBox(height: 16),
 
-            // Speed and Volume Controls
             Row(
               children: [
                 Expanded(
