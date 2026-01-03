@@ -1,6 +1,7 @@
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:speech_to_text/speech_recognition_error.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
+import 'package:flutter_volume_controller/flutter_volume_controller.dart';
 
 class SttService {
   late stt.SpeechToText _speech;
@@ -31,7 +32,7 @@ class SttService {
         print('STT Status: $status');
         if (this.onStatusChange != null) this.onStatusChange!(status);
       },
-      debugLogging: true,
+      debugLogging: false,
     );
     return _isAvailable;
   }
@@ -42,28 +43,53 @@ class SttService {
   }) async {
     if (!_isAvailable) return;
     
-    // For exams:
-    // listenFor: Max duration (e.g., 30s or minute before it might auto-cut, depending on OS limits)
-    // pauseFor: How long to wait for silence before stopping (set high for thinking time, e.g., 5s)
-    // partialResults: true (to see text as speaking)
-    // listenMode: dictation (optimized for longer speech)
-    
+    // 1. MUTE SYSTEM SOUNDS (To hide the "ding")
+    double? originalSystemVol;
+    double? originalNotifVol;
+    try {
+      originalSystemVol = await FlutterVolumeController.getVolume(stream: AudioStream.system);
+      originalNotifVol = await FlutterVolumeController.getVolume(stream: AudioStream.notification);
+      
+      await FlutterVolumeController.updateShowSystemUI(false);
+      await FlutterVolumeController.setVolume(0, stream: AudioStream.system);
+      await FlutterVolumeController.setVolume(0, stream: AudioStream.notification);
+    } catch (e) {
+      print("Error muting for STT: $e");
+    }
+
+    // 2. START LISTENING
     await _speech.listen(
       onResult: (result) => onResult(result.recognizedWords),
-      listenFor: const Duration(seconds: 60), 
-      pauseFor: const Duration(seconds: 10), 
+      listenFor: const Duration(seconds: 300), 
+      pauseFor: const Duration(seconds: 30),   
       partialResults: true,
       localeId: localeId,
-      cancelOnError: false, // Don't stop on minor errors
+      cancelOnError: false, 
       listenMode: stt.ListenMode.dictation, 
     );
+    
+    // 3. RESTORE VOLUME (After delay to ensure beep didn't play)
+    Future.delayed(const Duration(milliseconds: 600), () async {
+      try {
+        if (originalSystemVol != null) {
+          await FlutterVolumeController.setVolume(originalSystemVol, stream: AudioStream.system);
+        }
+        if (originalNotifVol != null) {
+            await FlutterVolumeController.setVolume(originalNotifVol, stream: AudioStream.notification);
+        }
+      } catch (e) {
+        print("Error restoring volume: $e");
+      }
+    });
   }
 
   Future<void> stopListening() async {
     await _speech.stop();
+    await FlutterVolumeController.updateShowSystemUI(true);
   }
 
   void dispose() {
     _speech.stop();
+    FlutterVolumeController.updateShowSystemUI(true);
   }
 }

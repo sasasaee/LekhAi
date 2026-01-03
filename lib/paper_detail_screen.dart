@@ -15,10 +15,14 @@ import 'package:audioplayers/audioplayers.dart';
 
 // --- PAPER DETAIL SCREEN ---
 
+import 'services/accessibility_service.dart';
+import 'widgets/accessible_widgets.dart'; // Added
+
 class PaperDetailScreen extends StatefulWidget {
   final ParsedDocument document;
   final TtsService ttsService;
   final VoiceCommandService voiceService; // Added
+  final AccessibilityService? accessibilityService;
   final String timestamp;
 
   const PaperDetailScreen({
@@ -26,6 +30,7 @@ class PaperDetailScreen extends StatefulWidget {
     required this.document,
     required this.ttsService,
     required this.voiceService, // Added
+    this.accessibilityService,
     required this.timestamp,
   });
 
@@ -43,7 +48,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
   void initState() {
     super.initState();
     _document = widget.document;
-    
+    AccessibilityService().trigger(AccessibilityEvent.navigation);
     // Initialize the listener for this screen
     _initVoiceCommandListener();
   }
@@ -140,6 +145,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
             contextText: contextText,
             ttsService: widget.ttsService,
             voiceService: widget.voiceService,
+            accessibilityService: widget.accessibilityService,
           ),
         ),
       );
@@ -160,7 +166,9 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
     );
 
     try {
+      AccessibilityService().trigger(AccessibilityEvent.loading);
       final newDoc = await _geminiService.processImage(image.path, apiKey);
+      AccessibilityService().trigger(AccessibilityEvent.success);
       
       setState(() {
           _document.sections.addAll(newDoc.sections);
@@ -209,7 +217,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       appBar: AppBar(
         title: Text('Paper $dateStr'),
         actions: [
-          IconButton(
+          AccessibleIconButton(
             icon: const Icon(Icons.save),
             tooltip: "Save Paper",
             onPressed: () => _savePaper(context),
@@ -279,7 +287,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
             return Card(
               margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               elevation: 2,
-              child: ListTile(
+              child: AccessibleListTile(
                 title: Text("$qTitle $marks", style: const TextStyle(fontWeight: FontWeight.w600)),
                 subtitle: Padding(
                   padding: const EdgeInsets.only(top: 4),
@@ -297,7 +305,8 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
                         question: q,
                         contextText: item.context,
                         ttsService: widget.ttsService,
-                        voiceService: widget.voiceService, // Pass service
+                        voiceService: widget.voiceService,
+                        accessibilityService: widget.accessibilityService,
                       ),
                     ),
                   );
@@ -308,10 +317,10 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
           return const SizedBox.shrink();
         },
       ),
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: AccessibleFloatingActionButton(
         onPressed: () => _onAddPage(context),
-        icon: const Icon(Icons.add_a_photo),
-        label: const Text('Add Page'),
+        child: const Icon(Icons.add_a_photo), // FAB child is usually Icon
+        tooltip: 'Add Page',
       ),
     );
   }
@@ -330,14 +339,14 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
               : "No Gemini API Key found. Using standard Local OCR."),
           actions: [
             if (apiKey != null && apiKey.isNotEmpty)
-              TextButton(
+              AccessibleTextButton(
                 onPressed: () {
                    Navigator.pop(ctx);
                    _processWithGemini(context, apiKey!);
                 },
                 child: const Text("Use Gemini AI"),
               ),
-            TextButton(
+            AccessibleTextButton(
               onPressed: () {
                 Navigator.pop(ctx);
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Local Processing unimplemented context...")));
@@ -359,6 +368,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
         );
       }
     } catch (e) {
+      AccessibilityService().trigger(AccessibilityEvent.error);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Failed to save: $e"), backgroundColor: Colors.red),
@@ -396,6 +406,7 @@ class SingleQuestionScreen extends StatefulWidget {
   final String? contextText; 
   final TtsService ttsService;
   final VoiceCommandService voiceService; // Added
+  final AccessibilityService? accessibilityService;
 
   const SingleQuestionScreen({
     super.key,
@@ -403,6 +414,7 @@ class SingleQuestionScreen extends StatefulWidget {
     this.contextText,
     required this.ttsService,
     required this.voiceService, // Added
+    this.accessibilityService,
   });
 
   @override
@@ -429,6 +441,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
   @override
   void initState() {
     super.initState();
+    AccessibilityService().trigger(AccessibilityEvent.navigation);
     _stopAndInit();
     _answerController.text = widget.question.answer;
     
@@ -484,31 +497,31 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
   void _executeVoiceCommand(CommandResult result) async {
   switch (result.action) {
     case VoiceAction.readQuestion:
-      await widget.ttsService.speak("Reading question."); // Added feedback
+      await widget.ttsService.speak("Reading question."); 
       _onReadPressed();
       break;
       
     case VoiceAction.startDictation:
-      await widget.ttsService.speak("Starting dictation."); // Added feedback
+      await widget.ttsService.speak("Starting dictation."); 
       _startListening();
       break;
       
     case VoiceAction.stopDictation:
-      await widget.ttsService.speak("Stopping dictation."); // Added feedback
+      await widget.ttsService.speak("Stopping dictation."); 
       _stopListening();
       break;
       
     case VoiceAction.readAnswer:
-      widget.ttsService.speak("Your current answer is: ${_answerController.text}"); //
+      widget.ttsService.speak("Your current answer is: ${_answerController.text}"); 
       break;
       
     case VoiceAction.changeSpeed:
       _changeSpeed();
-      await widget.ttsService.speak("Speed changed to ${_displaySpeed.toStringAsFixed(2)}."); // Added feedback
+      await widget.ttsService.speak("Speed changed to ${_displaySpeed.toStringAsFixed(2)}."); 
       break;
       
     case VoiceAction.goBack:
-      await widget.ttsService.speak("Going back."); // Added feedback
+      await widget.ttsService.speak("Going back."); 
       Navigator.pop(context);
       break;
       
@@ -739,7 +752,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
           ],
         ),
         actions: [
-          TextButton(
+          AccessibleTextButton(
             onPressed: () {
                Navigator.pop(ctx);
                _discardAudio();
@@ -748,10 +761,11 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
             },
             child: const Text("Retry"),
           ),
-          ElevatedButton(
+          AccessibleElevatedButton(
             onPressed: () async {
               Navigator.pop(ctx);
               await _handleConfirmedAnswer();
+              AccessibilityService().trigger(AccessibilityEvent.success);
               widget.ttsService.speak("Answer saved.");
             },
             child: const Text("Confirm"),
@@ -818,7 +832,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                             Text("Shared Context:", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.amber.shade900)),
                             const SizedBox(height: 4),
                             Text(widget.contextText!, style: const TextStyle(fontSize: 15, height: 1.4)),
-                            SwitchListTile(
+                            AccessibleSwitchListTile(
                               title: const Text("Read this context too?", style: TextStyle(fontSize: 14)),
                               value: _playContext, 
                               onChanged: (val) => setState(() => _playContext = val),
@@ -850,7 +864,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                         border: const OutlineInputBorder(),
                         suffixIcon: _isProcessingAudio 
                           ? const Padding(padding: EdgeInsets.all(12.0), child: CircularProgressIndicator(strokeWidth: 2))
-                          : IconButton(
+                          : AccessibleIconButton(
                               icon: Icon(_isListening ? Icons.stop : Icons.mic),
                               color: _isListening ? Colors.red : Colors.grey,
                               onPressed: _isListening ? _stopListening : _startListening,
@@ -860,9 +874,9 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                     if (widget.question.audioPath != null && widget.question.audioPath!.isNotEmpty)
                        Padding(
                          padding: const EdgeInsets.symmetric(vertical: 8.0),
-                         child: OutlinedButton.icon(
+                         child: AccessibleOutlinedButton(
                            icon: const Icon(Icons.play_circle_fill),
-                           label: const Text("Play Saved Answer"),
+                           child: const Text("Play Saved Answer"),
                            onPressed: () async => await _audioPlayer.play(DeviceFileSource(widget.question.audioPath!)),
                          ),
                        ),
@@ -874,16 +888,16 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                ElevatedButton.icon(
+                AccessibleElevatedButton(
                   onPressed: onRead,
                   icon: Icon(readIcon),
-                  label: Text(readLabel),
+                  child: Text(readLabel),
                   style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12)),
                 ),
-                ElevatedButton.icon(
+                AccessibleElevatedButton(
                   onPressed: onStop,
                   icon: Icon(stopIcon),
-                  label: Text(stopLabel),
+                  child: Text(stopLabel),
                    style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                     backgroundColor: _isPaused ? Colors.orangeAccent : Colors.redAccent,
@@ -899,10 +913,10 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.only(right: 4.0),
-                    child: ElevatedButton.icon(
+                    child: AccessibleElevatedButton(
                       onPressed: _changeSpeed,
                       icon: const Icon(Icons.speed, size: 18),
-                      label: Text("${_displaySpeed.toStringAsFixed(2)}x"),
+                      child: Text("${_displaySpeed.toStringAsFixed(2)}x"),
                       style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey.shade100, foregroundColor: Colors.black87),
                     ),
                   ),
@@ -910,10 +924,10 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.only(left: 4.0),
-                    child: ElevatedButton.icon(
+                    child: AccessibleElevatedButton(
                       onPressed: _changeVolume,
                       icon: Icon(_currentVolume < 0.5 ? Icons.volume_down : Icons.volume_up, size: 18),
-                      label: Text("Vol: ${(_currentVolume * 100).toInt()}%"),
+                      child: Text("Vol: ${(_currentVolume * 100).toInt()}%"),
                       style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey.shade100, foregroundColor: Colors.black87),
                     ),
                   ),

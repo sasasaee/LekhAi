@@ -2,11 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'services/tts_service.dart';
 import 'services/voice_command_service.dart';
+import 'services/accessibility_service.dart';
+import 'widgets/accessible_widgets.dart'; // Added
+
 class PreferencesScreen extends StatefulWidget {
   final TtsService ttsService;
   final VoiceCommandService voiceService;
+  final AccessibilityService? accessibilityService;
+
   const PreferencesScreen({super.key, required this.ttsService,
-    required this.voiceService,});
+    required this.voiceService, this.accessibilityService});
 
   @override
   State<PreferencesScreen> createState() => _PreferencesScreenState();
@@ -34,9 +39,13 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     if (mounted) {
       setState(() {
         // Load the human-readable speed, default to 1.0
-        _displaySpeed = prefs['speed'] ?? 1.0;
-        _volume = prefs['volume'] ?? 0.7;
+        _displaySpeed = (prefs['speed'] as num?)?.toDouble() ?? 1.0;
+        _volume = (prefs['volume'] as num?)?.toDouble() ?? 0.7;
         _apiKeyController.text = sp.getString('gemini_api_key') ?? '';
+        
+        // Load Haptics
+        bool hapticsEnabled = prefs['haptics'] as bool? ?? true;
+        AccessibilityService().setEnabled(hapticsEnabled);
       });
       // Ensure engine is synced with mapped value immediately
       await widget.ttsService.setSpeed(_displaySpeed * 0.5);
@@ -55,6 +64,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       speed: _displaySpeed,
       volume: _volume,
     );
+    await widget.ttsService.saveHapticPreference(AccessibilityService().enabled);
     
     final sp = await SharedPreferences.getInstance();
     await sp.setString('gemini_api_key', _apiKeyController.text.trim());
@@ -62,6 +72,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     widget.ttsService.speak(
       "Preferences saved successfully.",
     );
+    AccessibilityService().trigger(AccessibilityEvent.success);
     
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -83,6 +94,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     await sp.remove('gemini_api_key');
     
     widget.ttsService.speak("Preferences have been reset.");
+    AccessibilityService().trigger(AccessibilityEvent.warning);
   }
 
   @override
@@ -90,7 +102,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Preferences'),
-        leading: IconButton(
+        leading: AccessibleIconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
         ),
@@ -146,7 +158,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                       'Speed: ${_displaySpeed.toStringAsFixed(2)}x',
                       style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                     ),
-                    Slider(
+                    AccessibleSlider(
                       min: 0.5,
                       max: 1.75,
                       value: _displaySpeed,
@@ -159,7 +171,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                     ),
                     Align(
                       alignment: Alignment.centerRight,
-                      child: IconButton(
+                      child: AccessibleIconButton(
                         icon: const Icon(Icons.play_arrow),
                         color: Colors.blueAccent,
                         onPressed: () =>
@@ -187,7 +199,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                       'Volume: ${(_volume * 100).toInt()}%',
                       style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                     ),
-                    Slider(
+                    AccessibleSlider(
                       min: 0.0,
                       max: 1.0,
                       value: _volume,
@@ -199,7 +211,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                     ),
                     Align(
                       alignment: Alignment.centerRight,
-                      child: IconButton(
+                      child: AccessibleIconButton(
                         icon: const Icon(Icons.play_arrow),
                         color: Colors.green,
                         onPressed: () =>
@@ -210,6 +222,30 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                 ),
               ),
             ),
+            const SizedBox(height: 16),
+
+            // Haptic Feedback Toggle
+            Card(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              elevation: 4,
+              child: AccessibleSwitchListTile(
+                 value: AccessibilityService().enabled,
+                 title: const Text(
+                  "Haptic Feedback",
+                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                 ),
+                 subtitle: const Text("Vibrate on interactions"),
+                 onChanged: (val) {
+                   setState(() {
+                     AccessibilityService().setEnabled(val);
+                   });
+                   // Immediate feedback if enabling
+                   if (val) AccessibilityService().trigger(AccessibilityEvent.action);
+                 },
+              ),
+            ),
             const SizedBox(height: 32),
 
             // Buttons
@@ -217,7 +253,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 Expanded(
-                  child: ElevatedButton(
+                  child: AccessibleElevatedButton(
                     onPressed: _savePreferences,
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
@@ -235,7 +271,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                 ),
                 const SizedBox(width: 16),
                 Expanded(
-                  child: ElevatedButton(
+                  child: AccessibleElevatedButton(
                     onPressed: _reset,
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
