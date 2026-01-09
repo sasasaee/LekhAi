@@ -9,7 +9,12 @@ import 'package:image_picker/image_picker.dart';
 import 'services/tts_service.dart';
 import 'services/gemini_question_service.dart';
 import 'services/voice_command_service.dart'; // New Service
+import 'services/tts_service.dart';
+import 'services/gemini_question_service.dart';
+import 'services/voice_command_service.dart'; 
 import 'services/stt_service.dart';
+import 'services/accessibility_service.dart'; // New Service
+
 // Screens
 import 'preferences_screen.dart';
 import 'ocr_screen.dart';
@@ -17,6 +22,7 @@ import 'questions_screen.dart';
 import 'pdf_viewer_screen.dart';
 import 'paper_detail_screen.dart';
 import 'models/question_model.dart';
+import 'widgets/accessible_widgets.dart'; // Added
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,6 +32,7 @@ void main() {
 class MyApp extends StatelessWidget {
   // Initialize core services at the top level
   final TtsService ttsService = TtsService();
+  final AccessibilityService accessibilityService = AccessibilityService(); // Init
   late final VoiceCommandService voiceCommandService;
 
   MyApp({super.key}) {
@@ -46,6 +53,7 @@ class MyApp extends StatelessWidget {
       home: SplashScreen(
         ttsService: ttsService,
         voiceService: voiceCommandService,
+        accessibilityService: accessibilityService,
       ),
       debugShowCheckedModeBanner: false,
       // Named routes make voice navigation easier to manage
@@ -53,9 +61,13 @@ class MyApp extends StatelessWidget {
         '/home': (context) => HomeScreen(
               ttsService: ttsService,
               voiceService: voiceCommandService,
+              accessibilityService: accessibilityService,
             ),
-        '/saved_papers': (context) => QuestionsScreen(ttsService: ttsService,
-              voiceService: voiceCommandService,),
+        '/saved_papers': (context) => QuestionsScreen(
+              ttsService: ttsService,
+              voiceService: voiceCommandService,
+              // accessibilityService: accessibilityService, // Propagate to other screens similarly
+            ),
       },
     );
   }
@@ -66,11 +78,13 @@ class MyApp extends StatelessWidget {
 class SplashScreen extends StatefulWidget {
   final TtsService ttsService;
   final VoiceCommandService voiceService;
+  final AccessibilityService accessibilityService;
   
   const SplashScreen({
     super.key, 
     required this.ttsService, 
     required this.voiceService,
+    required this.accessibilityService,
   });
 
   @override
@@ -89,6 +103,7 @@ class _SplashScreenState extends State<SplashScreen> {
           builder: (_) => HomeScreen(
             ttsService: widget.ttsService,
             voiceService: widget.voiceService,
+            accessibilityService: widget.accessibilityService,
           ),
         ),
       );
@@ -115,11 +130,13 @@ class _SplashScreenState extends State<SplashScreen> {
 class HomeScreen extends StatefulWidget {
   final TtsService ttsService;
   final VoiceCommandService voiceService;
+  final AccessibilityService accessibilityService;
 
   const HomeScreen({
     super.key,
     required this.ttsService,
     required this.voiceService,
+    required this.accessibilityService,
   });
 
   @override
@@ -148,7 +165,8 @@ class _HomeScreenState extends State<HomeScreen>
     _animation = CurvedAnimation(parent: _controller, curve: Curves.easeInOut);
     _controller.forward();
 
-    // 1. Initial Greeting
+    // 1. Initial Greeting & Haptics
+    widget.accessibilityService.trigger(AccessibilityEvent.navigation);
     widget.ttsService.speak(
       "Welcome to the main screen. Choose 'Take Exam' or 'Read PDF'.",
     );
@@ -258,6 +276,7 @@ class _HomeScreenState extends State<HomeScreen>
         builder: (_) => TakeExamScreen(
           ttsService: widget.ttsService,
           voiceService: widget.voiceService,
+          accessibilityService: widget.accessibilityService,
         ),
       ),
     ).then((_) => _initVoiceCommandListener()); // Restart when coming back
@@ -281,12 +300,14 @@ class _HomeScreenState extends State<HomeScreen>
                 icon: Icons.quiz,
                 label: "Take Exam",
                 onTap: _openTakeExam,
+                // accessibilityService removed, handled internally
               ),
               const SizedBox(height: 32),
               AnimatedButton(
                 icon: Icons.picture_as_pdf,
                 label: "Read PDF",
                 onTap: _openPdf,
+                // accessibilityService removed
               ),
             ],
           ),
@@ -300,11 +321,13 @@ class _HomeScreenState extends State<HomeScreen>
 class TakeExamScreen extends StatefulWidget {
   final TtsService ttsService;
   final VoiceCommandService voiceService;
+  final AccessibilityService accessibilityService;
   
   const TakeExamScreen({
     super.key, 
     required this.ttsService,
     required this.voiceService,
+    required this.accessibilityService,
   });
 
   @override
@@ -317,6 +340,7 @@ class _TakeExamScreenState extends State<TakeExamScreen> {
   @override
   void initState() {
     super.initState();
+    widget.accessibilityService.trigger(AccessibilityEvent.navigation);
     widget.ttsService.speak("Welcome to Take Exam. Choose an option.");
   }
 
@@ -330,18 +354,18 @@ class _TakeExamScreenState extends State<TakeExamScreen> {
       showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text("Scan Mode"),
+          title: const Text('Preferences'),
           content: const Text(
               "Gemini AI Key detected. Do you want to use Gemini AI for superior accuracy?"),
           actions: [
-            TextButton(
+            AccessibleTextButton(
               onPressed: () {
                 Navigator.pop(ctx);
                 _processGeminiFlow(apiKey);
               },
               child: const Text("Use Gemini AI"),
             ),
-            TextButton(
+            AccessibleTextButton(
               onPressed: () {
                 Navigator.pop(ctx);
                 _navigateToOcr();
@@ -417,11 +441,13 @@ class _TakeExamScreenState extends State<TakeExamScreen> {
               icon: Icons.camera_alt,
               label: "Scan Questions",
               onTap: _handleScan,
+              // accessibilityService: widget.accessibilityService, // Removed
             ),
             const SizedBox(height: 24),
             AnimatedButton(
               icon: Icons.question_answer,
               label: "Saved Questions",
+              // accessibilityService: widget.accessibilityService, // Add to other buttons too
               onTap: () {
                 Navigator.push(
                   context,
@@ -459,6 +485,7 @@ class AnimatedButton extends StatefulWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  // Removed accessibilityService param as it will use singleton
 
   const AnimatedButton({
     super.key,
@@ -504,8 +531,9 @@ class _AnimatedButtonState extends State<AnimatedButton>
   Widget build(BuildContext context) {
     return GestureDetector(
       onTapDown: _onTapDown,
-      onTapUp: (details) {
+      onTapUp: (details) async {
         _onTapUp(details);
+        await AccessibilityService().trigger(AccessibilityEvent.action);
         widget.onTap();
       },
       onTapCancel: _onTapCancel,

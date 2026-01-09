@@ -4,6 +4,7 @@ import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import 'package:flutter_pdf_text/flutter_pdf_text.dart';
 import 'dart:io';
 import 'services/voice_command_service.dart';
+import 'widgets/accessible_widgets.dart'; // Added
 class PdfViewerScreen extends StatefulWidget {
   final String path;
   final TtsService ttsService;
@@ -97,19 +98,19 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                ElevatedButton(
+                AccessibleElevatedButton(
                   onPressed: _pauseReading,
                   child: const Text('Pause'),
                 ),
-                ElevatedButton(
+                AccessibleElevatedButton(
                   onPressed: _resumeReading,
                   child: const Text('Resume'),
                 ),
-                ElevatedButton(
+                AccessibleElevatedButton(
                   onPressed: _stopReading,
                   child: const Text('Stop'),
                 ),
-                ElevatedButton(
+                AccessibleElevatedButton(
                   onPressed: _restartReading,
                   child: const Text('Restart'),
                 ),

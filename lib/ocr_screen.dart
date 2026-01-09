@@ -12,11 +12,16 @@ import 'models/question_model.dart';
 import 'questions_screen.dart';
 import 'services/voice_command_service.dart';
 
+import 'services/accessibility_service.dart';
+import 'widgets/accessible_widgets.dart'; // Added
+
 class OcrScreen extends StatefulWidget {
   final TtsService ttsService;
   final VoiceCommandService voiceService;
+  final AccessibilityService? accessibilityService;
+
   const OcrScreen({super.key, required this.ttsService, 
-    required this.voiceService,});
+    required this.voiceService, this.accessibilityService});
 
   @override
   State<OcrScreen> createState() => _OcrScreenState();
@@ -74,6 +79,7 @@ class _OcrScreenState extends State<OcrScreen> {
 
       await _processImage(image.path);
     } catch (e) {
+      AccessibilityService().trigger(AccessibilityEvent.error);
       widget.ttsService.speak("Error picking image");
       setState(() => _isProcessing = false);
     }
@@ -81,6 +87,7 @@ class _OcrScreenState extends State<OcrScreen> {
 
   Future<void> _processImage(String path) async {
     try {
+      AccessibilityService().trigger(AccessibilityEvent.loading);
       // 1) OCR -> lines
       final lines = await _ocrService.processImageLines(path);
 
@@ -102,30 +109,49 @@ class _OcrScreenState extends State<OcrScreen> {
             ? "Text extracted, but I could not detect questions clearly."
             : "Extracted and segmented $qCount questions. Tap save to store.",
       );
+      AccessibilityService().trigger(AccessibilityEvent.success);
     } catch (e) {
+      AccessibilityService().trigger(AccessibilityEvent.error);
       widget.ttsService.speak("Error processing image");
     } finally {
-      setState(() => _isProcessing = false);
+      if (mounted) setState(() => _isProcessing = false);
     }
   }
 
   Future<void> _saveParsed() async {
+    AccessibilityService().trigger(AccessibilityEvent.loading);
     final doc = _doc;
-    if (doc == null) return;
+    
+    if (doc == null) {
+      AccessibilityService().trigger(AccessibilityEvent.error);
+      return;
+    }
 
-    await _storageService.saveDocument(doc);
-    // Note: We might want to set a timestamp or ID before saving if not present?
-    // The storage service now handles wrapping it with creation metadata.
+    try {
+      await _storageService.saveDocument(doc);
+      // Note: We might want to set a timestamp or ID before saving if not present?
+      // The storage service now handles wrapping it with creation metadata.
 
-    widget.ttsService.speak("Saved successfully");
-    if (!mounted) return;
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => QuestionsScreen(ttsService: widget.ttsService,
-          voiceService: widget.voiceService,),
-      ),
-    );
+      AccessibilityService().trigger(AccessibilityEvent.success);
+
+      widget.ttsService.speak("Saved successfully");
+      
+      if (!mounted) return;
+      
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => QuestionsScreen(
+            ttsService: widget.ttsService,
+            voiceService: widget.voiceService, 
+            accessibilityService: widget.accessibilityService,
+          ),
+        ),
+      );
+    } catch (e) {
+      AccessibilityService().trigger(AccessibilityEvent.error);
+      widget.ttsService.speak("Error saving document.");
+    }
   }
 
   @override
@@ -145,7 +171,7 @@ class _OcrScreenState extends State<OcrScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            ElevatedButton.icon(
+            AccessibleElevatedButton(
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 24),
                 textStyle: const TextStyle(fontSize: 20),
@@ -155,13 +181,15 @@ class _OcrScreenState extends State<OcrScreen> {
                 ),
               ),
               onPressed:
-                  _isProcessing ? null : () => _pickImage(ImageSource.camera),
+                  _isProcessing ? null : () {
+                    _pickImage(ImageSource.camera);
+                  },
               icon: const Icon(Icons.camera_alt, size: 32),
-              label: const Text('Camera'),
+              child: const Text('Camera'),
             ),
             const SizedBox(height: 16),
 
-            ElevatedButton.icon(
+            AccessibleElevatedButton(
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 24),
                 textStyle: const TextStyle(fontSize: 20),
@@ -171,9 +199,11 @@ class _OcrScreenState extends State<OcrScreen> {
                 ),
               ),
               onPressed:
-                  _isProcessing ? null : () => _pickImage(ImageSource.gallery),
+                  _isProcessing ? null : () {
+                    _pickImage(ImageSource.gallery);
+                  },
               icon: const Icon(Icons.photo_library, size: 32),
-              label: const Text('Gallery'),
+              child: const Text('Gallery'),
             ),
             const SizedBox(height: 24),
 
@@ -216,10 +246,10 @@ class _OcrScreenState extends State<OcrScreen> {
                 }),
 
               const SizedBox(height: 16),
-              ElevatedButton.icon(
+              AccessibleElevatedButton(
                 onPressed: _saveParsed,
                 icon: const Icon(Icons.save),
-                label: const Text('Save Segmented Result'),
+                child: const Text('Save Segmented Result'),
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   textStyle: const TextStyle(fontSize: 18),

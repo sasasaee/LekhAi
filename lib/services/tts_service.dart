@@ -208,7 +208,12 @@ class TtsService {
     await prefs.setDouble('volume', volume);
   }
 
-  Future<Map<String, double>> loadPreferences() async {
+  Future<void> saveHapticPreference(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('haptics', enabled);
+  }
+
+  Future<Map<String, dynamic>> loadPreferences() async {
     final prefs = await SharedPreferences.getInstance();
     double speed = prefs.getDouble('speed') ?? 1.0;
     double volume = prefs.getDouble('volume') ?? 0.7;
@@ -216,11 +221,12 @@ class TtsService {
     await setSpeed(speed);
     await setVolume(volume);
 
-    return {'speed': speed, 'volume': volume};
+    return {'speed': speed, 'volume': volume, 'haptics': prefs.getBool('haptics') ?? true};
   }
 
   Future<void> resetPreferences() async {
     await savePreferences(speed: 1.0, volume: 0.7);
+    await saveHapticPreference(true); // Default ON
     await setSpeed(1.0);
     await setVolume(0.7);
   }

@@ -6,10 +6,13 @@ import 'services/tts_service.dart';
 import 'paper_detail_screen.dart';
 import 'models/question_model.dart'; // Import models
 import 'services/voice_command_service.dart';
+import 'services/accessibility_service.dart';
+import 'widgets/accessible_widgets.dart'; // Added
 class QuestionsScreen extends StatefulWidget {
   final TtsService ttsService;
   final VoiceCommandService voiceService;
-  const QuestionsScreen({super.key, required this.ttsService,required this.voiceService,});
+  final AccessibilityService? accessibilityService; // Added
+  const QuestionsScreen({super.key, required this.ttsService,required this.voiceService, this.accessibilityService});
 
   @override
   State<QuestionsScreen> createState() => _QuestionsScreenState();
@@ -41,7 +44,7 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
   }
 
   void _deletePaper(int index) async {
-    HapticFeedback.lightImpact();
+    // Haptic handled by AccessibleIconButton
     
     // Optimistic UI update
     setState(() {
@@ -61,7 +64,7 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
   }
 
   void _openPaper(ParsedDocument doc, int index) {
-    HapticFeedback.lightImpact();
+    // Haptic handled by AccessibleListTile
     
     // We need to pass the timestamp. Since we lost it in the object, 
     // we can't show the real one unless we modify the model.
@@ -75,6 +78,7 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
           document: doc, 
           ttsService: widget.ttsService,
           voiceService: widget.voiceService,
+          accessibilityService: widget.accessibilityService,
           timestamp: DateTime.now().toIso8601String(), // Temporary until model update
         ),
       ),
@@ -87,11 +91,12 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
       appBar: AppBar(
         title: const Text('Saved Papers'),
         actions: [
-          IconButton(
+          AccessibleIconButton(
             icon: const Icon(Icons.delete_forever),
             tooltip: 'Clear All',
+            event: AccessibilityEvent.warning,
             onPressed: () async {
-              HapticFeedback.lightImpact();
+              AccessibilityService().trigger(AccessibilityEvent.warning);
               await _storageService.clearDocuments();
               _loadQuestions();
               widget.ttsService.speak("All papers deleted.");
@@ -121,7 +126,7 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
                   ),
                   margin: const EdgeInsets.symmetric(vertical: 6),
                   elevation: 3,
-                  child: ListTile(
+                  child: AccessibleListTile(
                     leading: const CircleAvatar(
                       child: Icon(Icons.description),
                       backgroundColor: Colors.teal,
@@ -132,7 +137,7 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                     subtitle: Text("$qCount questions"),
-                    trailing: IconButton(
+                    trailing: AccessibleIconButton(
                       icon: const Icon(Icons.delete, color: Colors.redAccent),
                       onPressed: () => _deletePaper(index),
                     ),
