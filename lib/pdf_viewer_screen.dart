@@ -3,14 +3,16 @@ import 'services/tts_service.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import 'package:flutter_pdf_text/flutter_pdf_text.dart';
 import 'dart:io';
-
+import 'services/voice_command_service.dart';
 class PdfViewerScreen extends StatefulWidget {
   final String path;
   final TtsService ttsService;
+  final VoiceCommandService voiceService;
   const PdfViewerScreen({
     super.key,
     required this.path,
     required this.ttsService,
+    required this.voiceService,
   });
 
   @override

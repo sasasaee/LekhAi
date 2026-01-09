@@ -5,10 +5,11 @@ import 'services/question_storage_service.dart';
 import 'services/tts_service.dart';
 import 'paper_detail_screen.dart';
 import 'models/question_model.dart'; // Import models
-
+import 'services/voice_command_service.dart';
 class QuestionsScreen extends StatefulWidget {
   final TtsService ttsService;
-  const QuestionsScreen({super.key, required this.ttsService});
+  final VoiceCommandService voiceService;
+  const QuestionsScreen({super.key, required this.ttsService,required this.voiceService,});
 
   @override
   State<QuestionsScreen> createState() => _QuestionsScreenState();
@@ -73,6 +74,7 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
         builder: (_) => PaperDetailScreen(
           document: doc, 
           ttsService: widget.ttsService,
+          voiceService: widget.voiceService,
           timestamp: DateTime.now().toIso8601String(), // Temporary until model update
         ),
       ),

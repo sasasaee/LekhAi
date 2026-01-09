@@ -10,10 +10,13 @@ import 'services/tts_service.dart';
 import 'services/question_segmentation_service.dart';
 import 'models/question_model.dart';
 import 'questions_screen.dart';
+import 'services/voice_command_service.dart';
 
 class OcrScreen extends StatefulWidget {
   final TtsService ttsService;
-  const OcrScreen({super.key, required this.ttsService});
+  final VoiceCommandService voiceService;
+  const OcrScreen({super.key, required this.ttsService, 
+    required this.voiceService,});
 
   @override
   State<OcrScreen> createState() => _OcrScreenState();
@@ -119,7 +122,8 @@ class _OcrScreenState extends State<OcrScreen> {
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (_) => QuestionsScreen(ttsService: widget.ttsService),
+        builder: (_) => QuestionsScreen(ttsService: widget.ttsService,
+          voiceService: widget.voiceService,),
       ),
     );
   }

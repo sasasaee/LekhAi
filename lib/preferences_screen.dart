@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'services/tts_service.dart';
-
+import 'services/voice_command_service.dart';
 class PreferencesScreen extends StatefulWidget {
   final TtsService ttsService;
-  const PreferencesScreen({super.key, required this.ttsService});
+  final VoiceCommandService voiceService;
+  const PreferencesScreen({super.key, required this.ttsService,
+    required this.voiceService,});
 
   @override
   State<PreferencesScreen> createState() => _PreferencesScreenState();
