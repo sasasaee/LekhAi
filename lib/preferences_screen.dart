@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'dart:ui';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'services/tts_service.dart';
 import 'services/voice_command_service.dart';
@@ -100,193 +102,246 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Preferences'),
-        leading: AccessibleIconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
+        title: Text(
+          'Preferences',
+          style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+        ),
+        centerTitle: true,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: Container(
+          margin: const EdgeInsets.only(left: 16, top: 8, bottom: 8),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.1),
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white.withOpacity(0.1)),
+          ),
+          child: IconButton(
+            icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+            tooltip: "Back",
+            onPressed: () => Navigator.pop(context),
+          ),
         ),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: SingleChildScrollView(
-          child: Column(
-            children: [
-            // API Key Card
-            Card(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              elevation: 4,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Gemini API Key',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _apiKeyController,
-                      decoration: const InputDecoration(
-                        hintText: 'Enter your API Key here',
-                        border: OutlineInputBorder(),
-                        suffixIcon: Icon(Icons.key),
-                      ),
-                      obscureText: true,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Speed Card
-            Card(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              elevation: 4,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Speed: ${_displaySpeed.toStringAsFixed(2)}x',
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                    AccessibleSlider(
-                      min: 0.5,
-                      max: 1.75,
-                      value: _displaySpeed,
-                      divisions: 5, // Creates steps of 0.25 (0.5, 0.75, 1.0, 1.25, 1.5, 1.75)
-                      onChanged: (v) {
-                        setState(() => _displaySpeed = v);
-                        // Real-time engine update with mapping
-                        widget.ttsService.setSpeed(v * 0.5);
-                      },
-                    ),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: AccessibleIconButton(
-                        icon: const Icon(Icons.play_arrow),
-                        color: Colors.blueAccent,
-                        onPressed: () =>
-                            widget.ttsService.speak("This is a speed test at ${_displaySpeed.toStringAsFixed(2)} speed"),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Volume Card
-            Card(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              elevation: 4,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Volume: ${(_volume * 100).toInt()}%',
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                    AccessibleSlider(
-                      min: 0.0,
-                      max: 1.0,
-                      value: _volume,
-                      divisions: 10,
-                      onChanged: (v) {
-                        setState(() => _volume = v);
-                        widget.ttsService.setVolume(v);
-                      },
-                    ),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: AccessibleIconButton(
-                        icon: const Icon(Icons.play_arrow),
-                        color: Colors.green,
-                        onPressed: () =>
-                            widget.ttsService.speak("This is a volume test"),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Haptic Feedback Toggle
-            Card(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              elevation: 4,
-              child: AccessibleSwitchListTile(
-                 value: AccessibilityService().enabled,
-                 title: const Text(
-                  "Haptic Feedback",
-                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                 ),
-                 subtitle: const Text("Vibrate on interactions"),
-                 onChanged: (val) {
-                   setState(() {
-                     AccessibilityService().setEnabled(val);
-                   });
-                   // Immediate feedback if enabling
-                   if (val) AccessibilityService().trigger(AccessibilityEvent.action);
-                 },
-              ),
-            ),
-            const SizedBox(height: 32),
-
-            // Buttons
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Theme.of(context).cardTheme.color!.withOpacity(0.8),
+              Theme.of(context).scaffoldBackgroundColor,
+              Colors.black,
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
               children: [
-                Expanded(
-                  child: AccessibleElevatedButton(
-                    onPressed: _savePreferences,
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                // API Key Card
+                _GlassCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Gemini API Key',
+                        style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
                       ),
-                      backgroundColor: Colors.blueAccent,
-                      foregroundColor: Colors.white,
-                    ),
-                    child: const Text(
-                      'Save Preferences',
-                      style: TextStyle(fontSize: 18),
-                    ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _apiKeyController,
+                        style: GoogleFonts.outfit(color: Colors.white),
+                        decoration: InputDecoration(
+                          hintText: 'Enter your API Key here',
+                          hintStyle: GoogleFonts.outfit(color: Colors.white38),
+                          filled: true,
+                          fillColor: Colors.black.withOpacity(0.2),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                          suffixIcon: const Icon(Icons.key, color: Colors.white70),
+                        ),
+                        obscureText: true,
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: AccessibleElevatedButton(
-                    onPressed: _reset,
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                const SizedBox(height: 20),
+        
+                // Speed Card
+                _GlassCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Speed: ${_displaySpeed.toStringAsFixed(2)}x',
+                            style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.play_circle_fill, color: Colors.blueAccent, size: 32),
+                            onPressed: () =>
+                                widget.ttsService.speak("This is a speed test at ${_displaySpeed.toStringAsFixed(2)} speed"),
+                          ),
+                        ],
                       ),
-                      backgroundColor: Colors.redAccent,
-                      foregroundColor: Colors.white,
-                    ),
-                    child: const Text('Reset', style: TextStyle(fontSize: 18)),
+                      AccessibleSlider(
+                        min: 0.5,
+                        max: 1.75,
+                        value: _displaySpeed,
+                        divisions: 5,
+                        onChanged: (v) {
+                          setState(() => _displaySpeed = v);
+                          widget.ttsService.setSpeed(v * 0.5);
+                        },
+                      ),
+                    ],
                   ),
+                ),
+                const SizedBox(height: 20),
+        
+                // Volume Card
+                _GlassCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Volume: ${(_volume * 100).toInt()}%',
+                            style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.volume_up_rounded, color: Colors.greenAccent, size: 32),
+                            onPressed: () =>
+                                widget.ttsService.speak("This is a volume test"),
+                          ),
+                        ],
+                      ),
+                      AccessibleSlider(
+                        min: 0.0,
+                        max: 1.0,
+                        value: _volume,
+                        divisions: 10,
+                        onChanged: (v) {
+                          setState(() => _volume = v);
+                          widget.ttsService.setVolume(v);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+        
+                // Haptic Feedback Toggle
+                _GlassCard(
+                  child: SwitchListTile(
+                    value: AccessibilityService().enabled,
+                    activeColor: Theme.of(context).primaryColor,
+                    title: Text(
+                      "Haptic Feedback",
+                      style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                    ),
+                    subtitle: Text(
+                      "Vibrate on interactions",
+                      style: GoogleFonts.outfit(color: Colors.white54),
+                    ),
+                    onChanged: (val) {
+                      setState(() {
+                        AccessibilityService().setEnabled(val);
+                      });
+                      if (val) AccessibilityService().trigger(AccessibilityEvent.action);
+                    },
+                  ),
+                ),
+                const SizedBox(height: 32),
+        
+                // Buttons
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: _savePreferences,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blueAccent,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          elevation: 8,
+                          shadowColor: Colors.blueAccent.withOpacity(0.4),
+                        ),
+                        child: Text(
+                          'Save',
+                          style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: _reset,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.redAccent,
+                          side: const BorderSide(color: Colors.redAccent, width: 2),
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                        child: Text(
+                          'Reset',
+                          style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
-          ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GlassCard extends StatelessWidget {
+  final Widget child;
+  const _GlassCard({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        gradient: LinearGradient(
+          colors: [Colors.white.withOpacity(0.08), Colors.white.withOpacity(0.03)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        border: Border.all(color: Colors.white.withOpacity(0.1)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: child,
           ),
         ),
       ),
