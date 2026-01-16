@@ -17,6 +17,9 @@ import 'package:audioplayers/audioplayers.dart';
 
 import 'services/accessibility_service.dart';
 import 'widgets/accessible_widgets.dart'; // Added
+import 'package:google_fonts/google_fonts.dart';
+import 'dart:ui';
+
 
 class PaperDetailScreen extends StatefulWidget {
   final ParsedDocument document;
@@ -214,113 +217,205 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
     } catch (_) {}
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text('Paper $dateStr'),
+        title: Text('Paper $dateStr', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        centerTitle: true,
+        leading: Container(
+          margin: const EdgeInsets.only(left: 16, top: 8, bottom: 8),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.1),
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white.withOpacity(0.1)),
+          ),
+          child: IconButton(
+            icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+            tooltip: "Back",
+            onPressed: () => Navigator.pop(context),
+          ),
+        ),
         actions: [
-          AccessibleIconButton(
-            icon: const Icon(Icons.save),
-            tooltip: "Save Paper",
-            onPressed: () => _savePaper(context),
+          Container(
+             margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
+             decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.1),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white.withOpacity(0.1)),
+            ),
+            child: AccessibleIconButton(
+              icon: const Icon(Icons.save_rounded, color: Colors.white),
+              tooltip: "Save Paper",
+              onPressed: () => _savePaper(context),
+            ),
           ),
         ],
       ),
-      body: ListView.builder(
-        itemCount: items.length,
-        itemBuilder: (context, index) {
-          final item = items[index];
-          
-          if (item is _HeaderItem) {
-             return Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Card(
-                color: Colors.grey.shade100,
-                child: Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Text(
-                    item.text,
-                    style: const TextStyle(fontStyle: FontStyle.italic),
-                  ),
-                ),
-              ),
-            );
-          } else if (item is _SectionItem) {
-            return Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (item.title != null && item.title!.isNotEmpty)
-                    Text(
-                      item.title!,
-                      style: const TextStyle(
-                        fontSize: 18, 
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blueAccent
-                      ),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Theme.of(context).cardTheme.color!.withOpacity(0.8),
+              Theme.of(context).scaffoldBackgroundColor,
+              Colors.black,
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: ListView.builder(
+            itemCount: items.length,
+            itemBuilder: (context, index) {
+              final item = items[index];
+              
+              if (item is _HeaderItem) {
+                 return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.white.withOpacity(0.1)),
                     ),
-                  if (item.context != null && item.context!.isNotEmpty)
-                    Container(
-                      margin: const EdgeInsets.only(top: 8),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.amber.shade50,
-                        border: Border.all(color: Colors.amber.shade200),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        item.context!,
-                        style: TextStyle(
-                          fontSize: 15,
-                          color: Colors.brown.shade800,
-                          height: 1.4
+                    child: Text(
+                      item.text,
+                      style: GoogleFonts.outfit(fontStyle: FontStyle.italic, color: Colors.white70),
+                    ),
+                  ),
+                );
+              } else if (item is _SectionItem) {
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (item.title != null && item.title!.isNotEmpty)
+                        Text(
+                          item.title!,
+                          style: GoogleFonts.outfit(
+                            fontSize: 20, 
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white
+                          ),
                         ),
-                      ),
-                    ),
-                ],
-              ),
-            );
-          } else if (item is _QuestionItem) {
-            final q = item.question;
-            final qTitle = q.number != null ? "Q${q.number}" : "Question";
-            final marks = q.marks != null ? "(${q.marks})" : "";
-
-            return Card(
-              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              elevation: 2,
-              child: AccessibleListTile(
-                title: Text("$qTitle $marks", style: const TextStyle(fontWeight: FontWeight.w600)),
-                subtitle: Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    q.prompt + (q.body.isNotEmpty ? "..." : ""),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                      if (item.context != null && item.context!.isNotEmpty)
+                        Container(
+                          margin: const EdgeInsets.only(top: 8),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.withOpacity(0.1),
+                            border: Border.all(color: Colors.amber.withOpacity(0.3)),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            item.context!,
+                            style: GoogleFonts.outfit(
+                              fontSize: 15,
+                              color: Colors.amber.shade100,
+                              height: 1.4
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
-                ),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => SingleQuestionScreen(
-                        question: q,
-                        contextText: item.context,
-                        ttsService: widget.ttsService,
-                        voiceService: widget.voiceService,
-                        accessibilityService: widget.accessibilityService,
-                      ),
+                );
+              } else if (item is _QuestionItem) {
+                final q = item.question;
+                final qTitle = q.number != null ? "Q${q.number}" : "Question";
+                final marks = q.marks != null ? "(${q.marks})" : "";
+
+                return Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    gradient: LinearGradient(
+                      colors: [Colors.white.withOpacity(0.08), Colors.white.withOpacity(0.03)],
                     ),
-                  );
-                },
-              ),
-            );
-          }
-          return const SizedBox.shrink();
-        },
+                    border: Border.all(color: Colors.white.withOpacity(0.1)),
+                    boxShadow: [
+                      BoxShadow(color: Colors.black12, blurRadius: 8, offset: const Offset(0, 4)),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                     child: BackdropFilter(
+                       filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+                        child: AccessibleListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          leading: Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).primaryColor.withOpacity(0.2),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Text(
+                              q.number ?? "Q",
+                              style: GoogleFonts.outfit(
+                                fontWeight: FontWeight.bold, 
+                                color: Theme.of(context).primaryColor
+                              ),
+                            ),
+                          ),
+                          title: Text(
+                            "$qTitle $marks", 
+                            style: GoogleFonts.outfit(fontWeight: FontWeight.w600, color: Colors.white)
+                          ),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              q.prompt + (q.body.isNotEmpty ? "..." : ""),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.outfit(color: Colors.white70),
+                            ),
+                          ),
+                          trailing: Icon(Icons.arrow_forward_ios_rounded, color: Colors.white24, size: 16),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => SingleQuestionScreen(
+                                  question: q,
+                                  contextText: item.context,
+                                  ttsService: widget.ttsService,
+                                  voiceService: widget.voiceService,
+                                  accessibilityService: widget.accessibilityService,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                     ),
+                  ),
+                );
+              }
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
       ),
-      floatingActionButton: AccessibleFloatingActionButton(
-        onPressed: () => _onAddPage(context),
-        child: const Icon(Icons.add_a_photo), // FAB child is usually Icon
-        tooltip: 'Add Page',
+      floatingActionButton: Container(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: LinearGradient(
+            colors: [Theme.of(context).primaryColor, Theme.of(context).primaryColorDark],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          boxShadow: [
+            BoxShadow(color: Theme.of(context).primaryColor.withOpacity(0.4), blurRadius: 12, offset: const Offset(0, 6)),
+          ],
+        ),
+        child: FloatingActionButton(
+          onPressed: () => _onAddPage(context),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          child: const Icon(Icons.add_a_photo_outlined, color: Colors.white),
+          tooltip: 'Add Page',
+        ),
       ),
     );
   }
@@ -800,141 +895,229 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
   @override
   Widget build(BuildContext context) {
     String readLabel = _isPaused ? "Resume" : (_isReading ? "Reading..." : "Read");
-    IconData readIcon = _isPaused ? Icons.play_arrow : Icons.volume_up;
+    IconData readIcon = _isPaused ? Icons.play_arrow_rounded : Icons.volume_up_rounded;
     VoidCallback? onRead = (_isReading && !_isPaused) ? null : _onReadPressed;
 
     String stopLabel = _isPaused ? "Restart" : "Stop";
-    IconData stopIcon = _isPaused ? Icons.replay : Icons.stop;
+    IconData stopIcon = _isPaused ? Icons.replay_rounded : Icons.stop_rounded;
     VoidCallback? onStop = (!_isReading && !_isPaused) ? null : _onStopPressed;
 
     return Scaffold(
-      appBar: AppBar(title: const Text("Question Detail")),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            Expanded(
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (widget.contextText != null && widget.contextText!.isNotEmpty) ...[
-                       Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.amber.shade50,
-                          border: Border.all(color: Colors.amber.shade200),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text("Shared Context:", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.amber.shade900)),
-                            const SizedBox(height: 4),
-                            Text(widget.contextText!, style: const TextStyle(fontSize: 15, height: 1.4)),
-                            AccessibleSwitchListTile(
-                              title: const Text("Read this context too?", style: TextStyle(fontSize: 14)),
-                              value: _playContext, 
-                              onChanged: (val) => setState(() => _playContext = val),
-                              contentPadding: EdgeInsets.zero,
-                              visualDensity: VisualDensity.compact,
-                            )
-                          ],
-                        ),
-                       ),
-                       const SizedBox(height: 16),
-                    ],
-                    if (widget.question.number != null)
-                      Text("Question ${widget.question.number}", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-                    if (widget.question.marks != null)
-                      Text("Marks: ${widget.question.marks}", style: TextStyle(fontSize: 14, color: Colors.grey.shade700, fontStyle: FontStyle.italic)),
-                    const SizedBox(height: 16),
-                    Text(widget.question.prompt, style: const TextStyle(fontSize: 18)),
-                    const SizedBox(height: 8),
-                    ..._buildBodyWidgets(widget.question.body),
-                    const SizedBox(height: 24),
-                    const Divider(),
-                    const Text("Your Answer:", style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _answerController,
-                      maxLines: 5,
-                      decoration: InputDecoration(
-                        hintText: "Type or detect answer...",
-                        border: const OutlineInputBorder(),
-                        suffixIcon: _isProcessingAudio 
-                          ? const Padding(padding: EdgeInsets.all(12.0), child: CircularProgressIndicator(strokeWidth: 2))
-                          : AccessibleIconButton(
-                              icon: Icon(_isListening ? Icons.stop : Icons.mic),
-                              color: _isListening ? Colors.red : Colors.grey,
-                              onPressed: _isListening ? _stopListening : _startListening,
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        title: Text("Question Detail", style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: Container(
+          margin: const EdgeInsets.only(left: 16, top: 8, bottom: 8),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.1),
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white.withOpacity(0.1)),
+          ),
+          child: IconButton(
+            icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+            tooltip: "Back",
+            onPressed: () => Navigator.pop(context),
+          ),
+        ),
+      ),
+      body: Container(
+         decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Theme.of(context).cardTheme.color!.withOpacity(0.8),
+              Theme.of(context).scaffoldBackgroundColor,
+              Colors.black,
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (widget.contextText != null && widget.contextText!.isNotEmpty) ...[
+                           Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.amber.withOpacity(0.1),
+                              border: Border.all(color: Colors.amber.withOpacity(0.3)),
+                              borderRadius: BorderRadius.circular(12),
                             ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text("Shared Context:", style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.amber.shade200)),
+                                const SizedBox(height: 4),
+                                Text(widget.contextText!, style: GoogleFonts.outfit(fontSize: 15, height: 1.4, color: Colors.white70)),
+                                AccessibleSwitchListTile(
+                                  title: Text("Read this context too?", style: GoogleFonts.outfit(fontSize: 14, color: Colors.white60)),
+                                  value: _playContext, 
+                                  onChanged: (val) => setState(() => _playContext = val),
+                                  contentPadding: EdgeInsets.zero,
+                                  visualDensity: VisualDensity.compact,
+                                  activeColor: Colors.amber,
+                                )
+                              ],
+                            ),
+                           ),
+                           const SizedBox(height: 24),
+                        ],
+                        if (widget.question.number != null)
+                          Text("Question ${widget.question.number}", style: GoogleFonts.outfit(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)),
+                        if (widget.question.marks != null)
+                          Text("Marks: ${widget.question.marks}", style: GoogleFonts.outfit(fontSize: 14, color: Colors.white54, fontStyle: FontStyle.italic)),
+                        const SizedBox(height: 16),
+                        Text(widget.question.prompt, style: GoogleFonts.outfit(fontSize: 20, color: Colors.white, height: 1.3)),
+                        const SizedBox(height: 12),
+                        ..._buildBodyWidgets(widget.question.body),
+                        const SizedBox(height: 32),
+                        const Divider(color: Colors.white24),
+                        const SizedBox(height: 16),
+                        Text("Your Answer:", style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white)),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: _answerController,
+                          maxLines: 5,
+                          style: GoogleFonts.outfit(color: Colors.white, fontSize: 16),
+                          decoration: InputDecoration(
+                            hintText: "Type or detect answer...",
+                            hintStyle: GoogleFonts.outfit(color: Colors.white30),
+                            filled: true,
+                            fillColor: Colors.white.withOpacity(0.05),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: Theme.of(context).primaryColor),
+                            ),
+                            suffixIcon: _isProcessingAudio 
+                              ? const Padding(padding: EdgeInsets.all(12.0), child: CircularProgressIndicator(strokeWidth: 2))
+                              : AccessibleIconButton(
+                                  icon: Icon(_isListening ? Icons.stop_circle_rounded : Icons.mic_rounded),
+                                  color: _isListening ? Colors.redAccent : Colors.white60,
+                                  iconSize: 28,
+                                  onPressed: _isListening ? _stopListening : _startListening,
+                                ),
+                          ),
+                        ),
+                        if (widget.question.audioPath != null && widget.question.audioPath!.isNotEmpty)
+                           Padding(
+                             padding: const EdgeInsets.symmetric(vertical: 16.0),
+                             child: AccessibleOutlinedButton(
+                               style: OutlinedButton.styleFrom(
+                                 foregroundColor: Theme.of(context).primaryColor,
+                                 side: BorderSide(color: Theme.of(context).primaryColor),
+                                 padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                               ),
+                               icon: const Icon(Icons.play_circle_fill_rounded),
+                               child: Text("Play Saved Answer", style: GoogleFonts.outfit(fontWeight: FontWeight.w600)),
+                               onPressed: () async => await _audioPlayer.play(DeviceFileSource(widget.question.audioPath!)),
+                             ),
+                           ),
+                        const SizedBox(height: 40), // Bottom padding
+                      ],
+                    ),
+                  ),
+                ),
+                
+                // Controls
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.black45,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white10),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          Expanded(
+                            child: AccessibleElevatedButton(
+                              onPressed: onRead,
+                              icon: Icon(readIcon),
+                              child: Text(readLabel),
+                              style: ElevatedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                backgroundColor: Theme.of(context).primaryColor,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                textStyle: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: AccessibleElevatedButton(
+                              onPressed: onStop,
+                              icon: Icon(stopIcon),
+                              child: Text(stopLabel),
+                               style: ElevatedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                backgroundColor: _isPaused ? Colors.orangeAccent : Colors.redAccent.shade200,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                textStyle: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    if (widget.question.audioPath != null && widget.question.audioPath!.isNotEmpty)
-                       Padding(
-                         padding: const EdgeInsets.symmetric(vertical: 8.0),
-                         child: AccessibleOutlinedButton(
-                           icon: const Icon(Icons.play_circle_fill),
-                           child: const Text("Play Saved Answer"),
-                           onPressed: () async => await _audioPlayer.play(DeviceFileSource(widget.question.audioPath!)),
-                         ),
-                       ),
-                  ],
-                ),
-              ),
-            ),
-            
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                AccessibleElevatedButton(
-                  onPressed: onRead,
-                  icon: Icon(readIcon),
-                  child: Text(readLabel),
-                  style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12)),
-                ),
-                AccessibleElevatedButton(
-                  onPressed: onStop,
-                  icon: Icon(stopIcon),
-                  child: Text(stopLabel),
-                   style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                    backgroundColor: _isPaused ? Colors.orangeAccent : Colors.redAccent,
-                    foregroundColor: Colors.white,
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: AccessibleElevatedButton(
+                              onPressed: _changeSpeed,
+                              icon: const Icon(Icons.speed_rounded, size: 18),
+                              child: Text("${_displaySpeed.toStringAsFixed(2)}x"),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.white10, 
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: AccessibleElevatedButton(
+                              onPressed: _changeVolume,
+                              icon: Icon(_currentVolume < 0.5 ? Icons.volume_down_rounded : Icons.volume_up_rounded, size: 18),
+                              child: Text("Vol: ${(_currentVolume * 100).toInt()}%"),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.white10, 
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-
-            Row(
-              children: [
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 4.0),
-                    child: AccessibleElevatedButton(
-                      onPressed: _changeSpeed,
-                      icon: const Icon(Icons.speed, size: 18),
-                      child: Text("${_displaySpeed.toStringAsFixed(2)}x"),
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey.shade100, foregroundColor: Colors.black87),
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.only(left: 4.0),
-                    child: AccessibleElevatedButton(
-                      onPressed: _changeVolume,
-                      icon: Icon(_currentVolume < 0.5 ? Icons.volume_down : Icons.volume_up, size: 18),
-                      child: Text("Vol: ${(_currentVolume * 100).toInt()}%"),
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey.shade100, foregroundColor: Colors.black87),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -956,7 +1139,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
             if (inBox) { widgets.add(_buildBoxWidget(currentBoxTitle, currentBoxItems)); inBox = false; }
         } else {
             if (inBox) { currentBoxItems.add(line); } 
-            else { widgets.add(Padding(padding: const EdgeInsets.only(bottom: 4), child: Text(line, style: const TextStyle(fontSize: 16)))); }
+            else { widgets.add(Padding(padding: const EdgeInsets.only(bottom: 4), child: Text(line, style: GoogleFonts.outfit(fontSize: 18, color: Colors.white70)))); }
         }
     }
     if (inBox) widgets.add(_buildBoxWidget(currentBoxTitle, currentBoxItems));
@@ -966,10 +1149,18 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
   Widget _buildBoxWidget(String? title, List<String> items) {
     return Container(
         width: double.infinity, margin: const EdgeInsets.symmetric(vertical: 8),
-        decoration: BoxDecoration(color: Colors.white, border: Border.all(color: Colors.blueGrey.shade300), borderRadius: BorderRadius.circular(8)),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.05), 
+          border: Border.all(color: Colors.white.withOpacity(0.1)), 
+          borderRadius: BorderRadius.circular(12)
+        ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.blueGrey.shade50, borderRadius: const BorderRadius.vertical(top: Radius.circular(8))), child: Text(title ?? "Box", style: const TextStyle(fontWeight: FontWeight.bold))),
-            Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: items.map((i) => Text(i)).toList())),
+            Container(
+              padding: const EdgeInsets.all(12), 
+              decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), borderRadius: const BorderRadius.vertical(top: Radius.circular(12))), 
+              child: Text(title ?? "Box", style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: Colors.white))
+            ),
+            Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: items.map((i) => Text(i, style: GoogleFonts.outfit(color: Colors.white70))).toList())),
         ]),
     );
   }

@@ -110,7 +110,8 @@ class AccessibleListTile extends StatelessWidget {
   final AccessibilityEvent tapEvent;
   final AccessibilityEvent longPressEvent;
   final ShapeBorder? shape;
-  final Color? tileColor;
+  final EdgeInsetsGeometry? contentPadding; // Added
+  final Color? tileColor; // Restored
 
   AccessibleListTile({
     super.key,
@@ -124,6 +125,7 @@ class AccessibleListTile extends StatelessWidget {
     this.longPressEvent = AccessibilityEvent.warning,
     this.shape,
     this.tileColor,
+    this.contentPadding,
   });
 
   final AccessibilityService _service = AccessibilityService();
@@ -149,6 +151,7 @@ class AccessibleListTile extends StatelessWidget {
       trailing: trailing,
       shape: shape,
       tileColor: tileColor,
+      contentPadding: contentPadding,
     );
   }
 }
@@ -305,6 +308,7 @@ class AccessibleSwitchListTile extends StatelessWidget {
   final Widget? subtitle;
   final EdgeInsetsGeometry? contentPadding;
   final VisualDensity? visualDensity;
+  final Color? activeColor;
 
   AccessibleSwitchListTile({
     super.key,
@@ -314,6 +318,7 @@ class AccessibleSwitchListTile extends StatelessWidget {
     this.subtitle,
     this.contentPadding,
     this.visualDensity,
+    this.activeColor,
   });
 
   final AccessibilityService _service = AccessibilityService();
@@ -332,6 +337,7 @@ class AccessibleSwitchListTile extends StatelessWidget {
       subtitle: subtitle,
       contentPadding: contentPadding,
       visualDensity: visualDensity,
+      activeColor: activeColor,
     );
   }
 }
