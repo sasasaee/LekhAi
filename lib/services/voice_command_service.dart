@@ -1,18 +1,59 @@
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'tts_service.dart';
+import 'gemini_question_service.dart';
+import 'question_storage_service.dart'; // Added
+import '../pdf_viewer_screen.dart';
+// import '../take_exam_screen.dart';
+import '../ocr_screen.dart';
+import '../paper_detail_screen.dart';
+import '../widgets/accessible_widgets.dart';
+
+enum VoiceContext {
+  global,
+  ocr,
+  savedPapers,
+  settings,
+  pdfViewer,
+  takeExam,
+  scanQuestions,
+}
 
 enum VoiceAction {
   goToSavedPapers,
   goToTakeExam,
+  goToHome,
+  goToSettings,
   goToQuestion,
   startDictation,
+  goToReadPDF,
   stopDictation,
   readQuestion,
   readAnswer,
   changeSpeed,
   goBack,
   submitExam,
-  unknown
+  // New Context Specific Actions
+  scanCamera,
+  scanGallery,
+  saveResult,
+  nextPage,
+  previousPage,
+  useGemini,
+  useLocalOcr,
+  scanQuestions,
+  openPaper, // Added Action for selecting item from list
+  // Settings Actions
+  toggleHaptic,
+  toggleVoiceCommands,
+  deletePaper, // Added Action for deleting item
+  increaseVolume,
+  decreaseVolume,
+  increaseSpeed,
+  decreaseSpeed,
+  unknown,
 }
 
 class CommandResult {
@@ -21,21 +62,242 @@ class CommandResult {
   CommandResult(this.action, {this.payload});
 }
 
+// ... existing enum ...
+
 class VoiceCommandService {
   final TtsService tts;
+  final GeminiQuestionService _geminiService = GeminiQuestionService();
   final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+  bool _isScanDialogOpen = false;
 
   VoiceCommandService(this.tts);
 
-  CommandResult parse(String text) {
+  CommandResult parse(
+    String text, {
+    VoiceContext context = VoiceContext.global,
+  }) {
+    print(
+      "VoiceCommandService.parse called with text: '$text', context: $context",
+    );
     text = text.toLowerCase();
-    if (text.contains("take exam") || text.contains("start exam") || text.contains("open exam")) {
+
+    // --- CONTEXT SPECIFIC COMMANDS ---
+
+    // Take Exam Choice Context
+    if (context == VoiceContext.takeExam) {
+      // "Scan Questions" triggers the process (showing options)
+      if (text.contains("scan questions") ||
+          text.contains("can questions") ||
+          text.contains("scan")) {
+        return CommandResult(VoiceAction.scanQuestions);
+      }
+      if (text.contains("gemini") ||
+          text.contains("ai") ||
+          text.contains("artificial intelligence")) {
+        return CommandResult(VoiceAction.useGemini);
+      }
+      if (text.contains("local") ||
+          text.contains("ocr") ||
+          text.contains("standard")) {
+        return CommandResult(VoiceAction.useLocalOcr);
+      }
+
+      // Removed "camera"/"gallery" shortcuts as requested, to enforce the flow.
+    }
+    // Scan Questions Context
+    // if (context == VoiceContext.scanQuestions) {
+
+    // }
+
+    // OCR / Take Exam Context
+    if (context == VoiceContext.ocr) {
+      if (text.contains("camera") ||
+          text.contains("take photo") ||
+          text.contains("capture")) {
+        return CommandResult(VoiceAction.scanCamera);
+      }
+      if (text.contains("gallery") ||
+          text.contains("pick image") ||
+          text.contains("choose photo")) {
+        return CommandResult(VoiceAction.scanGallery);
+      }
+      if (text.contains("save") || text.contains("save result")) {
+        return CommandResult(VoiceAction.saveResult);
+      }
+    }
+
+    // Saved Papers Context
+    if (context == VoiceContext.savedPapers) {
+      print("Saved Papers Context Parsing: '$text'");
+      // Parsing for DELETE commands (Check first!)
+      final RegExp deleteRegex = RegExp(
+        r"(delete|remove)\s+(paper|question|scan|number)\s+([a-z0-9]+)",
+      );
+      final deleteMatch = deleteRegex.firstMatch(text);
+      if (deleteMatch != null) {
+        String rawNumber = deleteMatch.group(3)!;
+        print("DELETE MATCH FOUND: rawNumber='$rawNumber'");
+        int? index = int.tryParse(rawNumber);
+
+        if (index == null) {
+          const numberMap = {
+            'one': 1,
+            'two': 2,
+            'three': 3,
+            'four': 4,
+            'five': 5,
+            'six': 6,
+            'seven': 7,
+            'eight': 8,
+            'nine': 9,
+            'ten': 10,
+          };
+          index = numberMap[rawNumber];
+        }
+
+        if (index != null) {
+          return CommandResult(VoiceAction.deletePaper, payload: index);
+        }
+      }
+
+      // Matches "question 1", "paper two", "scan 3", "number four"
+      // Added [a-z0-9]+ to capture "one", "two" etc.
+      final RegExp selectionRegex = RegExp(
+        r"(question|paper|scan|number)\s+([a-z0-9]+)",
+      );
+      final match = selectionRegex.firstMatch(text);
+      if (match != null) {
+        String rawNumber = match.group(2)!;
+        print("MATCH FOUND: rawNumber='$rawNumber'");
+        int? index = int.tryParse(rawNumber); // Try parsing digit
+
+        if (index == null) {
+          // Try parsing word
+          const numberMap = {
+            'one': 1,
+            'two': 2,
+            'three': 3,
+            'four': 4,
+            'five': 5,
+            'six': 6,
+            'seven': 7,
+            'eight': 8,
+            'nine': 9,
+            'ten': 10,
+          };
+          index = numberMap[rawNumber];
+        }
+
+        print("PARSED INDEX: $index");
+
+        if (index != null) {
+          return CommandResult(VoiceAction.openPaper, payload: index);
+        }
+      } else {
+        print("NO MATCH for regex in Saved Papers");
+      }
+    }
+
+    // Settings Context
+    if (context == VoiceContext.settings) {
+      if (text.contains("save")) {
+        return CommandResult(VoiceAction.saveResult);
+      }
+      if (text.contains("haptic") || text.contains("vibration")) {
+        return CommandResult(VoiceAction.toggleHaptic);
+      }
+
+      // Speed
+      if (text.contains("speed up") ||
+          text.contains("increase speed") ||
+          text.contains("faster")) {
+        return CommandResult(VoiceAction.increaseSpeed);
+      }
+      if (text.contains("speed down") ||
+          text.contains("decrease speed") ||
+          text.contains("slower")) {
+        return CommandResult(VoiceAction.decreaseSpeed);
+      }
+
+      // Volume
+      if (text.contains("volume up") ||
+          text.contains("increase volume") ||
+          text.contains("louder")) {
+        return CommandResult(VoiceAction.increaseVolume);
+      }
+      if (text.contains("volume down") ||
+          text.contains("decrease volume") ||
+          text.contains("quieter")) {
+        return CommandResult(VoiceAction.decreaseVolume);
+      }
+
+      // Toggle Voice Commands
+      if (text.contains("voice command") ||
+          text.contains("mute") ||
+          text.contains("unmute")) {
+        return CommandResult(VoiceAction.toggleVoiceCommands);
+      }
+
+      if (text.contains("previous page") ||
+          text.contains("previous") ||
+          text.contains("back page")) {
+        return CommandResult(VoiceAction.previousPage);
+      }
+    }
+
+    // PDF Viewer Context
+    if (context == VoiceContext.pdfViewer) {
+      if (text.contains("next page") || text.contains("next")) {
+        return CommandResult(VoiceAction.nextPage);
+      }
+      if (text.contains("previous page") ||
+          text.contains("previous") ||
+          text.contains("back page")) {
+        return CommandResult(VoiceAction.previousPage);
+      }
+    }
+
+    // --- GLOBAL COMMANDS (Fallback) ---
+
+    // Exam
+    if (text.contains("take exam") ||
+        text.contains("start exam") ||
+        text.contains("open exam")) {
       return CommandResult(VoiceAction.goToTakeExam);
     }
-    if (text.contains("saved papers") || text.contains("go back to papers")) {
+
+    // Home
+    if (text.contains("go home") ||
+        text.contains("home screen") ||
+        text.contains("main menu")) {
+      return CommandResult(VoiceAction.goToHome);
+    }
+
+    // Settings
+    if (text.contains("settings") ||
+        text.contains("preferences") ||
+        text.contains("options") ||
+        text.contains("setting")) {
+      return CommandResult(VoiceAction.goToSettings);
+    }
+
+    // Saved Papers
+    if (text.contains("saved papers") ||
+        text.contains("saved questions") ||
+        text.contains("my questions") ||
+        text.contains("go back to papers")) {
       return CommandResult(VoiceAction.goToSavedPapers);
     }
+
+    // Read PDF
+    if (text.contains("read pdf") ||
+        text.contains("open pdf") ||
+        text.contains("read document")) {
+      return CommandResult(VoiceAction.goToReadPDF);
+    }
+
     if (text.contains("go back")) return CommandResult(VoiceAction.goBack);
+
     if (text.contains("start dictation") || text.contains("start writing")) {
       return CommandResult(VoiceAction.startDictation);
     }
@@ -48,25 +310,250 @@ class VoiceCommandService {
     if (text.contains("read my answer") || text.contains("read answer")) {
       return CommandResult(VoiceAction.readAnswer);
     }
-    if (text.contains("change speed") || text.contains("faster") || text.contains("slower")) {
+    if (text.contains("change speed") ||
+        text.contains("faster") ||
+        text.contains("slower")) {
       return CommandResult(VoiceAction.changeSpeed);
     }
 
     return CommandResult(VoiceAction.unknown);
   }
 
-  void performGlobalNavigation(CommandResult result) {
+  Future<void> performGlobalNavigation(CommandResult result) async {
+    print("Performing navigation for: ${result.action}");
     switch (result.action) {
       case VoiceAction.goBack:
-        navigatorKey.currentState?.pop();
+        final canPop = await navigatorKey.currentState?.maybePop() ?? false;
+        if (!canPop) {
+          tts.speak("You are already on the home screen.");
+        }
         break;
       case VoiceAction.goToSavedPapers:
-        navigatorKey.currentState?.pushNamed('/saved_papers');
+        await navigatorKey.currentState?.pushNamed('/saved_papers');
+        break;
+      case VoiceAction.goToTakeExam:
+        await navigatorKey.currentState?.pushNamed('/take_exam');
+        break;
+      case VoiceAction.goToHome:
+        // Use popUntil to return to the existing HomeScreen instance.
+        // This triggers the .then() callback in HomeScreen, which resumes STT.
+        // Using pushNamedAndRemoveUntil was destroying the STT controller.
+        navigatorKey.currentState?.popUntil((route) {
+          return route.settings.name == '/home' || route.isFirst;
+        });
+        break;
+      case VoiceAction.goToSettings:
+        await navigatorKey.currentState?.pushNamed('/settings');
+        break;
+      case VoiceAction.goToReadPDF:
+        await _pickAndOpenPdf();
+        break;
+      case VoiceAction.scanQuestions:
+        await _handleScan();
+        break;
+      case VoiceAction.useGemini:
+        await _handleGeminiSelection();
+        break;
+      case VoiceAction.useLocalOcr:
+        _navigateToOcr();
+        break;
+      case VoiceAction.openPaper:
+        if (result.payload is int) {
+          _handleOpenPaper(result.payload);
+        }
         break;
       default:
         break;
     }
   }
 
-  
+  Future<void> _handleOpenPaper(int targetIndex) async {
+    // 1-based index from voice -> 0-based for list
+    final actualIndex = targetIndex - 1;
+    if (actualIndex < 0) {
+      if (tts.isSpeaking) await tts.stop();
+      tts.speak("Invalid number.");
+      return;
+    }
+
+    try {
+      if (tts.isSpeaking) await tts.stop();
+      tts.speak("Checking papers...");
+
+      final storage = QuestionStorageService(); // Import required
+      final docs = await storage.getDocuments();
+      // Papers are displayed reversed in SavedPapers screen: newest first.
+      // So index 0 matches the LAST element of the stored list.
+      // actually, QuestionsScreen does: _papers = docs.reversed.toList();
+      // So "Paper 1" (index 0) corresponds to docs.last.
+
+      final reversedDocs = docs.reversed.toList();
+
+      if (actualIndex < reversedDocs.length) {
+        final doc = reversedDocs[actualIndex];
+        tts.speak("Opening paper $targetIndex.");
+
+        navigatorKey.currentState?.push(
+          MaterialPageRoute(
+            builder: (_) => PaperDetailScreen(
+              document: doc,
+              ttsService: tts,
+              voiceService: this,
+              // accessibilityService is not available here, passed as null or we could inject it
+              timestamp: DateTime.now().toString(),
+            ),
+          ),
+        );
+      } else {
+        tts.speak("Paper $targetIndex not found.");
+      }
+    } catch (e) {
+      print("Error opening paper via voice: $e");
+      tts.speak("Could not open paper.");
+    }
+  }
+
+  Future<void> _handleScan() async {
+    final prefs = await SharedPreferences.getInstance();
+    final apiKey = prefs.getString('gemini_api_key');
+    final context = navigatorKey.currentContext;
+
+    if (context == null) return;
+
+    _isScanDialogOpen = true;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Scan Options'),
+        content: const Text("Choose your preferred scanning method."),
+        actions: [
+          AccessibleTextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              if (apiKey != null && apiKey.isNotEmpty) {
+                _processGeminiFlow(apiKey);
+              } else {
+                tts.speak(
+                  "Gemini API Key missing. Please set it in preferences.",
+                );
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      "Gemini API Key missing. Please set in Preferences.",
+                    ),
+                  ),
+                );
+              }
+            },
+            child: const Text("Use Gemini AI"),
+          ),
+          AccessibleTextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _navigateToOcr();
+            },
+            child: const Text("Use Local OCR"),
+          ),
+        ],
+      ),
+    ).then((_) => _isScanDialogOpen = false); // Reset flag when dialog closes
+  }
+
+  Future<void> _handleGeminiSelection() async {
+    // If specifically selecting Gemini via voice, close the dialog if it's open
+    if (_isScanDialogOpen) {
+      navigatorKey.currentState?.pop();
+      // The pop will trigger the .then() above, setting _isScanDialogOpen = false
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final apiKey = prefs.getString('gemini_api_key');
+    if (apiKey != null && apiKey.isNotEmpty) {
+      tts.speak("Selecting Gemini AI.");
+      _processGeminiFlow(apiKey);
+    } else {
+      tts.speak("Gemini API Key missing. Please set it in preferences.");
+      final context = navigatorKey.currentContext;
+      if (context != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Gemini API Key missing. Please set in Preferences."),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _processGeminiFlow(String apiKey) async {
+    final picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+
+    if (image == null) return;
+    final context = navigatorKey.currentContext;
+    if (context == null) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Processing with Gemini AI...")),
+    );
+
+    try {
+      final doc = await _geminiService.processImage(image.path, apiKey);
+
+      navigatorKey.currentState?.push(
+        MaterialPageRoute(
+          builder: (_) => PaperDetailScreen(
+            document: doc,
+            ttsService: tts,
+            voiceService: this,
+            timestamp: DateTime.now().toString(),
+          ),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  void _navigateToOcr() {
+    // If specifically selecting OCR via voice, close the dialog if it's open
+    if (_isScanDialogOpen) {
+      navigatorKey.currentState?.pop();
+    }
+
+    navigatorKey.currentState?.push(
+      MaterialPageRoute(
+        builder: (_) => OcrScreen(ttsService: tts, voiceService: this),
+      ),
+    );
+  }
+
+  Future<void> _pickAndOpenPdf() async {
+    try {
+      tts.speak("Please select a PDF file.");
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf'],
+      );
+
+      if (result != null && result.files.single.path != null) {
+        String path = result.files.single.path!;
+        navigatorKey.currentState?.push(
+          MaterialPageRoute(
+            builder: (context) => PdfViewerScreen(
+              path: path,
+              ttsService: tts,
+              voiceService: this,
+            ),
+          ),
+        );
+      } else {
+        tts.speak("No file selected.");
+      }
+    } catch (e) {
+      print("Error picking PDF: $e");
+      tts.speak("Sorry, I couldn't open the file picker.");
+    }
+  }
 }

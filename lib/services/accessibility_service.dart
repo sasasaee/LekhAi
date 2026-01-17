@@ -1,19 +1,20 @@
 import 'package:flutter/services.dart';
 import 'package:vibration/vibration.dart'; // Upgrade to Vibration package
 import 'package:flutter_tts/flutter_tts.dart'; // Add TTS support
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart'; // For debugPrint
 
 /// Defines semantic events for accessibility feedback.
 enum AccessibilityEvent {
   navigation, // Screen transitions, dialogs opening
-  success,    // Action completed successfully
-  error,      // Operation failed
-  warning,    // Alerts, confirmations
-  action,     // Button clicks, toggles
-  focus,      // Navigation focus change
-  loading,    // Processing state
-  general,    // Default interaction
+  success, // Action completed successfully
+  error, // Operation failed
+  warning, // Alerts, confirmations
+  action, // Button clicks, toggles
+  focus, // Navigation focus change
+  loading, // Processing state
+  general, // Default interaction
 }
 
 class AccessibilityService {
@@ -21,7 +22,7 @@ class AccessibilityService {
   bool debugLogs = true;
   bool enabled = true; // NEW: Toggle master switch
   static const Duration _debounceDuration = Duration(milliseconds: 100);
-  
+
   DateTime? _lastFeedbackTime;
   Timer? _loadingTimer;
   bool? _hasVibrator;
@@ -29,7 +30,8 @@ class AccessibilityService {
   final FlutterTts _tts = FlutterTts(); // TTS Instance
 
   /// Singleton instance
-  static final AccessibilityService _instance = AccessibilityService._internal();
+  static final AccessibilityService _instance =
+      AccessibilityService._internal();
   factory AccessibilityService() => _instance;
   AccessibilityService._internal() {
     _initCapabilities();
@@ -38,9 +40,17 @@ class AccessibilityService {
   void _initCapabilities() async {
     _hasVibrator = await Vibration.hasVibrator();
     _hasCustomVibrations = await Vibration.hasCustomVibrationsSupport();
-    if (debugLogs) debugPrint("Accessibility: Vibrator=$_hasVibrator, Custom=$_hasCustomVibrations");
+
+    // Load saved preference
+    final prefs = await SharedPreferences.getInstance();
+    enabled = prefs.getBool('haptics') ?? true;
+
+    if (debugLogs)
+      debugPrint(
+        "Accessibility: Vibrator=$_hasVibrator, Custom=$_hasCustomVibrations, Enabled=$enabled",
+      );
   }
-  
+
   /// Toggles the haptic feedback on/off.
   void setEnabled(bool value) {
     enabled = value;
@@ -51,16 +61,16 @@ class AccessibilityService {
   /// Handles debounce and logging.
   Future<void> trigger(AccessibilityEvent event) async {
     if (!enabled) return; // Exit if disabled
-    
+
     if (debugLogs) debugPrint("Accessibility Event: $event");
 
     // Debounce check
     final now = DateTime.now();
-    if (_lastFeedbackTime != null && 
+    if (_lastFeedbackTime != null &&
         now.difference(_lastFeedbackTime!) < _debounceDuration) {
-       // if (debugLogs) debugPrint("Accessibility Event Debounced: $event");
-       // return; 
-       // NOTE: Removing strict debounce for now to ensure user feels everything in testing
+      // if (debugLogs) debugPrint("Accessibility Event Debounced: $event");
+      // return;
+      // NOTE: Removing strict debounce for now to ensure user feels everything in testing
     }
     _lastFeedbackTime = now;
 
@@ -87,20 +97,20 @@ class AccessibilityService {
     switch (event) {
       case AccessibilityEvent.focus:
         // Subtle tick (increased from 10 to 40ms)
-        await Vibration.vibrate(duration: 40); 
+        await Vibration.vibrate(duration: 40);
         break;
-        
+
       case AccessibilityEvent.navigation:
       case AccessibilityEvent.general:
         // Standard tick (increased from 15 to 60ms)
         await Vibration.vibrate(duration: 60);
         break;
-        
+
       case AccessibilityEvent.action:
         // Strong click (increased from 25 to 80ms)
         await Vibration.vibrate(duration: 80);
         break;
-        
+
       case AccessibilityEvent.success:
         // Distinct Pulse
         if (_hasCustomVibrations == true) {
@@ -109,17 +119,17 @@ class AccessibilityService {
           await Vibration.vibrate(duration: 150); // Fallback
         }
         break;
-        
+
       case AccessibilityEvent.warning:
         // Short buzz
         await Vibration.vibrate(duration: 250);
         break;
-        
+
       case AccessibilityEvent.error:
         // Distinct heavy buzz
         await Vibration.vibrate(duration: 500);
         break;
-        
+
       default:
         await Vibration.vibrate(duration: 40);
         break;
@@ -131,7 +141,7 @@ class AccessibilityService {
     if (_loadingTimer != null && _loadingTimer!.isActive) return;
 
     if (debugLogs) debugPrint("Accessibility: Starting Loading Pulse");
-    
+
     // Initial pulse
     Vibration.vibrate(duration: 15);
 
