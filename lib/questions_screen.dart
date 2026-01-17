@@ -13,6 +13,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'dart:ui'; // Add this for ImageFilter
 import 'services/stt_service.dart';
 import 'exam_info_screen.dart';
+import 'dart:async';
 
 // ... rest of imports
 
@@ -40,42 +41,146 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
   // Let's parse them to display metadata (like date).
   List<ParsedDocument> _papers = [];
   bool _isLoading = true;
-  int _examTimer = 0; // seconds
-  bool _timerStarted = false;
+  bool _isSelectingForExam = false;
+  //int _examTimer = 0; // seconds
+  //bool _timerStarted = false;
   final SttService _sttService = SttService();
+
+  int _currentQuestionIndex = 0;
+  Timer? _examTimer; // This controls the ticking
+  int _remainingSeconds = 0; // This holds the time left
+  bool _isExamRunning = false;
+  bool _showCountdown = false;
+  int _countdownValue = 3;
+  bool _isRecordingAnswer = false;
+
+  List<dynamic> _allExamQuestions = [];
 
   @override
   void initState() {
     super.initState();
     _loadQuestions();
-    widget.ttsService.speak(
+   
+    if (widget.examMode) {
+    _startExamSequence();
+    }
+    else{
+         widget.ttsService.speak(
       "Welcome to saved papers. Here you can review your scanned question papers.",
     );
-    if (widget.examMode) {
-    _startExamTimer();
     }
   }
 
-  Future<void> _startExamTimer() async {
-  if (_timerStarted) return;
-  _timerStarted = true;
+  @override
+  void dispose() {
+    _examTimer?.cancel(); // Added safety
+    super.dispose();
+  }
+//   Future<void> _startExamTimer() async {
+//   if (_timerStarted) return;
+//   _timerStarted = true;
 
-  const totalSeconds = 60 * 60; // Example: 1-hour exam
-  int remainingSeconds = totalSeconds;
+//   const totalSeconds = 60 * 60; // Example: 1-hour exam
+//   int remainingSeconds = totalSeconds;
 
-  widget.ttsService.speak("The exam timer is starting now.");
+//   widget.ttsService.speak("The exam timer is starting now.");
 
-  while (remainingSeconds > 0 && mounted) {
-    setState(() => _examTimer = remainingSeconds);
-    await Future.delayed(const Duration(seconds: 1));
-    remainingSeconds--;
+//   while (remainingSeconds > 0 && mounted) {
+//     setState(() => _examTimer = remainingSeconds);
+//     await Future.delayed(const Duration(seconds: 1));
+//     remainingSeconds--;
+//   }
+
+//   if (mounted) {
+//     setState(() => _examTimer = 0);
+//     widget.ttsService.speak("Time's up!");
+//   }
+// }
+
+void _startExamSequence() {
+    if (widget.document != null) {
+      _allExamQuestions = widget.document!.sections
+          .expand((section) => section.questions)
+          .toList();
+    }
+
+    _remainingSeconds = 900; // 15 Minutes
+    setState(() {
+      _showCountdown = true;
+      _countdownValue = 3; 
+    });
+
+    // 3-2-1 Countdown
+    Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_countdownValue > 1) {
+        setState(() => _countdownValue--);
+      } else {
+        timer.cancel();
+        _beginExam();
+      }
+    });
   }
 
-  if (mounted) {
-    setState(() => _examTimer = 0);
-    widget.ttsService.speak("Time's up!");
+  void _beginExam() {
+    setState(() {
+      _showCountdown = false;
+      _isExamRunning = true;
+    });
+    
+    widget.ttsService.speak("Exam started.");
+
+    _examTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      if (_remainingSeconds > 0) {
+        setState(() => _remainingSeconds--);
+        if (_remainingSeconds == 900) {
+          widget.ttsService.speak("Fifteen minutes remaining.");
+        }
+      } else {
+        _finishExam();
+      }
+    });
+
+    _readCurrentQuestion();
   }
-}
+
+  void _readCurrentQuestion() {
+    // FIX: Use _allExamQuestions instead of widget.document!.questions
+    if (_allExamQuestions.isNotEmpty) {
+      String text = _allExamQuestions[_currentQuestionIndex].prompt;
+      widget.ttsService.stop(); 
+      widget.ttsService.speak("Question ${_currentQuestionIndex + 1}. $text");
+    }
+  }
+
+  void _toggleAnswerRecording() {
+    setState(() {
+      _isRecordingAnswer = !_isRecordingAnswer;
+    });
+    // Add your actual _sttService.listen() call here if needed later
+  }
+
+  void _nextQuestion() {
+    if (_currentQuestionIndex < _allExamQuestions.length - 1) {
+      setState(() {
+        _currentQuestionIndex++;
+        _isRecordingAnswer = false; 
+      });
+      _readCurrentQuestion();
+    } else {
+      _finishExam();
+    }
+  }
+
+  void _finishExam() {
+    _examTimer?.cancel();
+    widget.ttsService.speak("Exam finished.");
+    Navigator.of(context).popUntil((route) => route.isFirst);
+  }
 
 String _formatTime(int seconds) {
   final mins = (seconds ~/ 60).toString().padLeft(2, '0');
@@ -138,6 +243,97 @@ String _formatTime(int seconds) {
 
   @override
   Widget build(BuildContext context) {
+    
+    if (widget.examMode) {
+      // A. The 3-2-1 Countdown Screen
+      if (_showCountdown) {
+        return Scaffold(
+          body: Center(
+            child: Text(
+              "$_countdownValue",
+              style: GoogleFonts.outfit(fontSize: 100, fontWeight: FontWeight.bold, color: Colors.deepPurple),
+            ),
+          ),
+        );
+      }
+      
+      // B. The Active Exam Screen
+      // Safety Check: If document is null, show error to avoid crash
+      if (_allExamQuestions.isEmpty) {
+         return const Scaffold(body: Center(child: Text("Error: No questions loaded.")));
+      }
+
+      final question = _allExamQuestions[_currentQuestionIndex];
+      
+      return Scaffold(
+        appBar: AppBar(
+          title: Text("Time: ${_formatTime(_remainingSeconds)}"),
+          automaticallyImplyLeading: false, 
+          centerTitle: true,
+        ),
+        body: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                "Question ${_currentQuestionIndex + 1} of ${_allExamQuestions.length}",
+                style: GoogleFonts.outfit(fontSize: 20, color: Colors.grey),
+              ),
+              const SizedBox(height: 30),
+              
+              Expanded(
+                child: Center(
+                  child: SingleChildScrollView(
+                    child: Text(
+                      question.prompt,
+                      style: GoogleFonts.outfit(fontSize: 28, fontWeight: FontWeight.bold),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+              ),
+              
+              const SizedBox(height: 20),
+              
+              // Mic Button
+              GestureDetector(
+                onTap: _toggleAnswerRecording,
+                child: CircleAvatar(
+                  radius: 40,
+                  backgroundColor: _isRecordingAnswer ? Colors.redAccent : Colors.deepPurple,
+                  child: Icon(_isRecordingAnswer ? Icons.stop : Icons.mic, size: 40, color: Colors.white),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                _isRecordingAnswer ? "Listening..." : "Tap to Answer",
+                style: GoogleFonts.outfit(color: Colors.grey),
+              ),
+              
+              const SizedBox(height: 40),
+              
+              // Next Button
+              ElevatedButton(
+                onPressed: _nextQuestion,
+                style: ElevatedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 60),
+                  backgroundColor: Colors.deepPurple,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+                child: Text(
+                  _currentQuestionIndex == _allExamQuestions.length - 1 
+                      ? "Finish Exam" 
+                      : "Next Question",
+                  style: GoogleFonts.outfit(fontSize: 18, color: Colors.white, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       extendBodyBehindAppBar: true, 
       appBar: AppBar(
@@ -220,17 +416,38 @@ String _formatTime(int seconds) {
         padding: const EdgeInsets.only(bottom: 24),
         child: ElevatedButton.icon(
           onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => ExamInfoScreen(
-                ttsService: widget.ttsService,
-                voiceService: widget.voiceService,
-                accessibilityService: widget.accessibilityService!,
-                sttService: _sttService,
-                        ),
-              ),
-            );
+            if(widget.document!=null){
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ExamInfoScreen(
+                  document: widget.document!,
+                  ttsService: widget.ttsService,
+                  voiceService: widget.voiceService,
+                  accessibilityService: widget.accessibilityService!,
+                  sttService: _sttService,
+                  ),
+                ),
+              );
+            }else{
+              setState(() {
+                _isSelectingForExam = !_isSelectingForExam;
+              });
+
+              String msg = _isSelectingForExam 
+                  ? "Please tap a paper below to start the exam." 
+                  : "Exam selection cancelled.";
+                  
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(msg, style: GoogleFonts.outfit()),
+                  backgroundColor: Colors.deepPurple,
+                  //behavior: SnackBarBehavior.floating,
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+              widget.ttsService.speak(msg);
+            }
           },
           icon: const Icon(Icons.school),
           label: Text(
@@ -280,7 +497,7 @@ String _formatTime(int seconds) {
               ),
             const SizedBox(height: 8),
             Text(
-              "Time Remaining: ${_formatTime(_examTimer)}",
+              "Time Remaining: ${_formatTime(_remainingSeconds)}",
               style: GoogleFonts.outfit(
                 fontSize: 16,
                 color: Colors.white70,
@@ -344,7 +561,29 @@ String _formatTime(int seconds) {
                 trailing: Icon(Icons.arrow_forward_ios_rounded, color: Colors.white24, size: 16),
                 onTap: () {
                   AccessibilityService().trigger(AccessibilityEvent.action);
-                  _openPaper(doc, index);
+
+                  // 1. CHECK: Are we trying to start an exam?
+                  if (_isSelectingForExam) {
+                    // YES -> Turn off the selection switch
+                    setState(() => _isSelectingForExam = false);
+
+                    // ...and go to the Student Info Screen
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ExamInfoScreen(
+                          document: doc,
+                          ttsService: widget.ttsService,
+                          voiceService: widget.voiceService,
+                          accessibilityService: widget.accessibilityService ?? AccessibilityService(),
+                          sttService: _sttService,
+                        ),
+                      ),
+                    );
+                  } else {
+                    // NO -> Just open the paper normally (Review Mode)
+                    _openPaper(doc, index);
+                  }
                 },
               ),
             ),

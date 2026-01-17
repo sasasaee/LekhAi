@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:lekhai/paper_detail_screen.dart';
 import 'dart:io';
 import 'questions_screen.dart';
 import 'package:lekhai/services/ocr_service.dart';
@@ -7,11 +8,10 @@ import 'package:lekhai/services/tts_service.dart';
 import 'package:lekhai/services/stt_service.dart';
 import 'package:lekhai/services/voice_command_service.dart';
 import 'package:lekhai/services/accessibility_service.dart';
-//import 'package:lekhai/models/parsed_document.dart';
-
+import 'package:lekhai/models/question_model.dart';
 
 class ExamInfoScreen extends StatefulWidget {
-  //final ParsedDocument document;
+  final ParsedDocument document;
   final TtsService ttsService;
   final VoiceCommandService voiceService;
   final AccessibilityService accessibilityService;
@@ -20,7 +20,7 @@ class ExamInfoScreen extends StatefulWidget {
 
   const ExamInfoScreen({
     Key? key,
-   //required this.document,
+   required this.document,
     required this.ttsService,
     required this.voiceService,
     required this.accessibilityService,
@@ -77,43 +77,52 @@ Future<void> _listenId() async {
   void _confirmAndStartExam() {
   if (_name.isEmpty || _studentId.isEmpty) {
     widget.ttsService.speak("Please provide both name and student ID.");
+    ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Please provide both Name and Student ID."),
+          backgroundColor: Colors.red,
+        ),
+      );
     return;
   }
 
   widget.ttsService.speak(
-      "You entered name $_name and student ID $_studentId. Is this correct? Say yes or no."
+      //"You entered name $_name and student ID $_studentId. Is this correct? Say yes or no."
+      "Details confirmed. Starting exam for $_name."
   );
 
   // Start listening for the confirmation
-  widget.sttService.startListening(
-    localeId: 'en_US',
-    onResult: (result) {
-      if (result.toLowerCase() == 'yes') {
-        widget.ttsService.speak("Starting exam in 5 seconds.");
-        Future.delayed(const Duration(seconds: 5), () {
-          if (!mounted) return;
+  // widget.sttService.startListening(
+  //   localeId: 'en_US',
+  //   onResult: (result) {
+  //     if (result.toLowerCase() == 'yes') {
+  //       widget.ttsService.speak("Starting exam in 5 seconds.");
+  //       Future.delayed(const Duration(seconds: 5), () {
+  //         if (!mounted) return;
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (_) => QuestionsScreen(
+              builder: (_) => PaperDetailScreen(
                 ttsService: widget.ttsService,
                 voiceService: widget.voiceService,
                 accessibilityService: widget.accessibilityService,
+                document: widget.document,
                 studentName: _name,
                 studentId: _studentId,
                 examMode: true,
+                timestamp: DateTime.now().toIso8601String(),
               ),
             ),
           );
-        });
-      } else {
-        widget.ttsService.speak("Information not confirmed. Please re-enter.");
-      }
+      //   });
+      // } else {
+      //   widget.ttsService.speak("Information not confirmed. Please re-enter.");
+      // }
 
       // Stop listening after first result
-      widget.sttService.stopListening();
-    },
-  );
+     // widget.sttService.stopListening();
+   // },
+ // );
 }
 
 

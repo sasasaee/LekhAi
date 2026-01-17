@@ -175,12 +175,16 @@ Future<void> _promptExamMode() async {
     return;
   }
 
-  if (!mounted || _imageFile == null) return;
+  if (!mounted || _imageFile == null){
+    widget.ttsService.speak("Error: No document scanned.");
+     return;
+  }
 
   Navigator.pushReplacement(
     context,
     MaterialPageRoute(
       builder: (_) => ExamInfoScreen(
+        document: _doc!,
         ttsService: widget.ttsService,
         voiceService: widget.voiceService,
         accessibilityService: widget.accessibilityService!,
@@ -203,8 +207,6 @@ Future<String> _listenForResponse(int seconds) {
 
   return completer.future;
 }
-
-
 
 
   @override
