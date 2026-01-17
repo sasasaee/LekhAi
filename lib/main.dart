@@ -22,6 +22,7 @@ import 'questions_screen.dart';
 import 'pdf_viewer_screen.dart';
 import 'paper_detail_screen.dart';
 import 'start_page.dart'; // Imported StartPage
+import 'take_exam_screen.dart'; // Extracted screen
 import 'models/question_model.dart';
 import 'widgets/accessible_widgets.dart';
 import 'widgets/animated_button.dart';
@@ -65,6 +66,15 @@ class MyApp extends StatelessWidget {
           voiceService: voiceCommandService,
           // accessibilityService: accessibilityService,
         ),
+        '/settings': (context) => PreferencesScreen(
+          ttsService: ttsService,
+          voiceService: voiceCommandService,
+        ),
+        '/take_exam': (context) {
+          throw UnimplementedError(
+            "Use named route with arguments or direct navigation",
+          );
+        },
       },
     );
   }
@@ -175,7 +185,8 @@ class _HomeScreenState extends State<HomeScreen>
 
   // Added: Speech-to-text service for background command listening
   final SttService _sttService = SttService();
-  // bool _isListening = false; // Flag to track if we are intentionally listening
+  // Flag to track if we are intentionally listening
+  bool _shouldListen = true;
 
   static const Color buttonColor = Color(0xFF1283B2);
 
@@ -190,12 +201,13 @@ class _HomeScreenState extends State<HomeScreen>
     // _animation = CurvedAnimation(parent: _controller, curve: Curves.easeInOut);
     _controller.forward();
 
-    // 1. Initial Greeting & Haptics
-    widget.accessibilityService.trigger(AccessibilityEvent.navigation);
-    widget.ttsService.speak("Welcome back. Choose 'Take Exam' or 'Read PDF'.");
-
-    // 2. Start listening for voice commands (like "saved papers")
+    // 1. CRITICAL: Initialize voice command listener FIRST before any TTS
+    // This ensures STT subscribes to TTS events before speech starts
     _initVoiceCommandListener();
+
+    // 2. Initial Greeting & Haptics (AFTER STT init)
+    widget.accessibilityService.trigger(AccessibilityEvent.navigation);
+    widget.ttsService.speak("Welcome.");
 
     // 3. Start Time Timer
     _updateTime();
@@ -216,12 +228,13 @@ class _HomeScreenState extends State<HomeScreen>
   // --- VOICE COMMAND LOGIC ---
   void _initVoiceCommandListener() async {
     bool available = await _sttService.init(
+      tts: widget.ttsService, // Pass TTS to enable auto-pause
       onStatus: (status) {
         // print("Home STT Status: $status");
         // Keep-Alive: Restart if the OS stops the microphone due to timeout
         if (status == 'notListening' || status == 'done') {
           Future.delayed(const Duration(milliseconds: 500), () {
-            if (mounted) _startListeningLoop();
+            if (mounted && _shouldListen) _startListeningLoop();
           });
         }
       },
@@ -234,7 +247,7 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   void _startListeningLoop() {
-    if (!_sttService.isAvailable) return;
+    if (!_sttService.isAvailable || !_shouldListen) return;
 
     _sttService.startListening(
       localeId: "en-US",
@@ -243,28 +256,52 @@ class _HomeScreenState extends State<HomeScreen>
         final result = widget.voiceService.parse(text);
 
         if (result.action != VoiceAction.unknown) {
-          _handleHomeVoiceCommand(result);
+          if (_shouldListen) _handleHomeVoiceCommand(result);
         }
       },
     );
   }
 
   void _handleHomeVoiceCommand(CommandResult result) async {
+    // If the action involves navigation away from Home, stop listening first.
+    bool willNavigate =
+        result.action == VoiceAction.goToSavedPapers ||
+        result.action == VoiceAction.goToTakeExam ||
+        result.action == VoiceAction.goToSettings ||
+        result.action == VoiceAction.goToReadPDF;
+
+    if (willNavigate) {
+      _shouldListen = false;
+      await _sttService.stopListening();
+    }
+
     switch (result.action) {
       case VoiceAction.goToSavedPapers:
         await widget.ttsService.speak("Opening saved papers.");
-        widget.voiceService.performGlobalNavigation(result);
+        await widget.voiceService.performGlobalNavigation(result);
         break;
 
       case VoiceAction.goToTakeExam:
         await widget.ttsService.speak("Starting exam mode.");
-        _openTakeExam();
-        break;
+        // _openTakeExam handles its own navigation logic but we double check
+        // _openTakeExam actually calls push, so we can use performGlobalNavigation or custom method
+        // But the custom method _openTakeExam ALREADY handles stop/start!
+        // So we should delegate to it or use performGlobalNav if it does the same.
+        // NOTE: _openTakeExam passes the STT service which might be needed.
+        // Let's stick to _openTakeExam for consistency if it does special setup.
+        await _openTakeExam(); // This handles its own start/stop
+        return; // Return early as we handled resume in _openTakeExam
 
       default:
         // Handle other global navigation commands
-        widget.voiceService.performGlobalNavigation(result);
+        await widget.voiceService.performGlobalNavigation(result);
         break;
+    }
+
+    // Resume listening if we navigated away and came back (or if action didn't navigate)
+    if (willNavigate && mounted) {
+      _shouldListen = true;
+      _initVoiceCommandListener();
     }
   }
 
@@ -278,7 +315,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   // --- NAVIGATION METHODS ---
 
-  void _openPdf() async {
+  Future<void> _openPdf() async {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['pdf'],
@@ -293,7 +330,10 @@ class _HomeScreenState extends State<HomeScreen>
     if (!mounted) return;
 
     // Stop home listener before entering PDF viewer to avoid mic conflicts
-    _sttService.stopListening();
+    _shouldListen = false;
+    await _sttService.stopListening();
+
+    if (!mounted) return;
 
     Navigator.push(
       context,
@@ -304,11 +344,18 @@ class _HomeScreenState extends State<HomeScreen>
           voiceService: widget.voiceService,
         ),
       ),
-    ).then((_) => _initVoiceCommandListener()); // Restart when coming back
+    ).then((_) {
+      _shouldListen = true;
+      _initVoiceCommandListener();
+    }); // Restart when coming back
   }
 
-  void _openTakeExam() {
-    _sttService.stopListening(); // Stop home listener
+  Future<void> _openTakeExam() async {
+    _shouldListen = false;
+    await _sttService.stopListening(); // Stop home listener (await is CRITICAL)
+
+    if (!mounted) return;
+
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -316,9 +363,13 @@ class _HomeScreenState extends State<HomeScreen>
           ttsService: widget.ttsService,
           voiceService: widget.voiceService,
           accessibilityService: widget.accessibilityService,
+          sttService: _sttService,
         ),
       ),
-    ).then((_) => _initVoiceCommandListener()); // Restart when coming back
+    ).then((_) {
+      _shouldListen = true;
+      _initVoiceCommandListener();
+    }); // Restart when coming back
   }
 
   void _showAboutDialog() {
@@ -492,9 +543,15 @@ class _HomeScreenState extends State<HomeScreen>
                       subLabel: "Your Archive",
                       color: const Color(0xFF10B981), // Emerald
                       delay: 800,
-                      onTap: () {
+                      onTap: () async {
                         widget.ttsService.speak("Opening saved papers.");
-                        Navigator.pushNamed(context, '/saved_papers');
+                        _shouldListen = false;
+                        await _sttService.stopListening();
+                        if (!mounted) return;
+                        Navigator.pushNamed(context, '/saved_papers').then((_) {
+                          _shouldListen = true;
+                          _initVoiceCommandListener();
+                        });
                       },
                     ),
                     _DashboardCard(
@@ -503,8 +560,11 @@ class _HomeScreenState extends State<HomeScreen>
                       subLabel: "Customize App",
                       color: const Color(0xFF8B5CF6), // Violet
                       delay: 900,
-                      onTap: () {
+                      onTap: () async {
                         widget.ttsService.speak("Opening preferences.");
+                        _shouldListen = false;
+                        await _sttService.stopListening();
+                        if (!mounted) return;
                         Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -513,7 +573,10 @@ class _HomeScreenState extends State<HomeScreen>
                               voiceService: widget.voiceService,
                             ),
                           ),
-                        );
+                        ).then((_) {
+                          _shouldListen = true;
+                          _initVoiceCommandListener();
+                        });
                       },
                     ),
                   ],
@@ -649,369 +712,6 @@ class _DashboardCard extends StatelessWidget {
               .animate()
               .fadeIn(delay: delay.ms, duration: 600.ms)
               .scale(begin: const Offset(0.9, 0.9), curve: Curves.easeOutBack),
-    );
-  }
-}
-
-// ---------------------- Take Exam Screen ----------------------
-
-class TakeExamScreen extends StatefulWidget {
-  final TtsService ttsService;
-  final VoiceCommandService voiceService;
-  final AccessibilityService accessibilityService;
-
-  const TakeExamScreen({
-    super.key,
-    required this.ttsService,
-    required this.voiceService,
-    required this.accessibilityService,
-  });
-
-  @override
-  State<TakeExamScreen> createState() => _TakeExamScreenState();
-}
-
-class _TakeExamScreenState extends State<TakeExamScreen> {
-  final GeminiQuestionService _geminiService = GeminiQuestionService();
-
-  @override
-  void initState() {
-    super.initState();
-    widget.accessibilityService.trigger(AccessibilityEvent.navigation);
-    widget.ttsService.speak("Welcome to Take Exam. Choose an option.");
-  }
-
-  Future<void> _handleScan() async {
-    final prefs = await SharedPreferences.getInstance();
-    final apiKey = prefs.getString('gemini_api_key');
-
-    if (!mounted) return;
-
-    if (apiKey != null && apiKey.isNotEmpty) {
-      showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Preferences'),
-          content: const Text(
-            "Gemini AI Key detected. Do you want to use Gemini AI for superior accuracy?",
-          ),
-          actions: [
-            AccessibleTextButton(
-              onPressed: () {
-                Navigator.pop(ctx);
-                _processGeminiFlow(apiKey);
-              },
-              child: const Text("Use Gemini AI"),
-            ),
-            AccessibleTextButton(
-              onPressed: () {
-                Navigator.pop(ctx);
-                _navigateToOcr();
-              },
-              child: const Text("Use Local OCR"),
-            ),
-          ],
-        ),
-      );
-    } else {
-      _navigateToOcr();
-    }
-  }
-
-  void _navigateToOcr() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => OcrScreen(
-          ttsService: widget.ttsService,
-          voiceService: widget.voiceService,
-        ),
-      ),
-    );
-  }
-
-  Future<void> _processGeminiFlow(String apiKey) async {
-    final picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
-
-    if (image == null) return;
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Processing with Gemini AI...")),
-    );
-
-    try {
-      final doc = await _geminiService.processImage(image.path, apiKey);
-      if (!mounted) return;
-
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => PaperDetailScreen(
-            document: doc,
-            ttsService: widget.ttsService,
-            voiceService: widget.voiceService,
-            timestamp: DateTime.now().toString(),
-          ),
-        ),
-      );
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
-        );
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: Image.asset('assets/images/logo.png', width: 140, height: 80),
-        centerTitle: true,
-        leading: Container(
-          margin: const EdgeInsets.only(left: 16, top: 8, bottom: 8),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.1),
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white.withOpacity(0.1)),
-          ),
-          child: IconButton(
-            icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-            tooltip: "Back",
-            onPressed: () {
-              widget.accessibilityService.trigger(AccessibilityEvent.action);
-              Navigator.pop(context);
-            },
-          ),
-        ),
-      ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Theme.of(context).cardTheme.color!.withOpacity(0.8),
-              Theme.of(context).scaffoldBackgroundColor,
-              Colors.black,
-            ],
-          ),
-        ),
-        child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    "Exam Tools",
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.outfit(
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                      letterSpacing: 1,
-                    ),
-                  ).animate().fadeIn().slideY(begin: -0.2, end: 0),
-                  const SizedBox(height: 8),
-                  Text(
-                    "Select an option to begin",
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.outfit(
-                      fontSize: 16,
-                      color: Colors.white54,
-                    ),
-                  ).animate().fadeIn(delay: 200.ms),
-
-                  const SizedBox(height: 48),
-
-                  _ExamActionTile(
-                    icon: Icons.camera_alt_outlined,
-                    label: "Scan Questions",
-                    subLabel: "Capture & Analyze",
-                    color: const Color(0xFF3B82F6),
-                    delay: 400,
-                    onTap: _handleScan,
-                  ),
-                  const SizedBox(height: 20),
-                  _ExamActionTile(
-                    icon: Icons.question_answer_outlined,
-                    label: "Saved Questions",
-                    subLabel: "Review Archives",
-                    color: const Color(0xFF10B981),
-                    delay: 500,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => QuestionsScreen(
-                            ttsService: widget.ttsService,
-                            voiceService: widget.voiceService,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 20),
-                  _ExamActionTile(
-                    icon: Icons.settings_outlined,
-                    label: "Preferences",
-                    subLabel: "Configure Settings",
-                    color: const Color(0xFF8B5CF6),
-                    delay: 600,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => PreferencesScreen(
-                            ttsService: widget.ttsService,
-                            voiceService: widget.voiceService,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ExamActionTile extends StatefulWidget {
-  final IconData icon;
-  final String label;
-  final String subLabel;
-  final Color color;
-  final int delay;
-  final VoidCallback onTap;
-
-  const _ExamActionTile({
-    required this.icon,
-    required this.label,
-    required this.subLabel,
-    required this.color,
-    required this.delay,
-    required this.onTap,
-  });
-
-  @override
-  State<_ExamActionTile> createState() => _ExamActionTileState();
-}
-
-class _ExamActionTileState extends State<_ExamActionTile>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _scale;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(vsync: this, duration: 150.ms);
-    _scale = Tween<double>(begin: 1.0, end: 0.98).animate(_controller);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (_) => _controller.forward(),
-      onTapUp: (_) {
-        _controller.reverse();
-        AccessibilityService().trigger(AccessibilityEvent.action);
-        widget.onTap();
-      },
-      onTapCancel: () => _controller.reverse(),
-      child:
-          ScaleTransition(
-                scale: _scale,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 20,
-                  ),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Colors.white.withOpacity(0.08),
-                        Colors.white.withOpacity(0.03),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: Colors.white.withOpacity(0.1)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: widget.color.withOpacity(0.15),
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: widget.color.withOpacity(0.3),
-                          ),
-                        ),
-                        child: Icon(widget.icon, color: widget.color, size: 30),
-                      ),
-                      const SizedBox(width: 20),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              widget.label,
-                              style: GoogleFonts.outfit(
-                                fontSize: 20,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              widget.subLabel,
-                              style: GoogleFonts.outfit(
-                                fontSize: 14,
-                                color: Colors.white54,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Icon(
-                        Icons.arrow_forward_ios_rounded,
-                        color: Colors.white24,
-                        size: 18,
-                      ),
-                    ],
-                  ),
-                ),
-              )
-              .animate()
-              .fadeIn(delay: widget.delay.ms)
-              .slideX(begin: 0.1, end: 0, curve: Curves.easeOutBack),
     );
   }
 }

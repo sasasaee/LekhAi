@@ -27,7 +27,9 @@ class _StartPageState extends State<StartPage> {
   @override
   void initState() {
     super.initState();
-    widget.ttsService.speak("Welcome to LekhAi. Your intelligent study companion. Tap Start to continue.");
+    widget.ttsService.speak(
+      "Welcome to LekhAi. Your intelligent study companion.",
+    );
   }
 
   @override
@@ -53,18 +55,19 @@ class _StartPageState extends State<StartPage> {
                 const Spacer(flex: 2),
                 // Logo
                 Hero(
-                  tag: 'app_logo',
-                  child: Image.asset(
-                    'assets/images/logo.png',
-                    width: 320, // Increased size
-                    height: 320,
-                  ),
-                ).animate()
-                 .fade(duration: 800.ms)
-                 .scale(duration: 800.ms, curve: Curves.easeOutBack),
-                
+                      tag: 'app_logo',
+                      child: Image.asset(
+                        'assets/images/logo.png',
+                        width: 320, // Increased size
+                        height: 320,
+                      ),
+                    )
+                    .animate()
+                    .fade(duration: 800.ms)
+                    .scale(duration: 800.ms, curve: Curves.easeOutBack),
+
                 const SizedBox(height: 32),
-                
+
                 // Description
                 Text(
                   "Your ability defines you, not your limitations.",
@@ -76,57 +79,63 @@ class _StartPageState extends State<StartPage> {
                     height: 1.4,
                   ),
                 ).animate().fadeIn(delay: 500.ms).slideY(begin: 0.2, end: 0),
-                
+
                 const Spacer(flex: 3),
-                
+
                 // Start Button
                 SizedBox(
-                  width: double.infinity,
-                  height: 68, // Slightly taller
-                  child: ElevatedButton(
-                    onPressed: () {
-                      widget.accessibilityService.trigger(AccessibilityEvent.action);
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => HomeScreen(
-                            ttsService: widget.ttsService,
-                            voiceService: widget.voiceService,
-                            accessibilityService: widget.accessibilityService,
+                      width: double.infinity,
+                      height: 68, // Slightly taller
+                      child: ElevatedButton(
+                        onPressed: () {
+                          widget.accessibilityService.trigger(
+                            AccessibilityEvent.action,
+                          );
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => HomeScreen(
+                                ttsService: widget.ttsService,
+                                voiceService: widget.voiceService,
+                                accessibilityService:
+                                    widget.accessibilityService,
+                              ),
+                            ),
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Theme.of(context).primaryColor,
+                          foregroundColor: Colors.white,
+                          elevation: 8,
+                          shadowColor: Theme.of(
+                            context,
+                          ).primaryColor.withOpacity(0.5),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(24),
                           ),
                         ),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Theme.of(context).primaryColor,
-                      foregroundColor: Colors.white,
-                      elevation: 8,
-                      shadowColor: Theme.of(context).primaryColor.withOpacity(0.5),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(24),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Text(
+                              "Get Started",
+                              style: TextStyle(
+                                fontSize: 24, // Bigger font
+                                fontWeight: FontWeight.w800, // Bolder
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            const Icon(Icons.arrow_forward_rounded, size: 28),
+                          ],
+                        ),
                       ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Text(
-                          "Get Started",
-                          style: TextStyle(
-                            fontSize: 24, // Bigger font
-                            fontWeight: FontWeight.w800, // Bolder
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        const Icon(Icons.arrow_forward_rounded, size: 28),
-                      ],
-                    ),
-                  ),
-                ).animate()
-                 .fadeIn(delay: 800.ms)
-                 .shimmer(delay: 1500.ms, duration: 1500.ms)
-                 .slideY(begin: 0.5, end: 0, curve: Curves.easeOutQuad),
-                 
+                    )
+                    .animate()
+                    .fadeIn(delay: 800.ms)
+                    .shimmer(delay: 1500.ms, duration: 1500.ms)
+                    .slideY(begin: 0.5, end: 0, curve: Curves.easeOutQuad),
+
                 const SizedBox(height: 32),
               ],
             ),

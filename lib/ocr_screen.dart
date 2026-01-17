@@ -11,10 +11,11 @@ import 'services/question_segmentation_service.dart';
 import 'models/question_model.dart';
 import 'questions_screen.dart';
 import 'services/voice_command_service.dart';
+import 'services/stt_service.dart';
 
 import 'services/accessibility_service.dart';
 import 'widgets/accessible_widgets.dart'; // Added
-import 'widgets/animated_button.dart';
+// import 'widgets/animated_button.dart';
 
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_animate/flutter_animate.dart'; // Ensure animate is available
@@ -28,8 +29,12 @@ class OcrScreen extends StatefulWidget {
   final VoiceCommandService voiceService;
   final AccessibilityService? accessibilityService;
 
-  const OcrScreen({super.key, required this.ttsService, 
-    required this.voiceService, this.accessibilityService});
+  const OcrScreen({
+    super.key,
+    required this.ttsService,
+    required this.voiceService,
+    this.accessibilityService,
+  });
 
   @override
   State<OcrScreen> createState() => _OcrScreenState();
@@ -42,13 +47,16 @@ class _OcrScreenState extends State<OcrScreen> {
   final QuestionSegmentationService _segmenter = QuestionSegmentationService();
   final ImagePicker _picker = ImagePicker();
 
+  final SttService _sttService = SttService();
+  bool _isListening = false;
+
   bool _isProcessing = false;
   File? _imageFile;
   ParsedDocument? _doc;
   List<OcrLine> _rawLines = [];
 
   // ... (maintain all existing methods: initState, _retrieveLostData, _pickImage, _processImage, _saveParsed, dispose)
-  
+
   @override
   void initState() {
     super.initState();
@@ -56,6 +64,76 @@ class _OcrScreenState extends State<OcrScreen> {
       "Welcome to the OCR screen. You can scan from camera or select from gallery.",
     );
     _retrieveLostData();
+    _initVoiceCommandListener();
+  }
+
+  // --- VOICE COMMAND LOGIC ---
+  void _initVoiceCommandListener() async {
+    bool available = await _sttService.init(
+      tts: widget.ttsService,
+      onStatus: (status) {
+        if ((status == 'notListening' || status == 'done') && !_isListening) {
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (mounted && !_isListening) _startCommandStream();
+          });
+        }
+      },
+      onError: (error) => print("OCR Screen STT Error: $error"),
+    );
+
+    if (available) {
+      _startCommandStream();
+    }
+  }
+
+  void _startCommandStream() {
+    if (!_sttService.isAvailable || _isListening) return;
+
+    _sttService.startListening(
+      localeId: "en-US",
+      onResult: (text) {
+        // Parse with OCR context!
+        final result = widget.voiceService.parse(
+          text,
+          context: VoiceContext.ocr,
+        );
+
+        if (result.action != VoiceAction.unknown) {
+          _handleVoiceCommand(result);
+        }
+      },
+    );
+  }
+
+  void _handleVoiceCommand(CommandResult result) {
+    if (!mounted) return;
+
+    // Stop listener momentarily if action takes over UI or TTS speaks
+    // But since we have auto-pause, we generally just execute.
+
+    switch (result.action) {
+      case VoiceAction.scanCamera:
+        if (!_isProcessing) _pickImage(ImageSource.camera);
+        break;
+      case VoiceAction.scanGallery:
+        if (!_isProcessing) _pickImage(ImageSource.gallery);
+        break;
+      case VoiceAction.saveResult:
+        _saveParsed();
+        break;
+      case VoiceAction.goBack:
+        Navigator.pop(context);
+        break;
+      // Fallback to global
+      case VoiceAction.goToHome:
+      case VoiceAction.goToSettings:
+      case VoiceAction.goToSavedPapers:
+      case VoiceAction.goToReadPDF:
+        widget.voiceService.performGlobalNavigation(result);
+        break;
+      default:
+        break;
+    }
   }
 
   Future<void> _retrieveLostData() async {
@@ -128,7 +206,7 @@ class _OcrScreenState extends State<OcrScreen> {
   Future<void> _saveParsed() async {
     AccessibilityService().trigger(AccessibilityEvent.loading);
     final doc = _doc;
-    
+
     if (doc == null) {
       AccessibilityService().trigger(AccessibilityEvent.error);
       return;
@@ -138,15 +216,15 @@ class _OcrScreenState extends State<OcrScreen> {
       await _storageService.saveDocument(doc);
       AccessibilityService().trigger(AccessibilityEvent.success);
       widget.ttsService.speak("Saved successfully");
-      
+
       if (!mounted) return;
-      
+
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
           builder: (_) => QuestionsScreen(
             ttsService: widget.ttsService,
-            voiceService: widget.voiceService, 
+            voiceService: widget.voiceService,
             accessibilityService: widget.accessibilityService,
           ),
         ),
@@ -159,6 +237,7 @@ class _OcrScreenState extends State<OcrScreen> {
 
   @override
   void dispose() {
+    _sttService.stopListening();
     _ocrService.dispose();
     super.dispose();
   }
@@ -170,7 +249,10 @@ class _OcrScreenState extends State<OcrScreen> {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text('Scan Question', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+        title: Text(
+          'Scan Question',
+          style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+        ),
         centerTitle: true,
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -189,7 +271,7 @@ class _OcrScreenState extends State<OcrScreen> {
         ),
       ),
       body: Container(
-         decoration: BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -210,74 +292,87 @@ class _OcrScreenState extends State<OcrScreen> {
                   children: [
                     Expanded(
                       child: _GlassButton(
-                         icon: Icons.camera_alt_outlined,
-                         label: "Camera",
-                         color: Theme.of(context).primaryColor,
-                         onTap: _isProcessing ? null : () => _pickImage(ImageSource.camera),
+                        icon: Icons.camera_alt_outlined,
+                        label: "Camera",
+                        color: Theme.of(context).primaryColor,
+                        onTap: _isProcessing
+                            ? null
+                            : () => _pickImage(ImageSource.camera),
                       ),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
                       child: _GlassButton(
-                         icon: Icons.photo_library_outlined,
-                         label: "Gallery",
-                         color: Theme.of(context).colorScheme.secondary,
-                         onTap: _isProcessing ? null : () => _pickImage(ImageSource.gallery),
+                        icon: Icons.photo_library_outlined,
+                        label: "Gallery",
+                        color: Theme.of(context).colorScheme.secondary,
+                        onTap: _isProcessing
+                            ? null
+                            : () => _pickImage(ImageSource.gallery),
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 24),
-        
+
                 if (_imageFile == null && !_isProcessing)
-                   Container(
-                     height: 300,
-                     margin: const EdgeInsets.only(top: 32),
-                     decoration: BoxDecoration(
-                       color: Colors.white.withOpacity(0.03),
-                       borderRadius: BorderRadius.circular(24),
-                       border: Border.all(color: Colors.white.withOpacity(0.05)),
-                     ),
-                     child: Column(
-                       mainAxisAlignment: MainAxisAlignment.center,
-                       children: [
-                         Container(
-                           padding: const EdgeInsets.all(24),
-                           decoration: BoxDecoration(
-                             color: Theme.of(context).primaryColor.withOpacity(0.1),
-                             shape: BoxShape.circle,
-                           ),
-                           child: Icon(
-                             Icons.document_scanner_rounded, 
-                             size: 64, 
-                             color: Theme.of(context).primaryColor.withOpacity(0.8)
-                           ),
-                         ).animate(onPlay: (controller) => controller.repeat(reverse: true)).scaleXY(begin: 1.0, end: 1.1, duration: 2.seconds),
-                         const SizedBox(height: 24),
-                         Text(
-                           "Ready to Scan",
-                           style: GoogleFonts.outfit(
-                             fontSize: 22, 
-                             fontWeight: FontWeight.bold, 
-                             color: Colors.white
-                           ),
-                         ),
-                         const SizedBox(height: 12),
-                         Padding(
-                           padding: const EdgeInsets.symmetric(horizontal: 32),
-                           child: Text(
-                             "Capture a photo of your question paper or choose from gallery to analyze.",
-                             textAlign: TextAlign.center,
-                             style: GoogleFonts.outfit(
-                               fontSize: 16, 
-                               color: Colors.white54,
-                               height: 1.4
-                             ),
-                           ),
-                         ),
-                       ],
-                     ),
-                   ).animate().fadeIn(duration: 800.ms),
+                  Container(
+                    height: 300,
+                    margin: const EdgeInsets.only(top: 32),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.03),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: Colors.white.withOpacity(0.05)),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                              padding: const EdgeInsets.all(24),
+                              decoration: BoxDecoration(
+                                color: Theme.of(
+                                  context,
+                                ).primaryColor.withOpacity(0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.document_scanner_rounded,
+                                size: 64,
+                                color: Theme.of(
+                                  context,
+                                ).primaryColor.withOpacity(0.8),
+                              ),
+                            )
+                            .animate(
+                              onPlay: (controller) =>
+                                  controller.repeat(reverse: true),
+                            )
+                            .scaleXY(begin: 1.0, end: 1.1, duration: 2.seconds),
+                        const SizedBox(height: 24),
+                        Text(
+                          "Ready to Scan",
+                          style: GoogleFonts.outfit(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 32),
+                          child: Text(
+                            "Capture a photo of your question paper or choose from gallery to analyze.",
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.outfit(
+                              fontSize: 16,
+                              color: Colors.white54,
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ).animate().fadeIn(duration: 800.ms),
 
                 if (_imageFile != null)
                   Container(
@@ -292,52 +387,83 @@ class _OcrScreenState extends State<OcrScreen> {
                       child: Image.file(_imageFile!, fit: BoxFit.contain),
                     ),
                   ).animate().fadeIn(),
-                  
+
                 const SizedBox(height: 16),
-        
+
                 if (_isProcessing)
                   const Center(child: CircularProgressIndicator())
                 else if (doc != null) ...[
                   Text(
                     'Detected Header:',
-                    style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white),
+                    style: GoogleFonts.outfit(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                      color: Colors.white,
+                    ),
                   ),
                   const SizedBox(height: 8),
-                  _GlassBox(child: Text(doc.header.join("\n"), style: GoogleFonts.outfit(color: Colors.white70))),
-        
+                  _GlassBox(
+                    child: Text(
+                      doc.header.join("\n"),
+                      style: GoogleFonts.outfit(color: Colors.white70),
+                    ),
+                  ),
+
                   const SizedBox(height: 24),
                   Text(
                     'Detected Questions:',
-                    style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white),
+                    style: GoogleFonts.outfit(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                      color: Colors.white,
+                    ),
                   ),
                   const SizedBox(height: 8),
-        
+
                   if (doc.sections.isEmpty)
-                    _GlassBox(child: Text("No sections/questions detected.", style: GoogleFonts.outfit(color: Colors.white70)))
+                    _GlassBox(
+                      child: Text(
+                        "No sections/questions detected.",
+                        style: GoogleFonts.outfit(color: Colors.white70),
+                      ),
+                    )
                   else
                     ...doc.sections.map((s) {
                       return _SectionPreview(section: s);
                     }),
-        
+
                   const SizedBox(height: 24),
                   ElevatedButton.icon(
                     onPressed: _saveParsed,
                     icon: const Icon(Icons.save_rounded),
-                    label: Text('Save Result', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold)),
+                    label: Text(
+                      'Save Result',
+                      style: GoogleFonts.outfit(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       backgroundColor: Theme.of(context).primaryColor,
                       foregroundColor: Colors.white,
                       elevation: 8,
-                      shadowColor: Theme.of(context).primaryColor.withOpacity(0.5),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      shadowColor: Theme.of(
+                        context,
+                      ).primaryColor.withOpacity(0.5),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
                     ),
                   ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.2, end: 0),
-        
+
                   const SizedBox(height: 12),
                   Text(
                     "Debug: OCR lines = ${_rawLines.length}",
-                    style: GoogleFonts.outfit(color: Colors.white24, fontSize: 12),
+                    style: GoogleFonts.outfit(
+                      color: Colors.white24,
+                      fontSize: 12,
+                    ),
                     textAlign: TextAlign.center,
                   ),
                 ],
@@ -356,7 +482,12 @@ class _GlassButton extends StatelessWidget {
   final Color color;
   final VoidCallback? onTap;
 
-  const _GlassButton({required this.icon, required this.label, required this.color, required this.onTap});
+  const _GlassButton({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -377,7 +508,13 @@ class _GlassButton extends StatelessWidget {
           children: [
             Icon(icon, color: Colors.white, size: 32),
             const SizedBox(height: 8),
-            Text(label, style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.w600)),
+            Text(
+              label,
+              style: GoogleFonts.outfit(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ],
         ),
       ),
@@ -402,7 +539,7 @@ class _GlassBox extends StatelessWidget {
       child: child,
     );
   }
-} 
+}
 
 // ... (keep _SectionPreview but maybe update styling slightly if needed, or leave generic)
 
@@ -415,8 +552,8 @@ class _BoxText extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.05),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
+        color: Colors.white.withValues(alpha: 0.05),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(text, style: GoogleFonts.outfit(color: Colors.white70)),
@@ -434,8 +571,8 @@ class _SectionPreview extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.05),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
+        color: Colors.white.withValues(alpha: 0.05),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -444,12 +581,18 @@ class _SectionPreview extends StatelessWidget {
           if (section.title != null && section.title!.trim().isNotEmpty) ...[
             Text(
               section.title!,
-              style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: Colors.white),
+              style: GoogleFonts.outfit(
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
             ),
             const SizedBox(height: 8),
           ],
           if (section.questions.isEmpty)
-            Text("No questions found in this section.", style: GoogleFonts.outfit(color: Colors.white70))
+            Text(
+              "No questions found in this section.",
+              style: GoogleFonts.outfit(color: Colors.white70),
+            )
           else
             ...section.questions.take(6).map((q) {
               final title = q.number != null ? "Q${q.number}" : "Q";
@@ -463,7 +606,10 @@ class _SectionPreview extends StatelessWidget {
                   children: [
                     Text(
                       "$title$marks: ${q.prompt}",
-                      style: GoogleFonts.outfit(fontWeight: FontWeight.w600, color: Colors.white),
+                      style: GoogleFonts.outfit(
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
                     ),
                     if (q.body.isNotEmpty)
                       Padding(

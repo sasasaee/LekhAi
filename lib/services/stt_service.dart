@@ -2,94 +2,315 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:speech_to_text/speech_recognition_error.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:flutter_volume_controller/flutter_volume_controller.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:async';
+import 'package:flutter/widgets.dart';
 
-class SttService {
-  late stt.SpeechToText _speech;
-  bool _isAvailable = false;
-  
-  // Callback for status updates (listening, notListening, done)
+enum SttIntendedState {
+  stopped, // We WANT to be stopped
+  listening, // We WANT to be listening
+}
+
+class SttService with WidgetsBindingObserver {
+  late final stt.SpeechToText _speech;
+
+  // ---------------- STATE MACHINE ----------------
+  SttIntendedState _intendedState = SttIntendedState.stopped;
+  bool _pausedByTts = false;
+  bool _pausedByLifecycle = false; // New flag for app background state
+
+  // ---------------- CALLBACKS ----------------
   Function(String)? onStatusChange;
-  // Callback for errors
   Function(String)? onError;
+  Function(String)? _savedOnResult;
+  String? _savedLocaleId;
+
+  // ---------------- INTERNAL FLAGS ----------------
+  bool _isAvailable = false;
+  bool _voiceEnabled = true;
 
   bool get isAvailable => _isAvailable;
   bool get isListening => _speech.isListening;
 
+  // ---------------- LOOP CONTROL ----------------
+  Timer? _loopTimer;
+  bool _didErrorOccur = false; // Prevents "done" from overriding error backoff
+
+  // ---------------- TTS SUBSCRIPTION ----------------
+  StreamSubscription<bool>? _ttsSubscription;
+
   SttService() {
     _speech = stt.SpeechToText();
+    WidgetsBinding.instance.addObserver(this); // Register observer
   }
 
-  Future<bool> init({Function(String)? onStatus, Function(String)? onError}) async {
+  // =================================================
+  // INITIALIZATION
+  // =================================================
+
+  Future<bool> init({
+    Function(String)? onStatus,
+    Function(String)? onError,
+    dynamic tts, // dynamic to avoid circular dependency
+  }) async {
     this.onStatusChange = onStatus;
     this.onError = onError;
-    
+
+    await _loadSettings();
+
+    // -------- TTS ↔ STT Coordination --------
+    if (tts != null) {
+      try {
+        _ttsSubscription = (tts as dynamic).speakingStream.listen((
+          bool isSpeaking,
+        ) {
+          print("STT: TTS speaking=$isSpeaking");
+
+          if (isSpeaking) {
+            _pausedByTts = true;
+            if (_speech.isListening) {
+              print("STT: Pausing due to TTS");
+              _speech.stop();
+            }
+          } else {
+            _pausedByTts = false;
+            // Only resume if we are supposed to be listening
+            if (_intendedState == SttIntendedState.listening) {
+              _kickLoop(delay: 500);
+            }
+          }
+        });
+      } catch (e) {
+        print("STT: Failed to bind TTS stream: $e");
+      }
+    }
+
+    // -------- STT ENGINE INIT --------
     _isAvailable = await _speech.initialize(
-      onError: (error) {
-        print('STT Error: ${error.errorMsg}');
-        if (this.onError != null) this.onError!(error.errorMsg);
-      },
-      onStatus: (status) {
-        print('STT Status: $status');
-        if (this.onStatusChange != null) this.onStatusChange!(status);
-      },
       debugLogging: false,
+      onStatus: _handleStatus,
+      onError: _handleError,
     );
+
     return _isAvailable;
   }
+
+  // =================================================
+  // PUBLIC API
+  // =================================================
 
   Future<void> startListening({
     required Function(String) onResult,
     required String localeId,
   }) async {
-    if (!_isAvailable) return;
-    
-    // 1. MUTE SYSTEM SOUNDS (To hide the "ding")
-    double? originalSystemVol;
-    double? originalNotifVol;
-    try {
-      originalSystemVol = await FlutterVolumeController.getVolume(stream: AudioStream.system);
-      originalNotifVol = await FlutterVolumeController.getVolume(stream: AudioStream.notification);
-      
-      await FlutterVolumeController.updateShowSystemUI(false);
-      await FlutterVolumeController.setVolume(0, stream: AudioStream.system);
-      await FlutterVolumeController.setVolume(0, stream: AudioStream.notification);
-    } catch (e) {
-      print("Error muting for STT: $e");
-    }
+    print("STT: Intended state → LISTENING");
 
-    // 2. START LISTENING
-    await _speech.listen(
-      onResult: (result) => onResult(result.recognizedWords),
-      listenFor: const Duration(seconds: 300), 
-      pauseFor: const Duration(seconds: 30),   
-      partialResults: true,
-      localeId: localeId,
-      cancelOnError: false, 
-      listenMode: stt.ListenMode.dictation, 
-    );
-    
-    // 3. RESTORE VOLUME (After delay to ensure beep didn't play)
-    Future.delayed(const Duration(milliseconds: 600), () async {
-      try {
-        if (originalSystemVol != null) {
-          await FlutterVolumeController.setVolume(originalSystemVol, stream: AudioStream.system);
-        }
-        if (originalNotifVol != null) {
-            await FlutterVolumeController.setVolume(originalNotifVol, stream: AudioStream.notification);
-        }
-      } catch (e) {
-        print("Error restoring volume: $e");
-      }
-    });
+    _savedOnResult = onResult;
+    _savedLocaleId = localeId;
+    _intendedState = SttIntendedState.listening;
+
+    _kickLoop(delay: 0);
   }
 
   Future<void> stopListening() async {
-    await _speech.stop();
+    print("STT: Intended state → STOPPED");
+
+    _intendedState = SttIntendedState.stopped;
+    _loopTimer?.cancel();
+    _loopTimer = null;
+
+    if (_speech.isListening) {
+      await _speech.stop();
+    }
+
     await FlutterVolumeController.updateShowSystemUI(true);
+    // Restore partial volume (optional, or rely on system UI restore)
+    // Setting back to 0.5 or similar might be safer if we knew previous level
+    // For now, let's just assume user manages volume, but we must unmute essentially
+    // But FlutterVolumeController setVolume(0) actually changes the volume level, not just mute.
+    // So we should ideally restore it. A safe reset is:
+    await FlutterVolumeController.setVolume(
+      0.5,
+      stream: AudioStream.system,
+    ); // Default-ish
+    await FlutterVolumeController.setVolume(
+      0.5,
+      stream: AudioStream.notification,
+    );
   }
 
   void dispose() {
-    _speech.stop();
-    FlutterVolumeController.updateShowSystemUI(true);
+    WidgetsBinding.instance.removeObserver(this); // Unregister
+    _ttsSubscription?.cancel();
+    stopListening();
+  }
+
+  // =================================================
+  // LIFECYCLE HANDLER
+  // =================================================
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    print("STT: Lifecycle state changed to $state");
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      // App going to background (or picker opening) -> Pause STT
+      _pausedByLifecycle = true;
+      if (_speech.isListening) {
+        _speech.stop();
+      }
+    } else if (state == AppLifecycleState.resumed) {
+      // App coming back -> Resume if intended
+      _pausedByLifecycle = false;
+      if (_intendedState == SttIntendedState.listening) {
+        _kickLoop(delay: 500);
+      }
+    }
+  }
+
+  // =================================================
+  // CORE LOOP
+  // =================================================
+
+  void _kickLoop({int delay = 0}) {
+    _loopTimer?.cancel();
+    _loopTimer = Timer(Duration(milliseconds: delay), _evaluateAndRun);
+  }
+
+  // Mutex to prevent overlapping start attempts
+  bool _isProcessActive = false;
+
+  Future<void> _evaluateAndRun() async {
+    // 1. Mutex Check: Don't run if already running
+    if (_isProcessActive) return;
+    _isProcessActive = true;
+
+    try {
+      // ---------- STATE CHECK ----------
+      if (_intendedState != SttIntendedState.listening) return;
+
+      if (_pausedByTts || _pausedByLifecycle) {
+        // If paused by TTS or App Lifecycle (background), verify again later
+        _kickLoop(delay: 500);
+        return;
+      }
+
+      // Check active status right before listening
+      if (_speech.isListening) return;
+      if (!_isAvailable) return;
+
+      if (!_voiceEnabled) {
+        print("STT: Voice disabled via settings");
+        _intendedState = SttIntendedState.stopped;
+        return;
+      }
+
+      // ---------- START ENGINE ----------
+      print("STT: Starting engine...");
+      _didErrorOccur = false;
+
+      // CRITICAL: Always forcing a stop ensures native layer is clean.
+      // Even if isListening is false, native can be 'busy'.
+      await _speech.stop();
+
+      await _speech.listen(
+        localeId: _savedLocaleId ?? 'en-US',
+        listenMode: stt.ListenMode.dictation,
+        listenFor: const Duration(seconds: 30),
+        pauseFor: const Duration(seconds: 5),
+        partialResults: true,
+        cancelOnError: false,
+        onResult: (SpeechRecognitionResult result) {
+          print(">>> STT HEARD: '${result.recognizedWords}'");
+          if (_intendedState != SttIntendedState.listening) return;
+          _savedOnResult?.call(result.recognizedWords);
+        },
+      );
+    } catch (e) {
+      print("STT: Engine start exception: $e");
+      _didErrorOccur = true;
+
+      if (e.toString().contains('error_busy') ||
+          e.toString().contains('busy')) {
+        print("STT: Busy -> Force canceling and waiting.");
+        _speech.cancel(); // Force reset
+        _kickLoop(delay: 2000);
+      } else {
+        _kickLoop(delay: 2000);
+      }
+    } finally {
+      // Release mutex
+      _isProcessActive = false;
+    }
+  }
+
+  // =================================================
+  // ENGINE CALLBACKS
+  // =================================================
+
+  void _handleStatus(String status) {
+    print("STT status: $status");
+    onStatusChange?.call(status);
+
+    if (status == 'done' &&
+        _intendedState == SttIntendedState.listening &&
+        !_pausedByTts) {
+      // CRITICAL FIX: Only fast-restart if NO error occurred.
+      // If an error happened, _handleError has already scheduled a backoff restart.
+      if (!_didErrorOccur) {
+        _kickLoop(delay: 100);
+      } else {
+        print(
+          "STT: Status 'done' received after error. Respecting error backoff.",
+        );
+      }
+    }
+  }
+
+  void _handleError(SpeechRecognitionError error) {
+    print("STT error: ${error.errorMsg}");
+    final msg = error.errorMsg.toLowerCase();
+
+    _didErrorOccur = true; // Mark error so 'done' doesn't interfere
+
+    // SUPPRESS BENIGN ERRORS from the UI
+    if (!msg.contains('no_match') &&
+        !msg.contains('speech_timeout') &&
+        !msg.contains('busy') &&
+        !msg.contains('client')) {
+      onError?.call(error.errorMsg);
+    } else {
+      print("STT: Suppressed error '$msg'");
+    }
+
+    // RESTART STRATEGY
+    int retryDelay = 1000;
+
+    if (msg.contains('busy') || msg.contains('client')) {
+      // Critical error: The engine might be stuck.
+      // 'stop()' might not be enough. Use 'cancel()' to force native teardown.
+      print("STT: Critical error '$msg' -> performing hard reset (cancel).");
+      _speech.cancel();
+      retryDelay = 2000;
+    } else if (msg.contains('no_match') || msg.contains('speech_timeout')) {
+      // Silence. Restart fast-ish (but not instant).
+      retryDelay = 500;
+    }
+
+    _kickLoop(delay: retryDelay);
+  }
+
+  // =================================================
+  // SETTINGS
+  // =================================================
+
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    _voiceEnabled = prefs.getBool('voice_commands_enabled') ?? true;
+  }
+
+  /// Call this when settings change
+  Future<void> refreshSettings() async {
+    await _loadSettings();
   }
 }

@@ -20,7 +20,6 @@ import 'widgets/accessible_widgets.dart'; // Added
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:ui';
 
-
 class PaperDetailScreen extends StatefulWidget {
   final ParsedDocument document;
   final TtsService ttsService;
@@ -45,7 +44,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
   late ParsedDocument _document;
   final GeminiQuestionService _geminiService = GeminiQuestionService();
   final QuestionStorageService _storageService = QuestionStorageService();
-  final SttService _sttService = SttService(); 
+  final SttService _sttService = SttService();
   bool _isListening = false;
   @override
   void initState() {
@@ -140,6 +139,10 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
 
     if (target != null) {
       widget.ttsService.speak("Opening question $number.");
+
+      // Stop local listening before pushing new screen
+      _sttService.stopListening();
+
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -151,7 +154,10 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
             accessibilityService: widget.accessibilityService,
           ),
         ),
-      );
+      ).then((_) {
+        // Resume listening when returning
+        _initVoiceCommandListener();
+      });
     } else {
       widget.ttsService.speak("Question $number not found.");
     }
@@ -160,26 +166,30 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
   Future<void> _processWithGemini(BuildContext context, String apiKey) async {
     final picker = ImagePicker();
     final XFile? image = await picker.pickImage(source: ImageSource.gallery);
-    
+
     if (image == null) return;
 
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Processing with Gemini AI... please wait.")),
+      const SnackBar(
+        content: Text("Processing with Gemini AI... please wait."),
+      ),
     );
 
     try {
       AccessibilityService().trigger(AccessibilityEvent.loading);
       final newDoc = await _geminiService.processImage(image.path, apiKey);
       AccessibilityService().trigger(AccessibilityEvent.success);
-      
+
       setState(() {
-          _document.sections.addAll(newDoc.sections);
+        _document.sections.addAll(newDoc.sections);
       });
-      
+
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Successfully added questions from Gemini!")),
+          const SnackBar(
+            content: Text("Successfully added questions from Gemini!"),
+          ),
         );
       }
     } catch (e) {
@@ -194,17 +204,17 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final items = <_ListItem>[];
-    
+
     if (_document.header.isNotEmpty) {
       items.add(_HeaderItem(_document.header.join("\n")));
     }
 
     for (var section in _document.sections) {
-      if ((section.title != null && section.title!.isNotEmpty) || 
+      if ((section.title != null && section.title!.isNotEmpty) ||
           (section.context != null && section.context!.isNotEmpty)) {
         items.add(_SectionItem(section.title, section.context));
       }
-      
+
       for (var q in section.questions) {
         items.add(_QuestionItem(q, section.context));
       }
@@ -219,7 +229,10 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text('Paper $dateStr', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+        title: Text(
+          'Paper $dateStr',
+          style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+        ),
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
@@ -238,8 +251,8 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
         ),
         actions: [
           Container(
-             margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
-             decoration: BoxDecoration(
+            margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
+            decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.1),
               shape: BoxShape.circle,
               border: Border.all(color: Colors.white.withOpacity(0.1)),
@@ -269,10 +282,13 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
             itemCount: items.length,
             itemBuilder: (context, index) {
               final item = items[index];
-              
+
               if (item is _HeaderItem) {
-                 return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                return Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
                   child: Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
@@ -282,7 +298,10 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
                     ),
                     child: Text(
                       item.text,
-                      style: GoogleFonts.outfit(fontStyle: FontStyle.italic, color: Colors.white70),
+                      style: GoogleFonts.outfit(
+                        fontStyle: FontStyle.italic,
+                        color: Colors.white70,
+                      ),
                     ),
                   ),
                 );
@@ -296,9 +315,9 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
                         Text(
                           item.title!,
                           style: GoogleFonts.outfit(
-                            fontSize: 20, 
+                            fontSize: 20,
                             fontWeight: FontWeight.bold,
-                            color: Colors.white
+                            color: Colors.white,
                           ),
                         ),
                       if (item.context != null && item.context!.isNotEmpty)
@@ -307,7 +326,9 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
                             color: Colors.amber.withOpacity(0.1),
-                            border: Border.all(color: Colors.amber.withOpacity(0.3)),
+                            border: Border.all(
+                              color: Colors.amber.withOpacity(0.3),
+                            ),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
@@ -315,7 +336,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
                             style: GoogleFonts.outfit(
                               fontSize: 15,
                               color: Colors.amber.shade100,
-                              height: 1.4
+                              height: 1.4,
                             ),
                           ),
                         ),
@@ -328,67 +349,90 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
                 final marks = q.marks != null ? "(${q.marks})" : "";
 
                 return Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(16),
                     gradient: LinearGradient(
-                      colors: [Colors.white.withOpacity(0.08), Colors.white.withOpacity(0.03)],
+                      colors: [
+                        Colors.white.withOpacity(0.08),
+                        Colors.white.withOpacity(0.03),
+                      ],
                     ),
                     border: Border.all(color: Colors.white.withOpacity(0.1)),
                     boxShadow: [
-                      BoxShadow(color: Colors.black12, blurRadius: 8, offset: const Offset(0, 4)),
+                      BoxShadow(
+                        color: Colors.black12,
+                        blurRadius: 8,
+                        offset: const Offset(0, 4),
+                      ),
                     ],
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(16),
-                     child: BackdropFilter(
-                       filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-                        child: AccessibleListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          leading: Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context).primaryColor.withOpacity(0.2),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Text(
-                              q.number ?? "Q",
-                              style: GoogleFonts.outfit(
-                                fontWeight: FontWeight.bold, 
-                                color: Theme.of(context).primaryColor
-                              ),
-                            ),
-                          ),
-                          title: Text(
-                            "$qTitle $marks", 
-                            style: GoogleFonts.outfit(fontWeight: FontWeight.w600, color: Colors.white)
-                          ),
-                          subtitle: Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(
-                              q.prompt + (q.body.isNotEmpty ? "..." : ""),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.outfit(color: Colors.white70),
-                            ),
-                          ),
-                          trailing: Icon(Icons.arrow_forward_ios_rounded, color: Colors.white24, size: 16),
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => SingleQuestionScreen(
-                                  question: q,
-                                  contextText: item.context,
-                                  ttsService: widget.ttsService,
-                                  voiceService: widget.voiceService,
-                                  accessibilityService: widget.accessibilityService,
-                                ),
-                              ),
-                            );
-                          },
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+                      child: AccessibleListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
                         ),
-                     ),
+                        leading: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Theme.of(
+                              context,
+                            ).primaryColor.withOpacity(0.2),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Text(
+                            q.number ?? "Q",
+                            style: GoogleFonts.outfit(
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).primaryColor,
+                            ),
+                          ),
+                        ),
+                        title: Text(
+                          "$qTitle $marks",
+                          style: GoogleFonts.outfit(
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                        subtitle: Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            q.prompt + (q.body.isNotEmpty ? "..." : ""),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.outfit(color: Colors.white70),
+                          ),
+                        ),
+                        trailing: Icon(
+                          Icons.arrow_forward_ios_rounded,
+                          color: Colors.white24,
+                          size: 16,
+                        ),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => SingleQuestionScreen(
+                                question: q,
+                                contextText: item.context,
+                                ttsService: widget.ttsService,
+                                voiceService: widget.voiceService,
+                                accessibilityService:
+                                    widget.accessibilityService,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
                   ),
                 );
               }
@@ -401,12 +445,19 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           gradient: LinearGradient(
-            colors: [Theme.of(context).primaryColor, Theme.of(context).primaryColorDark],
+            colors: [
+              Theme.of(context).primaryColor,
+              Theme.of(context).primaryColorDark,
+            ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
           boxShadow: [
-            BoxShadow(color: Theme.of(context).primaryColor.withOpacity(0.4), blurRadius: 12, offset: const Offset(0, 6)),
+            BoxShadow(
+              color: Theme.of(context).primaryColor.withOpacity(0.4),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
+            ),
           ],
         ),
         child: FloatingActionButton(
@@ -423,30 +474,40 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
   Future<void> _onAddPage(BuildContext context) async {
     final prefs = await SharedPreferences.getInstance();
     final apiKey = prefs.getString('gemini_api_key');
-    
+
     if (context.mounted) {
-       showDialog(
+      showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text("Process New Page"),
-          content: Text(apiKey != null && apiKey.isNotEmpty 
-              ? "Gemini API Key detected. Would you like to use Gemini AI for superior accuracy?" 
-              : "No Gemini API Key found. Using standard Local OCR."),
+          content: Text(
+            apiKey != null && apiKey.isNotEmpty
+                ? "Gemini API Key detected. Would you like to use Gemini AI for superior accuracy?"
+                : "No Gemini API Key found. Using standard Local OCR.",
+          ),
           actions: [
             if (apiKey != null && apiKey.isNotEmpty)
               AccessibleTextButton(
                 onPressed: () {
-                   Navigator.pop(ctx);
-                   _processWithGemini(context, apiKey!);
+                  Navigator.pop(ctx);
+                  _processWithGemini(context, apiKey!);
                 },
                 child: const Text("Use Gemini AI"),
               ),
             AccessibleTextButton(
               onPressed: () {
                 Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Local Processing unimplemented context...")));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text("Local Processing unimplemented context..."),
+                  ),
+                );
               },
-              child: Text(apiKey != null && apiKey.isNotEmpty ? "Use Local OCR" : "Proceed"),
+              child: Text(
+                apiKey != null && apiKey.isNotEmpty
+                    ? "Use Local OCR"
+                    : "Proceed",
+              ),
             ),
           ],
         ),
@@ -466,7 +527,10 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       AccessibilityService().trigger(AccessibilityEvent.error);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Failed to save: $e"), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text("Failed to save: $e"),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -498,7 +562,7 @@ class _QuestionItem extends _ListItem {
 
 class SingleQuestionScreen extends StatefulWidget {
   final ParsedQuestion question;
-  final String? contextText; 
+  final String? contextText;
   final TtsService ttsService;
   final VoiceCommandService voiceService; // Added
   final AccessibilityService? accessibilityService;
@@ -519,12 +583,12 @@ class SingleQuestionScreen extends StatefulWidget {
 class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
   bool _isReading = false;
   bool _isPaused = false;
-  
-  double _displaySpeed = 1.0; 
+
+  double _displaySpeed = 1.0;
   double _currentVolume = 1.0;
   bool _playContext = false;
 
-  final SttService _sttService = SttService(); 
+  final SttService _sttService = SttService();
   bool _isListening = false;
   final TextEditingController _answerController = TextEditingController();
 
@@ -539,7 +603,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     AccessibilityService().trigger(AccessibilityEvent.navigation);
     _stopAndInit();
     _answerController.text = widget.question.answer;
-    
+
     // Start Command Listener
     _initVoiceCommandListener();
 
@@ -553,7 +617,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     bool available = await _sttService.init(
       onStatus: (status) {
         print("STT Status: $status");
-        // FIX: If the engine stops (status 'done' or 'notListening') and 
+        // FIX: If the engine stops (status 'done' or 'notListening') and
         // the student isn't currently dictating an answer, restart it.
         if ((status == 'notListening' || status == 'done') && !_isListening) {
           // A 500ms delay ensures the OS has fully released the mic before we re-acquire it
@@ -590,41 +654,45 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
   }
 
   void _executeVoiceCommand(CommandResult result) async {
-  switch (result.action) {
-    case VoiceAction.readQuestion:
-      await widget.ttsService.speak("Reading question."); 
-      _onReadPressed();
-      break;
-      
-    case VoiceAction.startDictation:
-      await widget.ttsService.speak("Starting dictation."); 
-      _startListening();
-      break;
-      
-    case VoiceAction.stopDictation:
-      await widget.ttsService.speak("Stopping dictation."); 
-      _stopListening();
-      break;
-      
-    case VoiceAction.readAnswer:
-      widget.ttsService.speak("Your current answer is: ${_answerController.text}"); 
-      break;
-      
-    case VoiceAction.changeSpeed:
-      _changeSpeed();
-      await widget.ttsService.speak("Speed changed to ${_displaySpeed.toStringAsFixed(2)}."); 
-      break;
-      
-    case VoiceAction.goBack:
-      await widget.ttsService.speak("Going back."); 
-      Navigator.pop(context);
-      break;
-      
-    default:
-      widget.voiceService.performGlobalNavigation(result);
-      break;
+    switch (result.action) {
+      case VoiceAction.readQuestion:
+        await widget.ttsService.speak("Reading question.");
+        _onReadPressed();
+        break;
+
+      case VoiceAction.startDictation:
+        await widget.ttsService.speak("Starting dictation.");
+        _startListening();
+        break;
+
+      case VoiceAction.stopDictation:
+        await widget.ttsService.speak("Stopping dictation.");
+        _stopListening();
+        break;
+
+      case VoiceAction.readAnswer:
+        widget.ttsService.speak(
+          "Your current answer is: ${_answerController.text}",
+        );
+        break;
+
+      case VoiceAction.changeSpeed:
+        _changeSpeed();
+        await widget.ttsService.speak(
+          "Speed changed to ${_displaySpeed.toStringAsFixed(2)}.",
+        );
+        break;
+
+      case VoiceAction.goBack:
+        await widget.ttsService.speak("Going back.");
+        Navigator.pop(context);
+        break;
+
+      default:
+        widget.voiceService.performGlobalNavigation(result);
+        break;
+    }
   }
-}
 
   Future<void> _stopAndInit() async {
     await widget.ttsService.stop();
@@ -661,16 +729,19 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     bool wasReading = _isReading && !_isPaused;
     bool wasPaused = _isPaused;
 
-    await widget.ttsService.stop(); 
-    
+    await widget.ttsService.stop();
+
     setState(() => _currentVolume = newVolume);
     await widget.ttsService.setVolume(newVolume);
-    await widget.ttsService.savePreferences(speed: _displaySpeed, volume: newVolume);
+    await widget.ttsService.savePreferences(
+      speed: _displaySpeed,
+      volume: newVolume,
+    );
 
     if (wasReading) {
-        await _speakFromPosition(currentPos);
+      await _speakFromPosition(currentPos);
     } else if (wasPaused) {
-        _lastSpeechStartOffset = currentPos;
+      _lastSpeechStartOffset = currentPos;
     }
   }
 
@@ -680,32 +751,38 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     if (nextDisplaySpeed > 1.75) {
       nextDisplaySpeed = 0.5;
     }
-    
+
     int currentPos = _currentAbsolutePosition;
     bool wasReading = _isReading && !_isPaused;
     bool wasPaused = _isPaused;
 
-    await widget.ttsService.stop(); 
-    
+    await widget.ttsService.stop();
+
     setState(() => _displaySpeed = nextDisplaySpeed);
-    
+
     await widget.ttsService.setSpeed(nextDisplaySpeed * 0.5);
-    await widget.ttsService.savePreferences(speed: nextDisplaySpeed, volume: _currentVolume);
+    await widget.ttsService.savePreferences(
+      speed: nextDisplaySpeed,
+      volume: _currentVolume,
+    );
 
     if (wasReading) {
-        await _speakFromPosition(currentPos);
+      await _speakFromPosition(currentPos);
     } else if (wasPaused) {
-        _lastSpeechStartOffset = currentPos;
+      _lastSpeechStartOffset = currentPos;
     }
   }
 
   String get _fullText {
     final sb = StringBuffer();
-    if (_playContext && widget.contextText != null && widget.contextText!.isNotEmpty) {
-        sb.write("Context: ${widget.contextText}. ");
-        sb.write("\n\n");
+    if (_playContext &&
+        widget.contextText != null &&
+        widget.contextText!.isNotEmpty) {
+      sb.write("Context: ${widget.contextText}. ");
+      sb.write("\n\n");
     }
-    if (widget.question.number != null) sb.write("Question ${widget.question.number}. ");
+    if (widget.question.number != null)
+      sb.write("Question ${widget.question.number}. ");
     sb.write(widget.question.prompt);
     sb.write("\n");
     sb.write(widget.question.body.join("\n"));
@@ -713,30 +790,31 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
   }
 
   int _lastSpeechStartOffset = 0;
-  int get _currentAbsolutePosition => _lastSpeechStartOffset + widget.ttsService.currentWordStart;
+  int get _currentAbsolutePosition =>
+      _lastSpeechStartOffset + widget.ttsService.currentWordStart;
 
   Future<void> _speakFromPosition(int start) async {
-      String textToSpeak = _fullText;
-      if (start > 0 && start < textToSpeak.length) {
-          textToSpeak = textToSpeak.substring(start);
-      }
-      _lastSpeechStartOffset = start;
-      setState(() {
-       _isReading = true; 
-       _isPaused = false;
-      });
-      await widget.ttsService.speakAndWait(textToSpeak);
-      if (mounted && !_isPaused) {
-          setState(() => _isReading = false);
-      }
+    String textToSpeak = _fullText;
+    if (start > 0 && start < textToSpeak.length) {
+      textToSpeak = textToSpeak.substring(start);
+    }
+    _lastSpeechStartOffset = start;
+    setState(() {
+      _isReading = true;
+      _isPaused = false;
+    });
+    await widget.ttsService.speakAndWait(textToSpeak);
+    if (mounted && !_isPaused) {
+      setState(() => _isReading = false);
+    }
   }
 
   void _onReadPressed() async {
     if (_isPaused) {
-       await _speakFromPosition(_lastSpeechStartOffset); 
+      await _speakFromPosition(_lastSpeechStartOffset);
     } else {
-       _lastSpeechStartOffset = 0;
-       await _speakFromPosition(0);
+      _lastSpeechStartOffset = 0;
+      await _speakFromPosition(0);
     }
   }
 
@@ -749,7 +827,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
       });
       await widget.ttsService.stop();
     } else {
-      await widget.ttsService.stop(); 
+      await widget.ttsService.stop();
       setState(() {
         _isPaused = false;
         _lastSpeechStartOffset = 0;
@@ -765,19 +843,20 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     }
     // Briefly stop command listener to free mic for recording
     await _sttService.stopListening();
-    
+
     await widget.ttsService.speak("Listening.");
     await Future.delayed(const Duration(milliseconds: 600));
     final tempDir = await getTemporaryDirectory();
-    _tempAudioPath = '${tempDir.path}/temp_answer_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    _tempAudioPath =
+        '${tempDir.path}/temp_answer_${DateTime.now().millisecondsSinceEpoch}.m4a';
     try {
       await _audioRecorderService.startRecording(_tempAudioPath!);
       setState(() {
         _isListening = true;
         _isProcessingAudio = false;
       });
-    } catch (e) { 
-      widget.ttsService.speak("Failed to start recording."); 
+    } catch (e) {
+      widget.ttsService.speak("Failed to start recording.");
       _initVoiceCommandListener(); // Resume listener on fail
     }
   }
@@ -785,7 +864,10 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
   void _stopListening() async {
     if (_isListening) {
       final path = await _audioRecorderService.stopRecording();
-      setState(() { _isListening = false; _isProcessingAudio = true; });
+      setState(() {
+        _isListening = false;
+        _isProcessingAudio = true;
+      });
       if (path == null) {
         widget.ttsService.speak("Recording failed.");
         setState(() => _isProcessingAudio = false);
@@ -803,13 +885,20 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     final apiKey = prefs.getString('gemini_api_key');
     String transcribedText = "";
     if (apiKey != null && apiKey.isNotEmpty) {
-        try {
-          final geminiService = GeminiQuestionService();
-          transcribedText = await geminiService.transcribeAudio(audioPath, apiKey);
-        } catch (e) { transcribedText = "[Transcription Failed: $e]"; }
+      try {
+        final geminiService = GeminiQuestionService();
+        transcribedText = await geminiService.transcribeAudio(
+          audioPath,
+          apiKey,
+        );
+      } catch (e) {
+        transcribedText = "[Transcription Failed: $e]";
+      }
     } else {
-        transcribedText = "[No API Key - Audio Saved. Type answer manually.]";
-        widget.ttsService.speak("No API Key found. Audio saved, please type answer.");
+      transcribedText = "[No API Key - Audio Saved. Type answer manually.]";
+      widget.ttsService.speak(
+        "No API Key found. Audio saved, please type answer.",
+      );
     }
     if (!mounted) return;
     setState(() {
@@ -821,15 +910,17 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
   }
 
   void _onDictationFinished() async {
-     String answer = _answerController.text.trim();
-     widget.ttsService.speak("You wrote: $answer. Is this correct?");
-     if (mounted) { _showConfirmationDialog(answer); }
+    String answer = _answerController.text.trim();
+    widget.ttsService.speak("You wrote: $answer. Is this correct?");
+    if (mounted) {
+      _showConfirmationDialog(answer);
+    }
   }
 
   Future<void> _showConfirmationDialog(String answer) async {
     await showDialog(
       context: context,
-      barrierDismissible: false, 
+      barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         title: const Text("Confirm Answer"),
         content: Column(
@@ -849,10 +940,12 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         actions: [
           AccessibleTextButton(
             onPressed: () {
-               Navigator.pop(ctx);
-               _discardAudio();
-               setState(() { _answerController.text = ""; });
-               _startListening();
+              Navigator.pop(ctx);
+              _discardAudio();
+              setState(() {
+                _answerController.text = "";
+              });
+              _startListening();
             },
             child: const Text("Retry"),
           ),
@@ -883,19 +976,28 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     if (_tempAudioPath != null) {
       try {
         final appDir = await getApplicationDocumentsDirectory();
-        final fileName = 'answer_q${widget.question.number ?? "x"}_${DateTime.now().millisecondsSinceEpoch}.m4a';
+        final fileName =
+            'answer_q${widget.question.number ?? "x"}_${DateTime.now().millisecondsSinceEpoch}.m4a';
         final permPath = '${appDir.path}/$fileName';
         await File(_tempAudioPath!).copy(permPath);
-        setState(() { widget.question.audioPath = permPath; });
-        _discardAudio(); 
-      } catch (e) { print("Error saving audio: $e"); }
+        setState(() {
+          widget.question.audioPath = permPath;
+        });
+        _discardAudio();
+      } catch (e) {
+        print("Error saving audio: $e");
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    String readLabel = _isPaused ? "Resume" : (_isReading ? "Reading..." : "Read");
-    IconData readIcon = _isPaused ? Icons.play_arrow_rounded : Icons.volume_up_rounded;
+    String readLabel = _isPaused
+        ? "Resume"
+        : (_isReading ? "Reading..." : "Read");
+    IconData readIcon = _isPaused
+        ? Icons.play_arrow_rounded
+        : Icons.volume_up_rounded;
     VoidCallback? onRead = (_isReading && !_isPaused) ? null : _onReadPressed;
 
     String stopLabel = _isPaused ? "Restart" : "Stop";
@@ -905,7 +1007,10 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text("Question Detail", style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+        title: Text(
+          "Question Detail",
+          style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+        ),
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: Container(
@@ -923,7 +1028,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         ),
       ),
       body: Container(
-         decoration: BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -944,101 +1049,195 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (widget.contextText != null && widget.contextText!.isNotEmpty) ...[
-                           Container(
+                        if (widget.contextText != null &&
+                            widget.contextText!.isNotEmpty) ...[
+                          Container(
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
                               color: Colors.amber.withOpacity(0.1),
-                              border: Border.all(color: Colors.amber.withOpacity(0.3)),
+                              border: Border.all(
+                                color: Colors.amber.withOpacity(0.3),
+                              ),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text("Shared Context:", style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.amber.shade200)),
+                                Text(
+                                  "Shared Context:",
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.amber.shade200,
+                                  ),
+                                ),
                                 const SizedBox(height: 4),
-                                Text(widget.contextText!, style: GoogleFonts.outfit(fontSize: 15, height: 1.4, color: Colors.white70)),
+                                Text(
+                                  widget.contextText!,
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 15,
+                                    height: 1.4,
+                                    color: Colors.white70,
+                                  ),
+                                ),
                                 AccessibleSwitchListTile(
-                                  title: Text("Read this context too?", style: GoogleFonts.outfit(fontSize: 14, color: Colors.white60)),
-                                  value: _playContext, 
-                                  onChanged: (val) => setState(() => _playContext = val),
+                                  title: Text(
+                                    "Read this context too?",
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 14,
+                                      color: Colors.white60,
+                                    ),
+                                  ),
+                                  value: _playContext,
+                                  onChanged: (val) =>
+                                      setState(() => _playContext = val),
                                   contentPadding: EdgeInsets.zero,
                                   visualDensity: VisualDensity.compact,
                                   activeColor: Colors.amber,
-                                )
+                                ),
                               ],
                             ),
-                           ),
-                           const SizedBox(height: 24),
+                          ),
+                          const SizedBox(height: 24),
                         ],
                         if (widget.question.number != null)
-                          Text("Question ${widget.question.number}", style: GoogleFonts.outfit(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)),
+                          Text(
+                            "Question ${widget.question.number}",
+                            style: GoogleFonts.outfit(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
                         if (widget.question.marks != null)
-                          Text("Marks: ${widget.question.marks}", style: GoogleFonts.outfit(fontSize: 14, color: Colors.white54, fontStyle: FontStyle.italic)),
+                          Text(
+                            "Marks: ${widget.question.marks}",
+                            style: GoogleFonts.outfit(
+                              fontSize: 14,
+                              color: Colors.white54,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
                         const SizedBox(height: 16),
-                        Text(widget.question.prompt, style: GoogleFonts.outfit(fontSize: 20, color: Colors.white, height: 1.3)),
+                        Text(
+                          widget.question.prompt,
+                          style: GoogleFonts.outfit(
+                            fontSize: 20,
+                            color: Colors.white,
+                            height: 1.3,
+                          ),
+                        ),
                         const SizedBox(height: 12),
                         ..._buildBodyWidgets(widget.question.body),
                         const SizedBox(height: 32),
                         const Divider(color: Colors.white24),
                         const SizedBox(height: 16),
-                        Text("Your Answer:", style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white)),
+                        Text(
+                          "Your Answer:",
+                          style: GoogleFonts.outfit(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                            color: Colors.white,
+                          ),
+                        ),
                         const SizedBox(height: 12),
                         TextField(
                           controller: _answerController,
                           maxLines: 5,
-                          style: GoogleFonts.outfit(color: Colors.white, fontSize: 16),
+                          style: GoogleFonts.outfit(
+                            color: Colors.white,
+                            fontSize: 16,
+                          ),
                           decoration: InputDecoration(
                             hintText: "Type or detect answer...",
-                            hintStyle: GoogleFonts.outfit(color: Colors.white30),
+                            hintStyle: GoogleFonts.outfit(
+                              color: Colors.white30,
+                            ),
                             filled: true,
                             fillColor: Colors.white.withOpacity(0.05),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
+                              borderSide: BorderSide(
+                                color: Colors.white.withOpacity(0.1),
+                              ),
                             ),
                             enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
+                              borderSide: BorderSide(
+                                color: Colors.white.withOpacity(0.1),
+                              ),
                             ),
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(color: Theme.of(context).primaryColor),
+                              borderSide: BorderSide(
+                                color: Theme.of(context).primaryColor,
+                              ),
                             ),
-                            suffixIcon: _isProcessingAudio 
-                              ? const Padding(padding: EdgeInsets.all(12.0), child: CircularProgressIndicator(strokeWidth: 2))
-                              : AccessibleIconButton(
-                                  icon: Icon(_isListening ? Icons.stop_circle_rounded : Icons.mic_rounded),
-                                  color: _isListening ? Colors.redAccent : Colors.white60,
-                                  iconSize: 28,
-                                  onPressed: _isListening ? _stopListening : _startListening,
-                                ),
+                            suffixIcon: _isProcessingAudio
+                                ? const Padding(
+                                    padding: EdgeInsets.all(12.0),
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : AccessibleIconButton(
+                                    icon: Icon(
+                                      _isListening
+                                          ? Icons.stop_circle_rounded
+                                          : Icons.mic_rounded,
+                                    ),
+                                    color: _isListening
+                                        ? Colors.redAccent
+                                        : Colors.white60,
+                                    iconSize: 28,
+                                    onPressed: _isListening
+                                        ? _stopListening
+                                        : _startListening,
+                                  ),
                           ),
                         ),
-                        if (widget.question.audioPath != null && widget.question.audioPath!.isNotEmpty)
-                           Padding(
-                             padding: const EdgeInsets.symmetric(vertical: 16.0),
-                             child: AccessibleOutlinedButton(
-                               style: OutlinedButton.styleFrom(
-                                 foregroundColor: Theme.of(context).primaryColor,
-                                 side: BorderSide(color: Theme.of(context).primaryColor),
-                                 padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                               ),
-                               icon: const Icon(Icons.play_circle_fill_rounded),
-                               child: Text("Play Saved Answer", style: GoogleFonts.outfit(fontWeight: FontWeight.w600)),
-                               onPressed: () async => await _audioPlayer.play(DeviceFileSource(widget.question.audioPath!)),
-                             ),
-                           ),
+                        if (widget.question.audioPath != null &&
+                            widget.question.audioPath!.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 16.0),
+                            child: AccessibleOutlinedButton(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Theme.of(context).primaryColor,
+                                side: BorderSide(
+                                  color: Theme.of(context).primaryColor,
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                  horizontal: 16,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              icon: const Icon(Icons.play_circle_fill_rounded),
+                              child: Text(
+                                "Play Saved Answer",
+                                style: GoogleFonts.outfit(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              onPressed: () async => await _audioPlayer.play(
+                                DeviceFileSource(widget.question.audioPath!),
+                              ),
+                            ),
+                          ),
                         const SizedBox(height: 40), // Bottom padding
                       ],
                     ),
                   ),
                 ),
-                
+
                 // Controls
                 Container(
-                  padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 16,
+                    horizontal: 12,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.black45,
                     borderRadius: BorderRadius.circular(20),
@@ -1055,11 +1254,17 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                               icon: Icon(readIcon),
                               child: Text(readLabel),
                               style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
                                 backgroundColor: Theme.of(context).primaryColor,
                                 foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                textStyle: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                textStyle: GoogleFonts.outfit(
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                           ),
@@ -1069,12 +1274,20 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                               onPressed: onStop,
                               icon: Icon(stopIcon),
                               child: Text(stopLabel),
-                               style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 14),
-                                backgroundColor: _isPaused ? Colors.orangeAccent : Colors.redAccent.shade200,
+                              style: ElevatedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
+                                backgroundColor: _isPaused
+                                    ? Colors.orangeAccent
+                                    : Colors.redAccent.shade200,
                                 foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                textStyle: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                textStyle: GoogleFonts.outfit(
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                           ),
@@ -1087,12 +1300,16 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                             child: AccessibleElevatedButton(
                               onPressed: _changeSpeed,
                               icon: const Icon(Icons.speed_rounded, size: 18),
-                              child: Text("${_displaySpeed.toStringAsFixed(2)}x"),
+                              child: Text(
+                                "${_displaySpeed.toStringAsFixed(2)}x",
+                              ),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.white10, 
+                                backgroundColor: Colors.white10,
                                 foregroundColor: Colors.white,
                                 elevation: 0,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
                               ),
                             ),
                           ),
@@ -1100,13 +1317,22 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                           Expanded(
                             child: AccessibleElevatedButton(
                               onPressed: _changeVolume,
-                              icon: Icon(_currentVolume < 0.5 ? Icons.volume_down_rounded : Icons.volume_up_rounded, size: 18),
-                              child: Text("Vol: ${(_currentVolume * 100).toInt()}%"),
+                              icon: Icon(
+                                _currentVolume < 0.5
+                                    ? Icons.volume_down_rounded
+                                    : Icons.volume_up_rounded,
+                                size: 18,
+                              ),
+                              child: Text(
+                                "Vol: ${(_currentVolume * 100).toInt()}%",
+                              ),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.white10, 
+                                backgroundColor: Colors.white10,
                                 foregroundColor: Colors.white,
                                 elevation: 0,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
                               ),
                             ),
                           ),
@@ -1129,18 +1355,33 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     String? currentBoxTitle;
     bool inBox = false;
     for (var line in body) {
-        final trimmed = line.trim();
-        if (trimmed.startsWith("[[BOX:") && trimmed.endsWith("]]")) {
-            if (inBox) widgets.add(_buildBoxWidget(currentBoxTitle, currentBoxItems));
-            inBox = true;
-            currentBoxTitle = trimmed.substring(6, trimmed.length - 2).trim(); 
-            currentBoxItems = [];
-        } else if (trimmed == "[[BOX END]]") {
-            if (inBox) { widgets.add(_buildBoxWidget(currentBoxTitle, currentBoxItems)); inBox = false; }
-        } else {
-            if (inBox) { currentBoxItems.add(line); } 
-            else { widgets.add(Padding(padding: const EdgeInsets.only(bottom: 4), child: Text(line, style: GoogleFonts.outfit(fontSize: 18, color: Colors.white70)))); }
+      final trimmed = line.trim();
+      if (trimmed.startsWith("[[BOX:") && trimmed.endsWith("]]")) {
+        if (inBox)
+          widgets.add(_buildBoxWidget(currentBoxTitle, currentBoxItems));
+        inBox = true;
+        currentBoxTitle = trimmed.substring(6, trimmed.length - 2).trim();
+        currentBoxItems = [];
+      } else if (trimmed == "[[BOX END]]") {
+        if (inBox) {
+          widgets.add(_buildBoxWidget(currentBoxTitle, currentBoxItems));
+          inBox = false;
         }
+      } else {
+        if (inBox) {
+          currentBoxItems.add(line);
+        } else {
+          widgets.add(
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                line,
+                style: GoogleFonts.outfit(fontSize: 18, color: Colors.white70),
+              ),
+            ),
+          );
+        }
+      }
     }
     if (inBox) widgets.add(_buildBoxWidget(currentBoxTitle, currentBoxItems));
     return widgets;
@@ -1148,20 +1389,48 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
 
   Widget _buildBoxWidget(String? title, List<String> items) {
     return Container(
-        width: double.infinity, margin: const EdgeInsets.symmetric(vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.05), 
-          border: Border.all(color: Colors.white.withOpacity(0.1)), 
-          borderRadius: BorderRadius.circular(12)
-        ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Container(
-              padding: const EdgeInsets.all(12), 
-              decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), borderRadius: const BorderRadius.vertical(top: Radius.circular(12))), 
-              child: Text(title ?? "Box", style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: Colors.white))
+      width: double.infinity,
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.05),
+        border: Border.all(color: Colors.white.withOpacity(0.1)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.1),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(12),
+              ),
             ),
-            Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: items.map((i) => Text(i, style: GoogleFonts.outfit(color: Colors.white70))).toList())),
-        ]),
+            child: Text(
+              title ?? "Box",
+              style: GoogleFonts.outfit(
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: items
+                  .map(
+                    (i) => Text(
+                      i,
+                      style: GoogleFonts.outfit(color: Colors.white70),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

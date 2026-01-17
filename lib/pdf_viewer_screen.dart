@@ -4,6 +4,7 @@ import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import 'package:flutter_pdf_text/flutter_pdf_text.dart';
 import 'dart:io';
 import 'services/voice_command_service.dart';
+import 'services/stt_service.dart';
 import 'widgets/accessible_widgets.dart'; // Added
 import 'package:google_fonts/google_fonts.dart'; // Added
 import 'dart:ui'; // Added
@@ -24,6 +25,10 @@ class PdfViewerScreen extends StatefulWidget {
 }
 
 class _PdfViewerScreenState extends State<PdfViewerScreen> {
+  final PdfViewerController _pdfController = PdfViewerController();
+  final SttService _sttService = SttService();
+  bool _isListening = false;
+  
   PDFDoc? _doc;
   List<String> _sentences = [];
   int _currentIndex = 0;
@@ -33,6 +38,75 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   void initState() {
     super.initState();
     _loadPdf();
+    _initVoiceCommandListener();
+  }
+
+  @override
+  void dispose() {
+    _sttService.stopListening();
+    super.dispose();
+  }
+
+  void _initVoiceCommandListener() async {
+    bool available = await _sttService.init(
+      tts: widget.ttsService,
+      onStatus: (status) {
+        if ((status == 'notListening' || status == 'done') && !_isListening) {
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (mounted && !_isListening) _startCommandStream();
+          });
+        }
+      },
+      onError: (error) => print("PDF Screen STT Error: $error"),
+    );
+
+    if (available) {
+      _startCommandStream();
+    }
+  }
+
+  void _startCommandStream() {
+    if (!_sttService.isAvailable || _isListening) return;
+
+    _sttService.startListening(
+      localeId: "en-US",
+      onResult: (text) {
+        final result = widget.voiceService.parse(text, context: VoiceContext.pdfViewer);
+        if (result.action != VoiceAction.unknown) {
+           _handleVoiceCommand(result);
+        }
+      },
+    );
+  }
+
+  void _handleVoiceCommand(CommandResult result) {
+    if (!mounted) return;
+    switch (result.action) {
+      case VoiceAction.nextPage:
+        _pdfController.nextPage();
+        widget.ttsService.speak("Next page");
+        break;
+      case VoiceAction.previousPage:
+        _pdfController.previousPage();
+        widget.ttsService.speak("Previous page");
+        break;
+      case VoiceAction.stopDictation: // Reuse stop action
+         _stopReading();
+         break;
+      case VoiceAction.goBack:
+        Navigator.pop(context);
+        break;
+      // Fallback
+      case VoiceAction.goToHome:
+      case VoiceAction.goToSettings:
+      case VoiceAction.goToSavedPapers:
+      case VoiceAction.goToReadPDF:
+      case VoiceAction.goToTakeExam:
+        widget.voiceService.performGlobalNavigation(result);
+        break;
+      default:
+        break;
+    }
   }
 
   Future<void> _loadPdf() async {
@@ -54,6 +128,10 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
         await Future.delayed(const Duration(milliseconds: 500));
         continue; // wait while paused
       }
+      
+      // Stop reading if listening to voice command? 
+      // Handled by TtsService stream in SttService -> actually STT pauses when TTS speaks.
+      // So here we are fine.
 
       String sentence = _sentences[_currentIndex].trim();
       if (sentence.isNotEmpty) {
@@ -66,7 +144,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
 
     _isReading = false;
   }
-
+  
   void _stopReading() async {
     _currentIndex = 0;
     _isReading = false;
@@ -128,7 +206,10 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
               Expanded(
                 child: ClipRRect(
                   borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-                  child: SfPdfViewer.file(File(widget.path)),
+                  child: SfPdfViewer.file(
+                    File(widget.path),
+                    controller: _pdfController,
+                  ),
                 ),
               ),
               Container(

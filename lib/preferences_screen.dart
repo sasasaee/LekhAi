@@ -6,14 +6,19 @@ import 'services/tts_service.dart';
 import 'services/voice_command_service.dart';
 import 'services/accessibility_service.dart';
 import 'widgets/accessible_widgets.dart'; // Added
+import 'services/stt_service.dart';
 
 class PreferencesScreen extends StatefulWidget {
   final TtsService ttsService;
   final VoiceCommandService voiceService;
   final AccessibilityService? accessibilityService;
 
-  const PreferencesScreen({super.key, required this.ttsService,
-    required this.voiceService, this.accessibilityService});
+  const PreferencesScreen({
+    super.key,
+    required this.ttsService,
+    required this.voiceService,
+    this.accessibilityService,
+  });
 
   @override
   State<PreferencesScreen> createState() => _PreferencesScreenState();
@@ -21,17 +26,61 @@ class PreferencesScreen extends StatefulWidget {
 
 class _PreferencesScreenState extends State<PreferencesScreen> {
   // Track what the user sees (Human-readable speed)
-  double _displaySpeed = 1.0; 
+  double _displaySpeed = 1.0;
   double _volume = 0.7;
 
+  final SttService _sttService = SttService();
+  bool _isListening = false;
+  bool _voiceCommandsEnabled = true; // Default ON
   final TextEditingController _apiKeyController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _loadPreferences();
-    widget.ttsService.speak(
-      "Welcome to the Preferences screen. Here you can adjust speed and volume.",
+    widget.ttsService.speak("Settings");
+    _initVoiceCommandListener();
+  }
+
+  @override
+  void dispose() {
+    _sttService.stopListening();
+    _apiKeyController.dispose();
+    super.dispose();
+  }
+
+  void _initVoiceCommandListener() async {
+    bool available = await _sttService.init(
+      tts: widget.ttsService, // Pass TTS to enable auto-pause
+      onStatus: (status) {
+        if ((status == 'notListening' || status == 'done') && !_isListening) {
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (mounted && !_isListening) _startCommandStream();
+          });
+        }
+      },
+      onError: (error) => print("PreferencesScreen STT Error: $error"),
+    );
+
+    if (available) {
+      _startCommandStream();
+    }
+  }
+
+  void _startCommandStream() {
+    if (!_sttService.isAvailable || _isListening) return;
+
+    _sttService.startListening(
+      localeId: "en-US",
+      onResult: (text) {
+        final result = widget.voiceService.parse(
+          text,
+          context: VoiceContext.settings,
+        );
+        if (result.action != VoiceAction.unknown) {
+          widget.voiceService.performGlobalNavigation(result);
+        }
+      },
     );
   }
 
@@ -44,10 +93,13 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
         _displaySpeed = (prefs['speed'] as num?)?.toDouble() ?? 1.0;
         _volume = (prefs['volume'] as num?)?.toDouble() ?? 0.7;
         _apiKeyController.text = sp.getString('gemini_api_key') ?? '';
-        
+
         // Load Haptics
         bool hapticsEnabled = prefs['haptics'] as bool? ?? true;
         AccessibilityService().setEnabled(hapticsEnabled);
+
+        // Load Voice Commands
+        _voiceCommandsEnabled = sp.getBool('voice_commands_enabled') ?? true;
       });
       // Ensure engine is synced with mapped value immediately
       await widget.ttsService.setSpeed(_displaySpeed * 0.5);
@@ -66,20 +118,20 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       speed: _displaySpeed,
       volume: _volume,
     );
-    await widget.ttsService.saveHapticPreference(AccessibilityService().enabled);
-    
+    await widget.ttsService.saveHapticPreference(
+      AccessibilityService().enabled,
+    );
+
     final sp = await SharedPreferences.getInstance();
     await sp.setString('gemini_api_key', _apiKeyController.text.trim());
 
-    widget.ttsService.speak(
-      "Preferences saved successfully.",
-    );
+    widget.ttsService.speak("Preferences saved successfully.");
     AccessibilityService().trigger(AccessibilityEvent.success);
-    
+
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Preferences saved')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Preferences saved')));
     }
   }
 
@@ -89,12 +141,12 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       _volume = 0.7;
       _apiKeyController.clear();
     });
-    
+
     // Reset TTS engine to internal defaults
     await widget.ttsService.resetPreferences();
     final sp = await SharedPreferences.getInstance();
     await sp.remove('gemini_api_key');
-    
+
     widget.ttsService.speak("Preferences have been reset.");
     AccessibilityService().trigger(AccessibilityEvent.warning);
   }
@@ -149,7 +201,11 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                     children: [
                       Text(
                         'Gemini API Key',
-                        style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                        style: GoogleFonts.outfit(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
                       ),
                       const SizedBox(height: 12),
                       TextField(
@@ -164,7 +220,10 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                             borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide.none,
                           ),
-                          suffixIcon: const Icon(Icons.key, color: Colors.white70),
+                          suffixIcon: const Icon(
+                            Icons.key,
+                            color: Colors.white70,
+                          ),
                         ),
                         obscureText: true,
                       ),
@@ -172,7 +231,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-        
+
                 // Speed Card
                 _GlassCard(
                   child: Column(
@@ -183,12 +242,21 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                         children: [
                           Text(
                             'Speed: ${_displaySpeed.toStringAsFixed(2)}x',
-                            style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                            style: GoogleFonts.outfit(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
                           ),
                           IconButton(
-                            icon: const Icon(Icons.play_circle_fill, color: Colors.blueAccent, size: 32),
-                            onPressed: () =>
-                                widget.ttsService.speak("This is a speed test at ${_displaySpeed.toStringAsFixed(2)} speed"),
+                            icon: const Icon(
+                              Icons.play_circle_fill,
+                              color: Colors.blueAccent,
+                              size: 32,
+                            ),
+                            onPressed: () => widget.ttsService.speak(
+                              "This is a speed test at ${_displaySpeed.toStringAsFixed(2)} speed",
+                            ),
                           ),
                         ],
                       ),
@@ -206,7 +274,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-        
+
                 // Volume Card
                 _GlassCard(
                   child: Column(
@@ -217,12 +285,21 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                         children: [
                           Text(
                             'Volume: ${(_volume * 100).toInt()}%',
-                            style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                            style: GoogleFonts.outfit(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
                           ),
                           IconButton(
-                            icon: const Icon(Icons.volume_up_rounded, color: Colors.greenAccent, size: 32),
-                            onPressed: () =>
-                                widget.ttsService.speak("This is a volume test"),
+                            icon: const Icon(
+                              Icons.volume_up_rounded,
+                              color: Colors.greenAccent,
+                              size: 32,
+                            ),
+                            onPressed: () => widget.ttsService.speak(
+                              "This is a volume test",
+                            ),
                           ),
                         ],
                       ),
@@ -240,7 +317,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-        
+
                 // Haptic Feedback Toggle
                 _GlassCard(
                   child: SwitchListTile(
@@ -248,7 +325,11 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                     activeColor: Theme.of(context).primaryColor,
                     title: Text(
                       "Haptic Feedback",
-                      style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                      style: GoogleFonts.outfit(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
                     ),
                     subtitle: Text(
                       "Vibrate on interactions",
@@ -258,12 +339,51 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                       setState(() {
                         AccessibilityService().setEnabled(val);
                       });
-                      if (val) AccessibilityService().trigger(AccessibilityEvent.action);
+                      if (val)
+                        AccessibilityService().trigger(
+                          AccessibilityEvent.action,
+                        );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // Voice Commands Toggle
+                _GlassCard(
+                  child: SwitchListTile(
+                    value: _voiceCommandsEnabled,
+                    activeColor: Theme.of(context).primaryColor,
+                    title: Text(
+                      "Voice Commands",
+                      style: GoogleFonts.outfit(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    subtitle: Text(
+                      "Enable always-on voice control",
+                      style: GoogleFonts.outfit(color: Colors.white54),
+                    ),
+                    onChanged: (val) async {
+                      setState(() => _voiceCommandsEnabled = val);
+
+                      // Save immediately for responsiveness
+                      final sp = await SharedPreferences.getInstance();
+                      await sp.setBool('voice_commands_enabled', val);
+
+                      if (val) {
+                        _initVoiceCommandListener();
+                        widget.ttsService.speak("Voice commands enabled.");
+                      } else {
+                        _sttService.stopListening();
+                        widget.ttsService.speak("Voice commands disabled.");
+                      }
                     },
                   ),
                 ),
                 const SizedBox(height: 32),
-        
+
                 // Buttons
                 Row(
                   children: [
@@ -274,13 +394,18 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                           backgroundColor: Colors.blueAccent,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
                           elevation: 8,
                           shadowColor: Colors.blueAccent.withOpacity(0.4),
                         ),
                         child: Text(
                           'Save',
-                          style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold),
+                          style: GoogleFonts.outfit(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ),
@@ -290,13 +415,21 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                         onPressed: _reset,
                         style: OutlinedButton.styleFrom(
                           foregroundColor: Colors.redAccent,
-                          side: const BorderSide(color: Colors.redAccent, width: 2),
+                          side: const BorderSide(
+                            color: Colors.redAccent,
+                            width: 2,
+                          ),
                           padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
                         ),
                         child: Text(
                           'Reset',
-                          style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold),
+                          style: GoogleFonts.outfit(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ),
@@ -322,7 +455,10 @@ class _GlassCard extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
         gradient: LinearGradient(
-          colors: [Colors.white.withOpacity(0.08), Colors.white.withOpacity(0.03)],
+          colors: [
+            Colors.white.withOpacity(0.08),
+            Colors.white.withOpacity(0.03),
+          ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -339,10 +475,7 @@ class _GlassCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: child,
-          ),
+          child: Padding(padding: const EdgeInsets.all(16), child: child),
         ),
       ),
     );
