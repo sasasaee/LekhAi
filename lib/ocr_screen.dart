@@ -20,6 +20,11 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_animate/flutter_animate.dart'; // Ensure animate is available
 import 'dart:ui'; // For ImageFilter
 
+import 'exam_info_screen.dart';
+import 'services/stt_service.dart';
+import 'dart:async';
+
+
 // ... existing imports
 
 class OcrScreen extends StatefulWidget {
@@ -41,6 +46,7 @@ class _OcrScreenState extends State<OcrScreen> {
   final QuestionStorageService _storageService = QuestionStorageService();
   final QuestionSegmentationService _segmenter = QuestionSegmentationService();
   final ImagePicker _picker = ImagePicker();
+  final SttService _sttService = SttService();
 
   bool _isProcessing = false;
   File? _imageFile;
@@ -156,6 +162,52 @@ class _OcrScreenState extends State<OcrScreen> {
       widget.ttsService.speak("Error saving document.");
     }
   }
+
+Future<void> _promptExamMode() async {
+  // Ask if the student wants to enter exam mode
+  widget.ttsService.speak("Do you want to enter Exam Mode? Please say yes or no.");
+
+  // Wrap listen in a completer so you can await it
+  final response = await _listenForResponse(5);
+
+  if (response.toLowerCase() != "yes") {
+    widget.ttsService.speak("Exam Mode cancelled.");
+    return;
+  }
+
+  if (!mounted || _imageFile == null){
+    widget.ttsService.speak("Error: No document scanned.");
+     return;
+  }
+
+  Navigator.pushReplacement(
+    context,
+    MaterialPageRoute(
+      builder: (_) => ExamInfoScreen(
+        document: _doc!,
+        ttsService: widget.ttsService,
+        voiceService: widget.voiceService,
+        accessibilityService: widget.accessibilityService!,
+        sttService: _sttService, // pass the STT service
+      ),
+    ),
+  );
+}
+
+// Helper to await voice input
+Future<String> _listenForResponse(int seconds) {
+  final completer = Completer<String>();
+
+  _sttService.startListening(
+    localeId: 'en_US',
+    onResult: (text) {
+      if (!completer.isCompleted) completer.complete(text);
+    },
+  );
+
+  return completer.future;
+}
+
 
   @override
   void dispose() {
@@ -333,6 +385,20 @@ class _OcrScreenState extends State<OcrScreen> {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     ),
                   ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.2, end: 0),
+
+                  const SizedBox(height: 12),
+                 ElevatedButton.icon(
+                  onPressed: _promptExamMode,
+                  icon: const Icon(Icons.school),
+                  label: Text('Enter Exam Mode', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    backgroundColor: Colors.deepPurple,
+                    foregroundColor: Colors.white,
+                    elevation: 8,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                   ),
+                 ).animate().fadeIn(delay: 300.ms).slideY(begin: 0.2, end: 0),
         
                   const SizedBox(height: 12),
                   Text(

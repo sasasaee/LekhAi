@@ -13,13 +13,15 @@ import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'package:audioplayers/audioplayers.dart';
 
+
 // --- PAPER DETAIL SCREEN ---
 
 import 'services/accessibility_service.dart';
 import 'widgets/accessible_widgets.dart'; // Added
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:ui';
-
+import 'exam_info_screen.dart';
+import 'dart:async';
 
 class PaperDetailScreen extends StatefulWidget {
   final ParsedDocument document;
@@ -27,6 +29,9 @@ class PaperDetailScreen extends StatefulWidget {
   final VoiceCommandService voiceService; // Added
   final AccessibilityService? accessibilityService;
   final String timestamp;
+  final bool examMode;
+  final String? studentName;
+  final String? studentId;
 
   const PaperDetailScreen({
     super.key,
@@ -35,6 +40,9 @@ class PaperDetailScreen extends StatefulWidget {
     required this.voiceService, // Added
     this.accessibilityService,
     required this.timestamp,
+    this.examMode = false, // Default to false so it works for normal scanning too
+    this.studentName,
+    this.studentId,
   });
 
   @override
@@ -47,6 +55,9 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
   final QuestionStorageService _storageService = QuestionStorageService();
   final SttService _sttService = SttService(); 
   bool _isListening = false;
+  Timer? _examTimer;
+  int _remainingSeconds = 3600; // 1 Hour (60 * 60)
+
   @override
   void initState() {
     super.initState();
@@ -54,12 +65,49 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
     AccessibilityService().trigger(AccessibilityEvent.navigation);
     // Initialize the listener for this screen
     _initVoiceCommandListener();
+
+    if (widget.examMode) {
+      _startExamTimer();
+      widget.ttsService.speak("Exam started. You have one hour.");
+    }
   }
 
   @override
   void dispose() {
+    _examTimer?.cancel();
     _sttService.stopListening(); // Stop listening when leaving the screen
     super.dispose();
+  }
+
+  void _startExamTimer() {
+    _examTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      
+      setState(() {
+        if (_remainingSeconds > 0) {
+          _remainingSeconds--;
+
+          // 15 Minute Warning (900 seconds)
+          if (_remainingSeconds == 900) {
+            widget.ttsService.speak("Attention. 15 minutes remaining.");
+          }
+          // 5 Minute Warning (300 seconds) - Optional
+          if (_remainingSeconds == 300) {
+            widget.ttsService.speak("5 minutes remaining.");
+          }
+        } else {
+          // Time Up
+          timer.cancel();
+          widget.ttsService.speak("Time is up. Please stop writing.");
+        }
+      });
+    });
+  }
+
+  String _formatTime(int totalSeconds) {
+    int minutes = totalSeconds ~/ 60;
+    int seconds = totalSeconds % 60;
+    return "${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}";
   }
 
   // --- VOICE COMMAND LOGIC FOR LIST SCREEN ---
@@ -265,135 +313,185 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
           ),
         ),
         child: SafeArea(
-          child: ListView.builder(
-            itemCount: items.length,
-            itemBuilder: (context, index) {
-              final item = items[index];
-              
-              if (item is _HeaderItem) {
-                 return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.05),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.white.withOpacity(0.1)),
-                    ),
-                    child: Text(
-                      item.text,
-                      style: GoogleFonts.outfit(fontStyle: FontStyle.italic, color: Colors.white70),
-                    ),
+          child: Column(
+            children: [
+              // --- 1. INSERT THE TIMER HERE ---
+              if (widget.examMode)
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.deepPurple,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.deepPurple.withOpacity(0.5),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      )
+                    ],
                   ),
-                );
-              } else if (item is _SectionItem) {
-                return Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (item.title != null && item.title!.isNotEmpty)
-                        Text(
-                          item.title!,
-                          style: GoogleFonts.outfit(
-                            fontSize: 20, 
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white
-                          ),
+                      Text(
+                        _formatTime(_remainingSeconds), // 60:00 countdown
+                        style: GoogleFonts.outfit(
+                          fontSize: 48,
+                          fontWeight: FontWeight.bold,
+                          color: _remainingSeconds < 900 ? Colors.redAccent : Colors.white,
                         ),
-                      if (item.context != null && item.context!.isNotEmpty)
-                        Container(
-                          margin: const EdgeInsets.only(top: 8),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        "Student: ${widget.studentName ?? 'Unknown'}",
+                        style: GoogleFonts.outfit(fontSize: 18, color: Colors.white70),
+                      ),
+                      Text(
+                        "ID: ${widget.studentId ?? '---'}",
+                        style: GoogleFonts.outfit(fontSize: 14, color: Colors.white38),
+                      ),
+                    ],
+                  ),
+                ),
+
+              // --- 2. YOUR EXISTING LIST GOES HERE ---
+              Expanded(
+                child: ListView.builder(
+                  itemCount: items.length,
+                  itemBuilder: (context, index) {
+                    // COPY AND PASTE YOUR EXISTING ITEM BUILDER CODE HERE
+                    // (The exact same code you already have for _HeaderItem, _SectionItem, _QuestionItem)
+                    
+                    final item = items[index];
+
+                    if (item is _HeaderItem) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        child: Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: Colors.amber.withOpacity(0.1),
-                            border: Border.all(color: Colors.amber.withOpacity(0.3)),
+                            color: Colors.white.withOpacity(0.05),
                             borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.white.withOpacity(0.1)),
                           ),
                           child: Text(
-                            item.context!,
-                            style: GoogleFonts.outfit(
-                              fontSize: 15,
-                              color: Colors.amber.shade100,
-                              height: 1.4
-                            ),
+                            item.text,
+                            style: GoogleFonts.outfit(fontStyle: FontStyle.italic, color: Colors.white70),
                           ),
                         ),
-                    ],
-                  ),
-                );
-              } else if (item is _QuestionItem) {
-                final q = item.question;
-                final qTitle = q.number != null ? "Q${q.number}" : "Question";
-                final marks = q.marks != null ? "(${q.marks})" : "";
-
-                return Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(16),
-                    gradient: LinearGradient(
-                      colors: [Colors.white.withOpacity(0.08), Colors.white.withOpacity(0.03)],
-                    ),
-                    border: Border.all(color: Colors.white.withOpacity(0.1)),
-                    boxShadow: [
-                      BoxShadow(color: Colors.black12, blurRadius: 8, offset: const Offset(0, 4)),
-                    ],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                     child: BackdropFilter(
-                       filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-                        child: AccessibleListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          leading: Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context).primaryColor.withOpacity(0.2),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Text(
-                              q.number ?? "Q",
-                              style: GoogleFonts.outfit(
-                                fontWeight: FontWeight.bold, 
-                                color: Theme.of(context).primaryColor
-                              ),
-                            ),
-                          ),
-                          title: Text(
-                            "$qTitle $marks", 
-                            style: GoogleFonts.outfit(fontWeight: FontWeight.w600, color: Colors.white)
-                          ),
-                          subtitle: Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(
-                              q.prompt + (q.body.isNotEmpty ? "..." : ""),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.outfit(color: Colors.white70),
-                            ),
-                          ),
-                          trailing: Icon(Icons.arrow_forward_ios_rounded, color: Colors.white24, size: 16),
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => SingleQuestionScreen(
-                                  question: q,
-                                  contextText: item.context,
-                                  ttsService: widget.ttsService,
-                                  voiceService: widget.voiceService,
-                                  accessibilityService: widget.accessibilityService,
+                      );
+                    } else if (item is _SectionItem) {
+                      return Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (item.title != null && item.title!.isNotEmpty)
+                              Text(
+                                item.title!,
+                                style: GoogleFonts.outfit(
+                                  fontSize: 20, 
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white
                                 ),
                               ),
-                            );
-                          },
+                            if (item.context != null && item.context!.isNotEmpty)
+                              Container(
+                                margin: const EdgeInsets.only(top: 8),
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber.withOpacity(0.1),
+                                  border: Border.all(color: Colors.amber.withOpacity(0.3)),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  item.context!,
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 15,
+                                    color: Colors.amber.shade100,
+                                    height: 1.4
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
-                     ),
-                  ),
-                );
-              }
-              return const SizedBox.shrink();
-            },
+                      );
+                    } else if (item is _QuestionItem) {
+                       final q = item.question;
+                       final qTitle = q.number != null ? "Q${q.number}" : "Question";
+                       final marks = q.marks != null ? "(${q.marks})" : "";
+
+                       return Container(
+                         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                         decoration: BoxDecoration(
+                           borderRadius: BorderRadius.circular(16),
+                           gradient: LinearGradient(
+                             colors: [Colors.white.withOpacity(0.08), Colors.white.withOpacity(0.03)],
+                           ),
+                           border: Border.all(color: Colors.white.withOpacity(0.1)),
+                           boxShadow: [
+                             BoxShadow(color: Colors.black12, blurRadius: 8, offset: const Offset(0, 4)),
+                           ],
+                         ),
+                         child: ClipRRect(
+                           borderRadius: BorderRadius.circular(16),
+                             child: BackdropFilter(
+                               filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+                               child: AccessibleListTile(
+                                 contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                 leading: Container(
+                                   padding: const EdgeInsets.all(10),
+                                   decoration: BoxDecoration(
+                                     color: Theme.of(context).primaryColor.withOpacity(0.2),
+                                     shape: BoxShape.circle,
+                                   ),
+                                   child: Text(
+                                     q.number ?? "Q",
+                                     style: GoogleFonts.outfit(
+                                       fontWeight: FontWeight.bold, 
+                                       color: Theme.of(context).primaryColor
+                                     ),
+                                   ),
+                                 ),
+                                 title: Text(
+                                   "$qTitle $marks", 
+                                   style: GoogleFonts.outfit(fontWeight: FontWeight.w600, color: Colors.white)
+                                 ),
+                                 subtitle: Padding(
+                                   padding: const EdgeInsets.only(top: 4),
+                                   child: Text(
+                                     q.prompt + (q.body.isNotEmpty ? "..." : ""),
+                                     maxLines: 2,
+                                     overflow: TextOverflow.ellipsis,
+                                     style: GoogleFonts.outfit(color: Colors.white70),
+                                   ),
+                                 ),
+                                 trailing: Icon(Icons.arrow_forward_ios_rounded, color: Colors.white24, size: 16),
+                                 onTap: () {
+                                   Navigator.push(
+                                     context,
+                                     MaterialPageRoute(
+                                       builder: (_) => SingleQuestionScreen(
+                                         question: q,
+                                         contextText: item.context,
+                                         ttsService: widget.ttsService,
+                                         voiceService: widget.voiceService,
+                                         accessibilityService: widget.accessibilityService,
+                                       ),
+                                     ),
+                                   );
+                                 },
+                               ),
+                             ),
+                         ),
+                       );
+                    }
+                    return const SizedBox.shrink();
+                  },
+                ),
+              ),
+            ],
           ),
         ),
       ),
