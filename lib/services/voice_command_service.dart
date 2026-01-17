@@ -45,6 +45,14 @@ enum VoiceAction {
   useLocalOcr,
   scanQuestions,
   openPaper, // Added Action for selecting item from list
+  // Settings Actions
+  toggleHaptic,
+  toggleVoiceCommands,
+  deletePaper, // Added Action for deleting item
+  increaseVolume,
+  decreaseVolume,
+  increaseSpeed,
+  decreaseSpeed,
   unknown,
 }
 
@@ -121,6 +129,37 @@ class VoiceCommandService {
     // Saved Papers Context
     if (context == VoiceContext.savedPapers) {
       print("Saved Papers Context Parsing: '$text'");
+      // Parsing for DELETE commands (Check first!)
+      final RegExp deleteRegex = RegExp(
+        r"(delete|remove)\s+(paper|question|scan|number)\s+([a-z0-9]+)",
+      );
+      final deleteMatch = deleteRegex.firstMatch(text);
+      if (deleteMatch != null) {
+        String rawNumber = deleteMatch.group(3)!;
+        print("DELETE MATCH FOUND: rawNumber='$rawNumber'");
+        int? index = int.tryParse(rawNumber);
+
+        if (index == null) {
+          const numberMap = {
+            'one': 1,
+            'two': 2,
+            'three': 3,
+            'four': 4,
+            'five': 5,
+            'six': 6,
+            'seven': 7,
+            'eight': 8,
+            'nine': 9,
+            'ten': 10,
+          };
+          index = numberMap[rawNumber];
+        }
+
+        if (index != null) {
+          return CommandResult(VoiceAction.deletePaper, payload: index);
+        }
+      }
+
       // Matches "question 1", "paper two", "scan 3", "number four"
       // Added [a-z0-9]+ to capture "one", "two" etc.
       final RegExp selectionRegex = RegExp(
@@ -156,6 +195,53 @@ class VoiceCommandService {
         }
       } else {
         print("NO MATCH for regex in Saved Papers");
+      }
+    }
+
+    // Settings Context
+    if (context == VoiceContext.settings) {
+      if (text.contains("save")) {
+        return CommandResult(VoiceAction.saveResult);
+      }
+      if (text.contains("haptic") || text.contains("vibration")) {
+        return CommandResult(VoiceAction.toggleHaptic);
+      }
+
+      // Speed
+      if (text.contains("speed up") ||
+          text.contains("increase speed") ||
+          text.contains("faster")) {
+        return CommandResult(VoiceAction.increaseSpeed);
+      }
+      if (text.contains("speed down") ||
+          text.contains("decrease speed") ||
+          text.contains("slower")) {
+        return CommandResult(VoiceAction.decreaseSpeed);
+      }
+
+      // Volume
+      if (text.contains("volume up") ||
+          text.contains("increase volume") ||
+          text.contains("louder")) {
+        return CommandResult(VoiceAction.increaseVolume);
+      }
+      if (text.contains("volume down") ||
+          text.contains("decrease volume") ||
+          text.contains("quieter")) {
+        return CommandResult(VoiceAction.decreaseVolume);
+      }
+
+      // Toggle Voice Commands
+      if (text.contains("voice command") ||
+          text.contains("mute") ||
+          text.contains("unmute")) {
+        return CommandResult(VoiceAction.toggleVoiceCommands);
+      }
+
+      if (text.contains("previous page") ||
+          text.contains("previous") ||
+          text.contains("back page")) {
+        return CommandResult(VoiceAction.previousPage);
       }
     }
 

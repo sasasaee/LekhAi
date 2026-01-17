@@ -28,7 +28,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   final PdfViewerController _pdfController = PdfViewerController();
   final SttService _sttService = SttService();
   bool _isListening = false;
-  
+
   PDFDoc? _doc;
   List<String> _sentences = [];
   int _currentIndex = 0;
@@ -44,6 +44,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   @override
   void dispose() {
     _sttService.stopListening();
+    widget.ttsService.stop(); // Stop audio when leaving screen
     super.dispose();
   }
 
@@ -71,9 +72,12 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
     _sttService.startListening(
       localeId: "en-US",
       onResult: (text) {
-        final result = widget.voiceService.parse(text, context: VoiceContext.pdfViewer);
+        final result = widget.voiceService.parse(
+          text,
+          context: VoiceContext.pdfViewer,
+        );
         if (result.action != VoiceAction.unknown) {
-           _handleVoiceCommand(result);
+          _handleVoiceCommand(result);
         }
       },
     );
@@ -91,8 +95,8 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
         widget.ttsService.speak("Previous page");
         break;
       case VoiceAction.stopDictation: // Reuse stop action
-         _stopReading();
-         break;
+        _stopReading();
+        break;
       case VoiceAction.goBack:
         Navigator.pop(context);
         break;
@@ -128,8 +132,8 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
         await Future.delayed(const Duration(milliseconds: 500));
         continue; // wait while paused
       }
-      
-      // Stop reading if listening to voice command? 
+
+      // Stop reading if listening to voice command?
       // Handled by TtsService stream in SttService -> actually STT pauses when TTS speaks.
       // So here we are fine.
 
@@ -144,7 +148,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
 
     _isReading = false;
   }
-  
+
   void _stopReading() async {
     _currentIndex = 0;
     _isReading = false;
@@ -172,13 +176,18 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text('PDF Viewer', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+        title: Text(
+          'PDF Viewer',
+          style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+        ),
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: Container(
           margin: const EdgeInsets.only(left: 16, top: 8, bottom: 8),
           decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.3), // Darker background for visibility over PDF?
+            color: Colors.black.withOpacity(
+              0.3,
+            ), // Darker background for visibility over PDF?
             shape: BoxShape.circle,
           ),
           child: IconButton(
@@ -189,15 +198,15 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
       ),
       body: Container(
         decoration: BoxDecoration(
-           gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Colors.black, // Dark top for AppBar visibility
-                Theme.of(context).scaffoldBackgroundColor,
-              ],
-              stops: const [0.1, 0.3], // Quickly fade to scaffold bg
-           ),
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.black, // Dark top for AppBar visibility
+              Theme.of(context).scaffoldBackgroundColor,
+            ],
+            stops: const [0.1, 0.3], // Quickly fade to scaffold bg
+          ),
         ),
         child: SafeArea(
           bottom: false,
@@ -205,7 +214,9 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
             children: [
               Expanded(
                 child: ClipRRect(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(24),
+                  ),
                   child: SfPdfViewer.file(
                     File(widget.path),
                     controller: _pdfController,
@@ -216,7 +227,9 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
                 padding: const EdgeInsets.all(20.0),
                 decoration: BoxDecoration(
                   color: Colors.black87,
-                  border: Border(top: BorderSide(color: Colors.white.withOpacity(0.1))),
+                  border: Border(
+                    top: BorderSide(color: Colors.white.withOpacity(0.1)),
+                  ),
                 ),
                 child: SafeArea(
                   top: false,
@@ -274,10 +287,10 @@ class _ControlBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Color baseColor = isPrimary 
-        ? Theme.of(context).primaryColor 
+    Color baseColor = isPrimary
+        ? Theme.of(context).primaryColor
         : (isDanger ? Colors.redAccent : Colors.white24);
-        
+
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -287,7 +300,7 @@ class _ControlBtn extends StatelessWidget {
           color: baseColor.withOpacity(isPrimary || isDanger ? 1.0 : 0.2),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isPrimary || isDanger ? Colors.transparent : Colors.white30
+            color: isPrimary || isDanger ? Colors.transparent : Colors.white30,
           ),
         ),
         child: Column(
@@ -295,7 +308,10 @@ class _ControlBtn extends StatelessWidget {
           children: [
             Icon(icon, color: Colors.white, size: 28),
             const SizedBox(height: 4),
-            Text(label, style: GoogleFonts.outfit(fontSize: 12, color: Colors.white70)),
+            Text(
+              label,
+              style: GoogleFonts.outfit(fontSize: 12, color: Colors.white70),
+            ),
           ],
         ),
       ),

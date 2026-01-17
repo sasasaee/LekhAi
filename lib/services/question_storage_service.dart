@@ -10,11 +10,13 @@ class QuestionStorageService {
     final prefs = await SharedPreferences.getInstance();
 
     final List<String> docs = prefs.getStringList(_keyDocs) ?? [];
-    docs.add(jsonEncode({
-      "id": DateTime.now().millisecondsSinceEpoch.toString(),
-      "createdAt": DateTime.now().toIso8601String(),
-      "data": doc.toJson(),
-    }));
+    docs.add(
+      jsonEncode({
+        "id": DateTime.now().millisecondsSinceEpoch.toString(),
+        "createdAt": DateTime.now().toIso8601String(),
+        "data": doc.toJson(),
+      }),
+    );
 
     await prefs.setStringList(_keyDocs, docs);
   }
@@ -26,7 +28,11 @@ class QuestionStorageService {
 
     return docs.map((e) {
       final decoded = jsonDecode(e);
-      return ParsedDocument.fromJson(decoded['data']);
+      // Pass the wrapper's 'id' as fallback for older documents
+      return ParsedDocument.fromJson(
+        decoded['data'],
+        fallbackId: decoded['id'],
+      );
     }).toList();
   }
 

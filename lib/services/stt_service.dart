@@ -15,7 +15,17 @@ class SttService with WidgetsBindingObserver {
   late final stt.SpeechToText _speech;
 
   // ---------------- STATE MACHINE ----------------
-  SttIntendedState _intendedState = SttIntendedState.stopped;
+  SttIntendedState _intendedStateValue = SttIntendedState.stopped;
+  SttIntendedState get _intendedState => _intendedStateValue;
+  set _intendedState(SttIntendedState value) {
+    if (_intendedStateValue != value) {
+      print(
+        "STT: State changing $_intendedStateValue -> $value. Stack: ${StackTrace.current}",
+      );
+      _intendedStateValue = value;
+    }
+  }
+
   bool _pausedByTts = false;
   bool _pausedByLifecycle = false; // New flag for app background state
 
@@ -31,9 +41,11 @@ class SttService with WidgetsBindingObserver {
 
   bool get isAvailable => _isAvailable;
   bool get isListening => _speech.isListening;
+  bool get isActive => _intendedState == SttIntendedState.listening;
 
   // ---------------- LOOP CONTROL ----------------
   Timer? _loopTimer;
+  Timer? _watchdogTimer; // New internal watchdog
   bool _didErrorOccur = false; // Prevents "done" from overriding error backoff
 
   // ---------------- TTS SUBSCRIPTION ----------------
@@ -110,14 +122,16 @@ class SttService with WidgetsBindingObserver {
     _intendedState = SttIntendedState.listening;
 
     _kickLoop(delay: 0);
+    _startWatchdog();
   }
 
   Future<void> stopListening() async {
-    print("STT: Intended state → STOPPED");
+    print("STT: Intended state → STOPPED. CallerStack: ${StackTrace.current}");
 
     _intendedState = SttIntendedState.stopped;
     _loopTimer?.cancel();
     _loopTimer = null;
+    _stopWatchdog();
 
     if (_speech.isListening) {
       await _speech.stop();
@@ -182,22 +196,37 @@ class SttService with WidgetsBindingObserver {
 
   Future<void> _evaluateAndRun() async {
     // 1. Mutex Check: Don't run if already running
-    if (_isProcessActive) return;
+    if (_isProcessActive) {
+      print("STT: Loop skipped - Process is active.");
+      return;
+    }
     _isProcessActive = true;
 
     try {
       // ---------- STATE CHECK ----------
-      if (_intendedState != SttIntendedState.listening) return;
+      if (_intendedState != SttIntendedState.listening) {
+        print("STT: Loop skipped - Intended state is $_intendedState.");
+        return;
+      }
 
       if (_pausedByTts || _pausedByLifecycle) {
         // If paused by TTS or App Lifecycle (background), verify again later
+        print(
+          "STT: Loop skipped - Paused by TTS($_pausedByTts) or Lifecycle($_pausedByLifecycle).",
+        );
         _kickLoop(delay: 500);
         return;
       }
 
       // Check active status right before listening
-      if (_speech.isListening) return;
-      if (!_isAvailable) return;
+      if (_speech.isListening) {
+        print("STT: Loop skipped - Already listening.");
+        return;
+      }
+      if (!_isAvailable) {
+        print("STT: Loop skipped - Not available.");
+        return;
+      }
 
       if (!_voiceEnabled) {
         print("STT: Voice disabled via settings");
@@ -252,7 +281,7 @@ class SttService with WidgetsBindingObserver {
     print("STT status: $status");
     onStatusChange?.call(status);
 
-    if (status == 'done' &&
+    if ((status == 'done' || status == 'notListening') &&
         _intendedState == SttIntendedState.listening &&
         !_pausedByTts) {
       // CRITICAL FIX: Only fast-restart if NO error occurred.
@@ -312,5 +341,29 @@ class SttService with WidgetsBindingObserver {
   /// Call this when settings change
   Future<void> refreshSettings() async {
     await _loadSettings();
+  }
+
+  // =================================================
+  // INTERNAL WATCHDOG
+  // =================================================
+
+  void _startWatchdog() {
+    _watchdogTimer?.cancel();
+    // Check every 2 seconds if we should be listening but aren't
+    _watchdogTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+      if (_intendedState == SttIntendedState.listening &&
+          !_speech.isListening &&
+          !_isProcessActive && // Don't interfere if we are currently starting
+          !_pausedByTts &&
+          !_pausedByLifecycle) {
+        print("STT Watchdog: Service seems dead. Kicking loop...");
+        _kickLoop(delay: 0);
+      }
+    });
+  }
+
+  void _stopWatchdog() {
+    _watchdogTimer?.cancel();
+    _watchdogTimer = null;
   }
 }

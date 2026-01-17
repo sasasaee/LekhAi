@@ -52,13 +52,8 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   void _initVoiceCommandListener() async {
     bool available = await _sttService.init(
       tts: widget.ttsService, // Pass TTS to enable auto-pause
-      onStatus: (status) {
-        if ((status == 'notListening' || status == 'done') && !_isListening) {
-          Future.delayed(const Duration(milliseconds: 500), () {
-            if (mounted && !_isListening) _startCommandStream();
-          });
-        }
-      },
+      // onStatus removed: SttService now manages its own restart logic internally.
+      // onStatus: (status) { ... }
       onError: (error) => print("PreferencesScreen STT Error: $error"),
     );
 
@@ -78,9 +73,91 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
           context: VoiceContext.settings,
         );
         if (result.action != VoiceAction.unknown) {
-          widget.voiceService.performGlobalNavigation(result);
+          _executeVoiceCommand(result);
         }
       },
+    );
+  }
+
+  void _executeVoiceCommand(CommandResult result) async {
+    switch (result.action) {
+      case VoiceAction.toggleHaptic:
+        bool newState = !AccessibilityService().enabled;
+        setState(() {
+          AccessibilityService().setEnabled(newState);
+        });
+        if (newState) AccessibilityService().trigger(AccessibilityEvent.action);
+        widget.ttsService.speak(
+          "Haptic feedback ${newState ? 'enabled' : 'disabled'}.",
+        );
+        break;
+
+      case VoiceAction.toggleVoiceCommands:
+        // Toggling voice commands OFF via voice.
+        setState(() => _voiceCommandsEnabled = !_voiceCommandsEnabled);
+        final sp = await SharedPreferences.getInstance();
+        await sp.setBool('voice_commands_enabled', _voiceCommandsEnabled);
+
+        if (_voiceCommandsEnabled) {
+          widget.ttsService.speak("Voice commands enabled.");
+        } else {
+          _sttService.stopListening();
+          widget.ttsService.speak("Voice commands disabled.");
+        }
+        break;
+
+      case VoiceAction.increaseVolume:
+        _changeVolume(true);
+        break;
+
+      case VoiceAction.decreaseVolume:
+        _changeVolume(false);
+        break;
+
+      case VoiceAction.increaseSpeed:
+        _changeSpeed(true);
+        break;
+
+      case VoiceAction.decreaseSpeed:
+        _changeSpeed(false);
+        break;
+
+      case VoiceAction.goBack:
+        final canPop = await Navigator.maybePop(context);
+        if (!canPop) widget.ttsService.speak("You are already at the root.");
+        break;
+
+      case VoiceAction.saveResult:
+        _savePreferences();
+        break;
+
+      default:
+        widget.voiceService.performGlobalNavigation(result);
+        break;
+    }
+  }
+
+  void _changeVolume(bool increase) async {
+    double newVolume = _volume + (increase ? 0.1 : -0.1);
+    if (newVolume > 1.0) newVolume = 1.0;
+    if (newVolume < 0.0) newVolume = 0.0;
+
+    setState(() => _volume = newVolume);
+    await widget.ttsService.setVolume(_volume);
+    widget.ttsService.speak(
+      "Volume ${increase ? 'increased' : 'decreased'} to ${(newVolume * 100).toInt()} percent.",
+    );
+  }
+
+  void _changeSpeed(bool increase) async {
+    double newSpeed = _displaySpeed + (increase ? 0.25 : -0.25);
+    if (newSpeed > 2.0) newSpeed = 2.0;
+    if (newSpeed < 0.5) newSpeed = 0.5;
+
+    setState(() => _displaySpeed = newSpeed);
+    await widget.ttsService.setSpeed(_displaySpeed * 0.5);
+    widget.ttsService.speak(
+      "Speed ${increase ? 'increased' : 'decreased'} to ${_displaySpeed.toStringAsFixed(2)}.",
     );
   }
 

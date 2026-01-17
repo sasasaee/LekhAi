@@ -103,6 +103,20 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
       return;
     }
 
+    if (result.action == VoiceAction.deletePaper) {
+      final int? targetIndex = result.payload;
+      if (targetIndex != null) {
+        final int actualIndex = targetIndex - 1;
+        if (actualIndex >= 0 && actualIndex < _papers.length) {
+          await widget.ttsService.speak("Deleting paper $targetIndex.");
+          _deletePaper(actualIndex);
+        } else {
+          await widget.ttsService.speak("Paper $targetIndex not found.");
+        }
+      }
+      return;
+    }
+
     // Delegate other global commands
     widget.voiceService.performGlobalNavigation(result);
   }
@@ -259,7 +273,7 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
                     );
 
                     return Dismissible(
-                      key: Key(doc.toString() + index.toString()), // Simple key
+                      key: Key(doc.id), // Stable key based on document ID
                       direction: DismissDirection.endToStart,
                       background: Container(
                         alignment: Alignment.centerRight,

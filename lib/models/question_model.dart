@@ -1,19 +1,28 @@
 class ParsedDocument {
+  final String id;
   final List<String> header;
   final List<ParsedSection> sections;
   // Optional: Add timestamp or title if we want to deserialize it here directly
-  
-  ParsedDocument({required this.header, required this.sections});
+
+  ParsedDocument({String? id, required this.header, required this.sections})
+    : id = id ?? DateTime.now().millisecondsSinceEpoch.toString();
 
   Map<String, dynamic> toJson() => {
+    "id": id,
     "header": header,
     "sections": sections.map((e) => e.toJson()).toList(),
   };
 
-  factory ParsedDocument.fromJson(Map<String, dynamic> json) {
+  factory ParsedDocument.fromJson(
+    Map<String, dynamic> json, {
+    String? fallbackId,
+  }) {
     return ParsedDocument(
-      header: (json['header'] as List?)?.map((e) => e.toString()).toList() ?? [],
-      sections: (json['sections'] as List?)
+      id: json['id'] as String? ?? fallbackId,
+      header:
+          (json['header'] as List?)?.map((e) => e.toString()).toList() ?? [],
+      sections:
+          (json['sections'] as List?)
               ?.map((e) => ParsedSection.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
@@ -26,11 +35,7 @@ class ParsedSection {
   final String? context; // For shared passages or word boxes
   final List<ParsedQuestion> questions;
 
-  ParsedSection({
-    required this.title,
-    this.context,
-    required this.questions,
-  });
+  ParsedSection({required this.title, this.context, required this.questions});
 
   Map<String, dynamic> toJson() => {
     "title": title,
@@ -42,7 +47,8 @@ class ParsedSection {
     return ParsedSection(
       title: json['title'] as String?,
       context: json['context'] as String?,
-      questions: (json['questions'] as List?)
+      questions:
+          (json['questions'] as List?)
               ?.map((e) => ParsedQuestion.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
