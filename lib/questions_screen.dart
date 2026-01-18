@@ -53,8 +53,6 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
   bool _isSelectingForExam = false;
   //int _examTimer = 0; // seconds
   //bool _timerStarted = false;
-  final SttService _sttService = SttService();
-
   int _currentQuestionIndex = 0;
   Timer? _examTimer; // This controls the ticking
   int _remainingSeconds = 0; // This holds the time left
@@ -76,84 +74,83 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
       widget.ttsService.speak("Welcome to saved papers.");
       _initVoiceCommandListener();
     }
+  }
 
-    @override
-    void dispose() {
-      _examTimer?.cancel();
-      _sttService.stopListening();
-      super.dispose();
-    }
+  @override
+  void dispose() {
+    _examTimer?.cancel();
+    _sttService.stopListening();
+    super.dispose();
+  }
 
-    void _initVoiceCommandListener() async {
-      bool available = await _sttService.init(
-        tts: widget.ttsService, // Pass TTS to enable auto-pause
-        onStatus: (status) {
-          // Just log status, rely on SttService internal loop for restarts
-          // print("QuestionsScreen STT Status: $status");
-        },
-        onError: (error) => print("QuestionsScreen STT Error: $error"),
-      );
+  void _initVoiceCommandListener() async {
+    bool available = await _sttService.init(
+      tts: widget.ttsService, // Pass TTS to enable auto-pause
+      onStatus: (status) {
+        // Just log status, rely on SttService internal loop for restarts
+        // print("QuestionsScreen STT Status: $status");
+      },
+      onError: (error) => print("QuestionsScreen STT Error: $error"),
+    );
 
-      if (available) {
-        _startCommandStream();
-      }
-    }
-
-    void _startCommandStream() {
-      if (!_sttService.isAvailable || _isListening) return;
-
-      _sttService.startListening(
-        localeId: "en-US",
-        onResult: (text) {
-          print("QuestionsScreen received: '$text'");
-          final result = widget.voiceService.parse(
-            text,
-            context: VoiceContext.savedPapers,
-          );
-          if (result.action != VoiceAction.unknown) {
-            _handleVoiceCommand(result);
-          }
-        },
-      );
-    }
-
-    void _handleVoiceCommand(CommandResult result) async {
-      // Handle local list selection
-      if (result.action == VoiceAction.openPaper) {
-        final int? targetIndex = result.payload;
-        // Payload is 1-based (user says "1"), convert to 0-based
-        if (targetIndex != null) {
-          final int actualIndex = targetIndex - 1;
-          if (actualIndex >= 0 && actualIndex < _papers.length) {
-            await widget.ttsService.speak("Opening paper $targetIndex.");
-            _openPaper(_papers[actualIndex], actualIndex);
-          } else {
-            await widget.ttsService.speak("Item $targetIndex not found.");
-          }
-        }
-        return;
-      }
-
-      if (result.action == VoiceAction.deletePaper) {
-        final int? targetIndex = result.payload;
-        if (targetIndex != null) {
-          final int actualIndex = targetIndex - 1;
-          if (actualIndex >= 0 && actualIndex < _papers.length) {
-            await widget.ttsService.speak("Deleting paper $targetIndex.");
-            _deletePaper(actualIndex);
-          } else {
-            await widget.ttsService.speak("Paper $targetIndex not found.");
-          }
-        }
-        return;
-      }
-
-      // Delegate other global commands
-      widget.voiceService.performGlobalNavigation(result);
+    if (available) {
+      _startCommandStream();
     }
   }
 
-  //   Future<void> _startExamTimer() async {
+  void _startCommandStream() {
+    if (!_sttService.isAvailable || _isListening) return;
+
+    _sttService.startListening(
+      localeId: "en-US",
+      onResult: (text) {
+        print("QuestionsScreen received: '$text'");
+        final result = widget.voiceService.parse(
+          text,
+          context: VoiceContext.savedPapers,
+        );
+        if (result.action != VoiceAction.unknown) {
+          _handleVoiceCommand(result);
+        }
+      },
+    );
+  }
+
+  void _handleVoiceCommand(CommandResult result) async {
+    // Handle local list selection
+    if (result.action == VoiceAction.openPaper) {
+      final int? targetIndex = result.payload;
+      // Payload is 1-based (user says "1"), convert to 0-based
+      if (targetIndex != null) {
+        final int actualIndex = targetIndex - 1;
+        if (actualIndex >= 0 && actualIndex < _papers.length) {
+          await widget.ttsService.speak("Opening paper $targetIndex.");
+          _openPaper(_papers[actualIndex], actualIndex);
+        } else {
+          await widget.ttsService.speak("Item $targetIndex not found.");
+        }
+      }
+      return;
+    }
+
+    if (result.action == VoiceAction.deletePaper) {
+      final int? targetIndex = result.payload;
+      if (targetIndex != null) {
+        final int actualIndex = targetIndex - 1;
+        if (actualIndex >= 0 && actualIndex < _papers.length) {
+          await widget.ttsService.speak("Deleting paper $targetIndex.");
+          _deletePaper(actualIndex);
+        } else {
+          await widget.ttsService.speak("Paper $targetIndex not found.");
+        }
+      }
+      return;
+    }
+
+    // Delegate other global commands
+    widget.voiceService.performGlobalNavigation(result);
+  }
+
   //   if (_timerStarted) return;
   //   _timerStarted = true;
 
