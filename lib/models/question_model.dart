@@ -1,14 +1,16 @@
 class ParsedDocument {
   final String id;
+  final String? name;
   final List<String> header;
   final List<ParsedSection> sections;
   // Optional: Add timestamp or title if we want to deserialize it here directly
 
-  ParsedDocument({String? id, required this.header, required this.sections})
+  ParsedDocument({String? id, this.name, required this.header, required this.sections})
     : id = id ?? DateTime.now().millisecondsSinceEpoch.toString();
 
   Map<String, dynamic> toJson() => {
     "id": id,
+    "name": name,
     "header": header,
     "sections": sections.map((e) => e.toJson()).toList(),
   };
@@ -19,6 +21,7 @@ class ParsedDocument {
   }) {
     return ParsedDocument(
       id: json['id'] as String? ?? fallbackId,
+      name: json['name'] as String?,
       header:
           (json['header'] as List?)?.map((e) => e.toString()).toList() ?? [],
       sections:

@@ -26,6 +26,7 @@ class QuestionsScreen extends StatefulWidget {
   final String? studentName;
   final String? studentId;
   final bool examMode;
+  final bool isSelectionMode; // New flag
 
   const QuestionsScreen({
     super.key,
@@ -36,6 +37,7 @@ class QuestionsScreen extends StatefulWidget {
     this.studentName,
     this.studentId,
     this.examMode = false,
+    this.isSelectionMode = false, // Default false
   });
 
   @override
@@ -50,7 +52,7 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
   bool _isLoading = true;
   final SttService _sttService = SttService();
   bool _isListening = false;
-  bool _isSelectingForExam = false;
+  // bool _isSelectingForExam = false; // REMOVED
   //int _examTimer = 0; // seconds
   //bool _timerStarted = false;
   int _currentQuestionIndex = 0;
@@ -517,68 +519,6 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
               : ListView(
                   padding: const EdgeInsets.all(20),
                   children: [
-                    // Show button only if not in exam mode
-                    if (!widget.examMode)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 24),
-                        child: ElevatedButton.icon(
-                          onPressed: () {
-                            if (widget.document != null) {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => ExamInfoScreen(
-                                    document: widget.document!,
-                                    ttsService: widget.ttsService,
-                                    voiceService: widget.voiceService,
-                                    accessibilityService:
-                                        widget.accessibilityService!,
-                                    sttService: _sttService,
-                                  ),
-                                ),
-                              );
-                            } else {
-                              setState(() {
-                                _isSelectingForExam = !_isSelectingForExam;
-                              });
-
-                              String msg = _isSelectingForExam
-                                  ? "Please tap a paper below to start the exam."
-                                  : "Exam selection cancelled.";
-
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    msg,
-                                    style: GoogleFonts.outfit(),
-                                  ),
-                                  backgroundColor: Colors.deepPurple,
-                                  //behavior: SnackBarBehavior.floating,
-                                  duration: const Duration(seconds: 2),
-                                ),
-                              );
-                              widget.ttsService.speak(msg);
-                            }
-                          },
-                          icon: const Icon(Icons.school),
-                          label: Text(
-                            'Enter Exam Mode',
-                            style: GoogleFonts.outfit(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            backgroundColor: Colors.deepPurple,
-                            foregroundColor: Colors.white,
-                            elevation: 8,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
-                        ).animate().fadeIn(delay: 300.ms).slideY(begin: 0.2, end: 0),
-                      ),
 
                     // Show exam header only if exam mode is active
                     if (widget.examMode)
@@ -693,7 +633,9 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
                                   ),
                                 ),
                                 title: Text(
-                                  "Scan ${index + 1}",
+                                  doc.name != null && doc.name!.isNotEmpty
+                                      ? doc.name!
+                                      : "Scan ${index + 1}",
                                   style: GoogleFonts.outfit(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 18,
@@ -716,30 +658,28 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
                                     AccessibilityEvent.action,
                                   );
 
-                                  // 1. CHECK: Are we trying to start an exam?
-                                  if (_isSelectingForExam) {
-                                    // YES -> Turn off the selection switch
-                                    setState(() => _isSelectingForExam = false);
-
-                                    // ...and go to the Student Info Screen
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => ExamInfoScreen(
-                                          document: doc,
-                                          ttsService: widget.ttsService,
-                                          voiceService: widget.voiceService,
-                                          accessibilityService:
-                                              widget.accessibilityService ??
-                                              AccessibilityService(),
-                                          sttService: _sttService,
+                                    // 1. CHECK: Are we in Exam Selection Mode?
+                                    if (widget.isSelectionMode) {
+                                      // YES -> Go to Exam Info (Rules, Timer, Name)
+                                      AccessibilityService().trigger(AccessibilityEvent.action);
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => ExamInfoScreen(
+                                            document: doc,
+                                            ttsService: widget.ttsService,
+                                            voiceService: widget.voiceService,
+                                            accessibilityService:
+                                                widget.accessibilityService ??
+                                                AccessibilityService(),
+                                            sttService: _sttService,
+                                          ),
                                         ),
-                                      ),
-                                    );
-                                  } else {
-                                    // NO -> Just open the paper normally (Review Mode)
-                                    _openPaper(doc, index);
-                                  }
+                                      );
+                                    } else {
+                                      // NO -> Just open the paper normally (Review Mode)
+                                      _openPaper(doc, index);
+                                    }
                                 },
                               ),
                             ),

@@ -207,6 +207,7 @@ class _TakeExamScreenState extends State<TakeExamScreen> {
                           builder: (_) => QuestionsScreen(
                             ttsService: widget.ttsService,
                             voiceService: widget.voiceService,
+                            isSelectionMode: true, // Exam FLow
                           ),
                         ),
                       );
