@@ -20,6 +20,7 @@ import 'widgets/accessible_widgets.dart'; // Added
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:ui';
 import 'exam_info_screen.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'dart:async';
 
 class PaperDetailScreen extends StatefulWidget {
@@ -31,6 +32,7 @@ class PaperDetailScreen extends StatefulWidget {
   final bool examMode;
   final String? studentName;
   final String? studentId;
+  final int? examDurationSeconds;
 
   const PaperDetailScreen({
     super.key,
@@ -43,6 +45,7 @@ class PaperDetailScreen extends StatefulWidget {
         false, // Default to false so it works for normal scanning too
     this.studentName,
     this.studentId,
+    this.examDurationSeconds,
   });
 
   @override
@@ -56,20 +59,53 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
   final SttService _sttService = SttService();
   bool _isListening = false;
   Timer? _examTimer;
-  int _remainingSeconds = 3600; // 1 Hour (60 * 60)
+  late int _remainingSeconds;
+
+  bool _showCountdown = false;
+  int _countdownValue = 3;
 
   @override
   void initState() {
     super.initState();
+    _remainingSeconds = widget.examDurationSeconds ?? 3600;
     _document = widget.document;
     AccessibilityService().trigger(AccessibilityEvent.navigation);
     // Initialize the listener for this screen
     _initVoiceCommandListener();
 
     if (widget.examMode) {
-      _startExamTimer();
-      widget.ttsService.speak("Exam started. You have one hour.");
+      _startCountdownSequence();
     }
+  }
+
+  void _startCountdownSequence() {
+    setState(() {
+      _showCountdown = true;
+      _countdownValue = 3;
+    });
+    
+    // Announce initially
+    widget.ttsService.speak("Exam starting in 3...");
+
+    Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      
+      setState(() {
+        if (_countdownValue > 1) {
+          _countdownValue--;
+          widget.ttsService.speak("$_countdownValue...");
+        } else {
+          timer.cancel();
+          _showCountdown = false;
+          _startExamTimer();
+          int minutes = _remainingSeconds ~/ 60;
+          widget.ttsService.speak("Exam started. You have $minutes minutes.");
+        }
+      });
+    });
   }
 
   @override
@@ -98,7 +134,8 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
         } else {
           // Time Up
           timer.cancel();
-          widget.ttsService.speak("Time is up. Please stop writing.");
+          widget.ttsService.speak("Time is up. Exam finished.");
+          if (mounted) Navigator.pop(context);
         }
       });
     });
@@ -252,6 +289,35 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_showCountdown) {
+      return Scaffold(
+        backgroundColor: Colors.deepPurple,
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                "Starting Exam",
+                style: GoogleFonts.outfit(
+                  fontSize: 24,
+                  color: Colors.white70,
+                ),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                "$_countdownValue",
+                style: GoogleFonts.outfit(
+                  fontSize: 120,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ).animate(key: ValueKey(_countdownValue)).scale(duration: 300.ms, curve: Curves.easeOutBack),
+            ],
+          ),
+        ),
+      );
+    }
+
     final items = <_ListItem>[];
 
     if (_document.header.isNotEmpty) {
@@ -279,7 +345,9 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: Text(
-          'Paper $dateStr',
+          _document.name != null && _document.name!.isNotEmpty
+              ? _document.name!
+              : 'Paper $dateStr',
           style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
         ),
         backgroundColor: Colors.transparent,
@@ -633,7 +701,30 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
 
   Future<void> _savePaper(BuildContext context) async {
     try {
+      // 1. Prompt for name
+      final String? name = await _showNameDialog();
+      if (name == null || name.isEmpty) {
+        // User cancelled or entered empty name
+        return;
+      }
+
+      // 2. Update document with name
+      // We need to create a new instance or mutable update.
+      // ParsedDocument fields are final, so let's create a new one.
+      final newDoc = ParsedDocument(
+        id: _document.id,
+        name: name,
+        header: _document.header,
+        sections: _document.sections,
+      );
+
+      setState(() {
+        _document = newDoc;
+      });
+
+      // 3. Save
       await _storageService.saveDocument(_document);
+
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Paper saved successfully!")),
@@ -650,6 +741,53 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
         );
       }
     }
+  }
+  Future<String?> _showNameDialog() async {
+    final TextEditingController _nameController = TextEditingController();
+    // Pre-fill with existing name if any
+    if (_document.name != null) {
+      _nameController.text = _document.name!;
+    }
+
+    return await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Name this Paper"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text("Please enter a name for this paper before saving:"),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _nameController,
+              autofocus: true,
+              decoration: const InputDecoration(
+                hintText: "e.g. Physics Chapter 1",
+                border: OutlineInputBorder(),
+              ),
+              textCapitalization: TextCapitalization.sentences,
+            ),
+          ],
+        ),
+        actions: [
+          AccessibleTextButton(
+            onPressed: () => Navigator.pop(ctx, null),
+            child: const Text("Cancel"),
+          ),
+          AccessibleElevatedButton(
+            onPressed: () {
+              final text = _nameController.text.trim();
+              if (text.isNotEmpty) {
+                Navigator.pop(ctx, text);
+              }
+            },
+            child: const Text("Save"),
+          ),
+        ],
+      ),
+    );
   }
 }
 

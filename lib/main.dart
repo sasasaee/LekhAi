@@ -509,77 +509,64 @@ class _HomeScreenState extends State<HomeScreen>
 
               const SizedBox(height: 16),
 
-              // --- Grid Menu ---
+              // --- Vertical Menu ---
               Expanded(
-                child: GridView.count(
-                  crossAxisCount: 2,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 8,
+                child: Center(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 8,
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _DashboardCard(
+                          icon: Icons.assignment_outlined,
+                          label: "Take Exam",
+                          subLabel: "Scan & Solve",
+                          color: const Color(0xFF3B82F6), // Blue
+                          delay: 600,
+                          onTap: _openTakeExam,
+                        ),
+                        const SizedBox(height: 20),
+                        _DashboardCard(
+                          icon: Icons.picture_as_pdf_outlined,
+                          label: "Read PDF",
+                          subLabel: "Listen & Learn",
+                          color: const Color(0xFFF43F5E), // Rose
+                          delay: 700,
+                          onTap: _openPdf,
+                        ),
+                        const SizedBox(height: 20),
+                        _DashboardCard(
+                          icon: Icons.settings_outlined,
+                          label: "Preferences",
+                          subLabel: "Customize App",
+                          color: const Color(0xFF8B5CF6), // Violet
+                          delay: 900,
+                          onTap: () async {
+                            widget.ttsService.speak("Opening preferences.");
+                            _shouldListen = false;
+                            await _sttService.stopListening();
+                            if (!mounted) return;
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => PreferencesScreen(
+                                  ttsService: widget.ttsService,
+                                  voiceService: widget.voiceService,
+                                ),
+                              ),
+                            ).then((_) {
+                              _shouldListen = true;
+                              _initVoiceCommandListener();
+                            });
+                          },
+                        ),
+                      ],
+                    ),
                   ),
-                  mainAxisSpacing: 24,
-                  crossAxisSpacing: 24,
-                  childAspectRatio: 0.82,
-                  children: [
-                    _DashboardCard(
-                      icon: Icons.assignment_outlined,
-                      label: "Take Exam",
-                      subLabel: "Scan & Solve",
-                      color: const Color(0xFF3B82F6), // Blue
-                      delay: 600,
-                      onTap: _openTakeExam,
-                    ),
-                    _DashboardCard(
-                      icon: Icons.picture_as_pdf_outlined,
-                      label: "Read PDF",
-                      subLabel: "Listen & Learn",
-                      color: const Color(0xFFF43F5E), // Rose
-                      delay: 700,
-                      onTap: _openPdf,
-                    ),
-                    _DashboardCard(
-                      icon: Icons.folder_special_outlined,
-                      label: "Saved Papers",
-                      subLabel: "Your Archive",
-                      color: const Color(0xFF10B981), // Emerald
-                      delay: 800,
-                      onTap: () async {
-                        widget.ttsService.speak("Opening saved papers.");
-                        _shouldListen = false;
-                        await _sttService.stopListening();
-                        if (!mounted) return;
-                        Navigator.pushNamed(context, '/saved_papers').then((_) {
-                          _shouldListen = true;
-                          _initVoiceCommandListener();
-                        });
-                      },
-                    ),
-                    _DashboardCard(
-                      icon: Icons.settings_outlined,
-                      label: "Preferences",
-                      subLabel: "Customize App",
-                      color: const Color(0xFF8B5CF6), // Violet
-                      delay: 900,
-                      onTap: () async {
-                        widget.ttsService.speak("Opening preferences.");
-                        _shouldListen = false;
-                        await _sttService.stopListening();
-                        if (!mounted) return;
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => PreferencesScreen(
-                              ttsService: widget.ttsService,
-                              voiceService: widget.voiceService,
-                            ),
-                          ),
-                        ).then((_) {
-                          _shouldListen = true;
-                          _initVoiceCommandListener();
-                        });
-                      },
-                    ),
-                  ],
                 ),
               ),
 
@@ -631,87 +618,79 @@ class _DashboardCard extends StatelessWidget {
       },
       child:
           Container(
+                margin: const EdgeInsets.symmetric(vertical: 8), // Add margin for spacing
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 20,
+                ),
                 decoration: BoxDecoration(
                   // Glassmorphism effect
                   gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
                     colors: [
                       Colors.white.withOpacity(0.08),
                       Colors.white.withOpacity(0.03),
                     ],
                   ),
-                  borderRadius: BorderRadius.circular(28),
+                  borderRadius: BorderRadius.circular(24),
                   border: Border.all(
-                    color: Colors.white.withOpacity(0.12),
-                    width: 1,
+                    color: Colors.white.withOpacity(0.1),
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.2),
-                      blurRadius: 16,
-                      offset: const Offset(0, 8),
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
                     ),
                   ],
                 ),
-                child: ClipRRect(
-                  // Clip for any internal overflow if needed
-                  borderRadius: BorderRadius.circular(28),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(
-                      sigmaX: 4,
-                      sigmaY: 4,
-                    ), // Subtle blur behind
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                              padding: const EdgeInsets.all(18),
-                              decoration: BoxDecoration(
-                                color: color.withOpacity(0.15),
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: color.withOpacity(0.3),
-                                  width: 1.5,
-                                ),
-                              ),
-                              child: Icon(icon, size: 36, color: color),
-                            )
-                            .animate(onPlay: (c) => c.loop(period: 4.seconds))
-                            .shimmer(delay: 2.seconds, duration: 1.seconds),
-
-                        const SizedBox(height: 20),
-
-                        Text(
-                          label,
-                          style: GoogleFonts.outfit(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                            letterSpacing: 0.5,
-                          ),
-                          textAlign: TextAlign.center,
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: color.withOpacity(0.15),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: color.withOpacity(0.3),
                         ),
-
-                        const SizedBox(height: 6),
-
-                        Text(
-                          subLabel,
-                          style: GoogleFonts.outfit(
-                            fontSize: 12,
-                            color: Colors.white54,
-                            letterSpacing: 0.2,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
+                      ),
+                      child: Icon(icon, size: 30, color: color),
                     ),
-                  ),
+                    const SizedBox(width: 20),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            label,
+                            style: GoogleFonts.outfit(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            subLabel,
+                            style: GoogleFonts.outfit(
+                              fontSize: 14,
+                              color: Colors.white54,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      color: Colors.white24,
+                      size: 18,
+                    ),
+                  ],
                 ),
               )
               .animate()
               .fadeIn(delay: delay.ms, duration: 600.ms)
-              .scale(begin: const Offset(0.9, 0.9), curve: Curves.easeOutBack),
+              .slideX(begin: 0.1, end: 0, curve: Curves.easeOutBack),
     );
   }
 }
