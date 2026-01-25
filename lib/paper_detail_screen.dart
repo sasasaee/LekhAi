@@ -12,6 +12,7 @@ import 'services/voice_command_service.dart'; // Added
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'package:audioplayers/audioplayers.dart';
+import 'services/kiosk_service.dart'; // Added KioskService
 
 // --- PAPER DETAIL SCREEN ---
 
@@ -64,18 +65,99 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
   bool _showCountdown = false;
   int _countdownValue = 3;
 
+  bool _isWaitingForConfirmation = false;
+  bool _kioskEnabled = false;
+  int _totalExamSeconds = 3600;
+
+  // Alert Flags
+  bool _alert50Triggered = false;
+  bool _alert25Triggered = false;
+  bool _alert10Triggered = false;
+  bool _alert1MinTriggered = false;
+
+  int? _examStartTimestamp; // Cache for performance
+
   @override
   void initState() {
     super.initState();
-    _remainingSeconds = widget.examDurationSeconds ?? 3600;
+    _totalExamSeconds = widget.examDurationSeconds ?? 3600;
+    _remainingSeconds = _totalExamSeconds;
     _document = widget.document;
+    
+    // Init Kiosk Service Observer
+    KioskService().init();
+
     AccessibilityService().trigger(AccessibilityEvent.navigation);
-    // Initialize the listener for this screen
     _initVoiceCommandListener();
 
     if (widget.examMode) {
-      _startCountdownSequence();
+      // Don't start immediately. Ask for confirmation first.
+      // Small delay to let the screen build and previous TTS finish.
+      Future.delayed(const Duration(milliseconds: 1000), () {
+        if (mounted) _confirmAndStartKiosk();
+      });
     }
+  }
+
+  void _confirmAndStartKiosk() {
+    if (!mounted) return;
+    setState(() {
+      _isWaitingForConfirmation = true;
+    });
+
+    // Audio Prompt
+    widget.ttsService.speak("Exam will start in locked mode. Say Start to confirm. Or Cancel to exit.");
+    
+    // Visual Dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          title: const Text("Exam Mode Confirmation"),
+          content: const Text(
+            "The app will be locked to prevent exiting.\nDo you want to proceed?",
+          ),
+          actions: [
+            AccessibleTextButton(
+              onPressed: () {
+                Navigator.pop(ctx); // Close dialog
+                 _handleCancelConfirmation();
+              },
+              child: const Text("Cancel"),
+            ),
+             AccessibleElevatedButton(
+              onPressed: () {
+                Navigator.pop(ctx); // Close dialog
+                _handleConfirmExamStart();
+              },
+              child: const Text("Start Exam"),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _handleConfirmExamStart() async {
+     setState(() {
+       _isWaitingForConfirmation = false;
+       _kioskEnabled = true;
+     });
+     
+     // 1. Enable Kiosk Mode
+     await KioskService().enableKioskMode();
+     
+     // 2. Start Countdown
+     _startCountdownSequence();
+  }
+
+  void _handleCancelConfirmation() {
+     setState(() {
+       _isWaitingForConfirmation = false;
+     });
+     Navigator.pop(context); // Go back to scan/list screen
   }
 
   void _startCountdownSequence() {
@@ -83,8 +165,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       _showCountdown = true;
       _countdownValue = 3;
     });
-    
-    // Announce initially
+
     widget.ttsService.speak("Exam starting in 3...");
 
     Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -92,7 +173,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
         timer.cancel();
         return;
       }
-      
+
       setState(() {
         if (_countdownValue > 1) {
           _countdownValue--;
@@ -100,18 +181,41 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
         } else {
           timer.cancel();
           _showCountdown = false;
-          _startExamTimer();
-          int minutes = _remainingSeconds ~/ 60;
-          widget.ttsService.speak("Exam started. You have $minutes minutes.");
+          _initExamSession(); // Initialize Timer & Persistence
         }
       });
     });
   }
 
+  Future<void> _initExamSession() async {
+      final prefs = await SharedPreferences.getInstance();
+      final now = DateTime.now().millisecondsSinceEpoch;
+      
+      // Check for existing session (Crash Recovery)
+      // For this simplified version, we'll overwrite if it's a "new" entry, 
+      // but in a real app check IDs. For now, assume new exam or simple restart.
+      // Let's just SAVE the start time.
+      await prefs.setInt('exam_start_timestamp', now);
+      await prefs.setInt('exam_total_duration', _totalExamSeconds);
+
+      setState(() {
+         _examStartTimestamp = now;
+      });
+
+      _startExamTimer();
+      
+      int minutes = _remainingSeconds ~/ 60;
+      widget.ttsService.speak("Exam started. You have $minutes minutes.");
+  }
+
   @override
   void dispose() {
     _examTimer?.cancel();
-    _sttService.stopListening(); // Stop listening when leaving the screen
+    _sttService.stopListening();
+    if (_kioskEnabled) {
+      KioskService().disableKioskMode();
+    }
+    KioskService().dispose();
     super.dispose();
   }
 
@@ -119,26 +223,73 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
     _examTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) return;
 
-      setState(() {
-        if (_remainingSeconds > 0) {
-          _remainingSeconds--;
+      int remaining = _remainingSeconds;
+      
+      // Fast Drift Correction using cached timestamp
+      if (_examStartTimestamp != null) {
+         final now = DateTime.now().millisecondsSinceEpoch;
+         final elapsedSecs = (now - _examStartTimestamp!) ~/ 1000;
+         remaining = _totalExamSeconds - elapsedSecs;
+      } else {
+         remaining--;
+      }
 
-          // 15 Minute Warning (900 seconds)
-          if (_remainingSeconds == 900) {
-            widget.ttsService.speak("Attention. 15 minutes remaining.");
+      setState(() {
+        _remainingSeconds = remaining;
+      });
+
+      if (_remainingSeconds > 0) {
+          // Dynamic Alerts
+          double progress = _remainingSeconds / _totalExamSeconds;
+          
+          // Approx 50% left
+          if (progress <= 0.50 && !_alert50Triggered) {
+             _alert50Triggered = true;
+             _speakTimeRemaining("Halftime.");
           }
-          // 5 Minute Warning (300 seconds) - Optional
-          if (_remainingSeconds == 300) {
-            widget.ttsService.speak("5 minutes remaining.");
+
+          // Approx 25% left
+          if (progress <= 0.25 && !_alert25Triggered) {
+             _alert25Triggered = true;
+             _speakTimeRemaining("Attention.");
           }
-        } else {
+           // Approx 10% left
+          if (progress <= 0.10 && !_alert10Triggered) {
+             _alert10Triggered = true;
+             _speakTimeRemaining("Warning.");
+          }
+          
+           // Critical 1 minute alert
+          if (_remainingSeconds <= 60 && !_alert1MinTriggered && _totalExamSeconds > 120) {
+             _alert1MinTriggered = true;
+             widget.ttsService.speak("1 minute remaining.");
+             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("1 Minute Remaining")));
+          }
+
+      } else {
           // Time Up
           timer.cancel();
-          widget.ttsService.speak("Time is up. Exam finished.");
+          widget.ttsService.speak("Time is up. Exam finished. Unlocking.");
+          KioskService().disableKioskMode();
           if (mounted) Navigator.pop(context);
-        }
-      });
+      }
     });
+  }
+
+  void _speakTimeRemaining(String prefix) {
+      int mins = _remainingSeconds ~/ 60;
+      String timeStr = mins > 0 ? "$mins minutes remaining." : "$_remainingSeconds seconds remaining.";
+      widget.ttsService.speak("$prefix $timeStr");
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("$prefix $timeStr"),
+            duration: const Duration(seconds: 3),
+            backgroundColor: Colors.orange,
+          )
+        );
+      }
   }
 
   String _formatTime(int totalSeconds) {
@@ -173,9 +324,12 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
     _sttService.startListening(
       localeId: "en-US",
       onResult: (text) {
-        final result = widget.voiceService.parse(text);
+        final result = widget.voiceService.parse(
+          text,
+          context: _isWaitingForConfirmation ? VoiceContext.confirmExamStart : VoiceContext.global,
+        );
         if (result.action != VoiceAction.unknown) {
-          _executeVoiceCommand(result);
+           _executeVoiceCommand(result);
         }
       },
     );
@@ -183,6 +337,21 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
 
   void _executeVoiceCommand(CommandResult result) async {
     switch (result.action) {
+      case VoiceAction.confirmExamStart:
+        if (_isWaitingForConfirmation) {
+           // If dialog is open, pop it first (we know it's top of stack)
+           if (Navigator.canPop(context)) Navigator.pop(context);
+           _handleConfirmExamStart();
+        }
+        break;
+        
+      case VoiceAction.cancelExamStart:
+        if (_isWaitingForConfirmation) {
+           if (Navigator.canPop(context)) Navigator.pop(context);
+           _handleCancelConfirmation();
+        }
+        break;
+
       case VoiceAction.goToQuestion:
         // payload contains the question number (e.g., 1, 2, 3)
         final int? qNum = result.payload;
@@ -192,13 +361,26 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
         break;
 
       case VoiceAction.goBack:
+        if (_kioskEnabled) {
+          widget.ttsService.speak("Exam is locked. You cannot go back until you submit.");
+          return;
+        }
         await widget.ttsService.speak("Going back to home.");
         if (mounted) Navigator.pop(context);
         break;
 
       case VoiceAction.submitExam: // Use this as "Save" for this screen
-        await widget.ttsService.speak("Saving paper progress.");
-        _savePaper(context);
+        if (_kioskEnabled) {
+             // Handle Exam Submission specifically
+             // For now, simpler flow: Just save and unlock
+             await widget.ttsService.speak("Submitting exam.");
+             await KioskService().disableKioskMode();
+             _savePaper(context); // Then normal save
+             if (mounted) Navigator.pop(context); // And exit
+        } else {
+             await widget.ttsService.speak("Saving paper progress.");
+             _savePaper(context);
+        }
         break;
 
       default:
@@ -290,7 +472,10 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
   @override
   Widget build(BuildContext context) {
     if (_showCountdown) {
-      return Scaffold(
+      // Countdown Screen
+      return PopScope(
+        canPop: false,
+        child: Scaffold(
         backgroundColor: Colors.deepPurple,
         body: Center(
           child: Column(
@@ -315,7 +500,8 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
             ],
           ),
         ),
-      );
+      ),
+    );
     }
 
     final items = <_ListItem>[];
@@ -341,7 +527,14 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       dateStr = "${dt.day}/${dt.month} ${dt.hour}:${dt.minute}";
     } catch (_) {}
 
-    return Scaffold(
+    return PopScope(
+      canPop: !_kioskEnabled,
+      onPopInvoked: (didPop) {
+        if (!didPop && _kioskEnabled) {
+          // widget.ttsService.speak("Exam is locked.");
+        }
+      },
+      child: Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: Text(
@@ -363,7 +556,16 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
           child: IconButton(
             icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
             tooltip: "Back",
-            onPressed: () => Navigator.pop(context),
+            onPressed: () {
+              if (_kioskEnabled) {
+                widget.ttsService.speak("Exam is locked. Finish the exam to exit.");
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Exam Locked")),
+                );
+              } else {
+                Navigator.pop(context);
+              }
+            },
           ),
         ),
         actions: [
@@ -652,7 +854,8 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
           tooltip: 'Add Page',
         ),
       ),
-    );
+    ),
+  ); // Close PopScope
   }
 
   Future<void> _onAddPage(BuildContext context) async {
@@ -850,6 +1053,9 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
   bool _isProcessingAudio = false;
   String? _tempAudioPath;
   final AudioPlayer _audioPlayer = AudioPlayer();
+  
+  // Hands-Free State
+  bool _isAppending = true;
 
   @override
   void initState() {
@@ -916,8 +1122,26 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
 
       case VoiceAction.startDictation:
         await widget.ttsService.speak("Starting dictation.");
-        _startListening();
+        _startListening(append: true);
         break;
+
+      case VoiceAction.appendAnswer:
+         await widget.ttsService.speak("Appending to answer.");
+         _startListening(append: true);
+         break;
+
+      case VoiceAction.overwriteAnswer:
+         await widget.ttsService.speak("Overwriting answer. Speak new answer.");
+         _startListening(append: false);
+         break;
+
+      case VoiceAction.clearAnswer:
+         _clearAnswer();
+         break;
+
+      case VoiceAction.readLastSentence:
+         _readLastSentence();
+         break;
 
       case VoiceAction.stopDictation:
         await widget.ttsService.speak("Stopping dictation.");
@@ -1090,7 +1314,8 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     }
   }
 
-  void _startListening() async {
+  void _startListening({bool append = true}) async {
+    _isAppending = append;
     if (!await _audioRecorderService.hasPermission()) {
       widget.ttsService.speak("Microphone permission needed.");
       return;
@@ -1157,10 +1382,40 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     if (!mounted) return;
     setState(() {
       _isProcessingAudio = false;
-      _answerController.text = transcribedText;
+      if (_isAppending && _answerController.text.isNotEmpty) {
+        // Append Mode
+        String separator = _answerController.text.endsWith('.') ? " " : ". ";
+        if (_answerController.text.trim().isEmpty) separator = "";
+        _answerController.text = _answerController.text + separator + transcribedText;
+      } else {
+        // Replace Mode (Overwrite)
+        _answerController.text = transcribedText;
+      }
     });
     await Future.delayed(const Duration(milliseconds: 100));
     _onDictationFinished();
+  }
+  
+  void _clearAnswer() async {
+     setState(() {
+       _answerController.clear();
+     });
+     await widget.ttsService.speak("Answer cleared.");
+  }
+
+  void _readLastSentence() async {
+     String text = _answerController.text.trim();
+     if (text.isEmpty) {
+       await widget.ttsService.speak("Answer is empty.");
+       return;
+     }
+     
+     // Simple split by period, handling common abbreviations briefly
+     List<String> sentences = text.split(RegExp(r'(?<=[.?!])\s+'));
+     if (sentences.isNotEmpty) {
+       String last = sentences.last;
+       await widget.ttsService.speak("Last sentence: $last");
+     }
   }
 
   void _onDictationFinished() async {
