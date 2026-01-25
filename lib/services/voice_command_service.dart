@@ -10,6 +10,7 @@ import '../pdf_viewer_screen.dart';
 import '../ocr_screen.dart';
 import '../paper_detail_screen.dart';
 import '../widgets/accessible_widgets.dart';
+import 'kiosk_service.dart'; // Added
 
 enum VoiceContext {
   global,
@@ -19,6 +20,7 @@ enum VoiceContext {
   pdfViewer,
   takeExam,
   scanQuestions,
+  confirmExamStart, // New context for kiosk confirmation
 }
 
 enum VoiceAction {
@@ -35,6 +37,11 @@ enum VoiceAction {
   changeSpeed,
   goBack,
   submitExam,
+  // Editing Actions
+  appendAnswer,
+  overwriteAnswer,
+  clearAnswer,
+  readLastSentence,
   // New Context Specific Actions
   scanCamera,
   scanGallery,
@@ -45,6 +52,9 @@ enum VoiceAction {
   useLocalOcr,
   scanQuestions,
   openPaper, // Added Action for selecting item from list
+  // Confirmation Actions
+  confirmExamStart,
+  cancelExamStart,
   // Settings Actions
   toggleHaptic,
   toggleVoiceCommands,
@@ -108,6 +118,16 @@ class VoiceCommandService {
     // if (context == VoiceContext.scanQuestions) {
 
     // }
+
+    // Confirm Exam Start Context
+    if (context == VoiceContext.confirmExamStart) {
+      if (text.contains("start") || text.contains("confirm") || text.contains("yes")) {
+        return CommandResult(VoiceAction.confirmExamStart);
+      }
+      if (text.contains("cancel") || text.contains("stop") || text.contains("no")) {
+        return CommandResult(VoiceAction.cancelExamStart);
+      }
+    }
 
     // OCR / Take Exam Context
     if (context == VoiceContext.ocr) {
@@ -298,6 +318,22 @@ class VoiceCommandService {
 
     if (text.contains("go back")) return CommandResult(VoiceAction.goBack);
 
+    if (text.contains("append") || text.contains("add to answer")) {
+      return CommandResult(VoiceAction.appendAnswer);
+    }
+    if (text.contains("write the answer") || text.contains("write answer")) {
+       return CommandResult(VoiceAction.appendAnswer);
+    }
+    if (text.contains("overwrite") || text.contains("replace answer")) {
+      return CommandResult(VoiceAction.overwriteAnswer);
+    }
+    if (text.contains("clear answer") || text.contains("delete answer")) {
+      return CommandResult(VoiceAction.clearAnswer);
+    }
+    if (text.contains("read last") || text.contains("last sentence")) {
+      return CommandResult(VoiceAction.readLastSentence);
+    }
+
     if (text.contains("start dictation") || text.contains("start writing")) {
       return CommandResult(VoiceAction.startDictation);
     }
@@ -320,6 +356,23 @@ class VoiceCommandService {
   }
 
   Future<void> performGlobalNavigation(CommandResult result) async {
+    // Kiosk Mode Security Check
+    if (KioskService().isKioskActive) {
+       // Allowed actions in Kiosk Mode (if any) could be checked here.
+       // Generally, we want to BLOCK leaving the screen.
+       bool isRestricted = 
+          result.action == VoiceAction.goToHome ||
+          result.action == VoiceAction.goToSettings ||
+          result.action == VoiceAction.goToSavedPapers ||
+          result.action == VoiceAction.goToTakeExam || 
+          result.action == VoiceAction.goToReadPDF; // Add others if needed
+
+       if (isRestricted) {
+         tts.speak("Exam execution in progress. Navigation is locked.");
+         return;
+       }
+    }
+
     print("Performing navigation for: ${result.action}");
     switch (result.action) {
       case VoiceAction.goBack:
