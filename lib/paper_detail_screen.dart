@@ -13,6 +13,11 @@ import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'package:audioplayers/audioplayers.dart';
 import 'services/kiosk_service.dart'; // Added KioskService
+import 'services/pdf_service.dart'; // Added PdfService
+import 'package:open_filex/open_filex.dart'; // Added for View PDF
+import 'package:share_plus/share_plus.dart'; // Added for Share PDF
+import 'package:permission_handler/permission_handler.dart'; // Added for Save PDF permissions
+import 'package:path_provider/path_provider.dart'; // Added for downloads path
 
 // --- PAPER DETAIL SCREEN ---
 
@@ -269,9 +274,10 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       } else {
           // Time Up
           timer.cancel();
-          widget.ttsService.speak("Time is up. Exam finished. Unlocking.");
+          widget.ttsService.speak("Time is up. Exam finished. Submitting your answers.");
           KioskService().disableKioskMode();
-          if (mounted) Navigator.pop(context);
+          // Force exam completion flow (PDF generation)
+          if (mounted) _finalizeExam(); 
       }
     });
   }
@@ -569,19 +575,20 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
           ),
         ),
         actions: [
-          Container(
-            margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.1),
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white.withOpacity(0.1)),
+          if (!widget.examMode)
+            Container(
+              margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.1),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white.withOpacity(0.1)),
+              ),
+              child: AccessibleIconButton(
+                icon: const Icon(Icons.save_rounded, color: Colors.white),
+                tooltip: "Save Paper",
+                onPressed: () => _savePaper(context),
+              ),
             ),
-            child: AccessibleIconButton(
-              icon: const Icon(Icons.save_rounded, color: Colors.white),
-              tooltip: "Save Paper",
-              onPressed: () => _savePaper(context),
-            ),
-          ),
         ],
       ),
       body: Container(
@@ -904,7 +911,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
 
   Future<void> _savePaper(BuildContext context) async {
     try {
-      // 1. Prompt for name
+      // 1. Prompt for name (Original Logic)
       final String? name = await _showNameDialog();
       if (name == null || name.isEmpty) {
         // User cancelled or entered empty name
@@ -912,8 +919,6 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       }
 
       // 2. Update document with name
-      // We need to create a new instance or mutable update.
-      // ParsedDocument fields are final, so let's create a new one.
       final newDoc = ParsedDocument(
         id: _document.id,
         name: name,
@@ -925,7 +930,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
         _document = newDoc;
       });
 
-      // 3. Save
+      // 3. Save to Storage (JSON)
       await _storageService.saveDocument(_document);
 
       if (context.mounted) {
@@ -945,13 +950,156 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       }
     }
   }
+
+  Future<void> _finalizeExam() async {
+    // This is called when Time Up or User explicitly submits via voice/menu
+    try {
+      String sName = widget.studentName ?? "Unknown Student";
+      String sId = widget.studentId ?? "Unknown ID";
+      String pName = _document.name ?? "Exam Paper";
+
+      // Re-saving document to ensure answers are persisted
+      await _storageService.saveDocument(_document);
+
+       ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Generating PDF Result...")),
+      );
+
+      final pdfFile = await PdfService().generateExamPdf(
+        studentName: sName,
+        studentId: sId,
+        examName: pName,
+        document: _document,
+      );
+
+      if (mounted) {
+         // Show specific dialog with View, Share, Save options
+         showDialog(
+           context: context,
+           barrierDismissible: false,
+           builder: (ctx) => AlertDialog(
+             title: const Text("Exam Completed"),
+             content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text("Your exam has been submitted and the PDF report generated."),
+                  const SizedBox(height: 20),
+                  AccessibleElevatedButton(
+                    onPressed: () => _viewPdf(pdfFile.path),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.visibility),
+                        SizedBox(width: 8),
+                        Text("View PDF"),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  AccessibleElevatedButton(
+                    onPressed: () => _sharePdf(pdfFile.path),
+                    child: const Row(
+                       mainAxisAlignment: MainAxisAlignment.center,
+                       children: [
+                         Icon(Icons.share),
+                         SizedBox(width: 8),
+                         Text("Share PDF"),
+                       ]
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  AccessibleElevatedButton(
+                    onPressed: () => _savePdfToDownloads(pdfFile),
+                    child: const Row(
+                       mainAxisAlignment: MainAxisAlignment.center,
+                       children: [
+                         Icon(Icons.download),
+                         SizedBox(width: 8),
+                         Text("Save to Downloads"),
+                       ]
+                    ),
+                  ),
+                ],
+             ),
+             actions: [
+               AccessibleTextButton(
+                 onPressed: () {
+                    Navigator.pop(ctx);
+                    Navigator.pop(context); // Exit PaperDetailScreen
+                 },
+                 child: const Text("Close & Exit"),
+               )
+             ]
+           )
+         );
+      }
+
+    } catch (e) {
+       AccessibilityService().trigger(AccessibilityEvent.error);
+       if (mounted) {
+         ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error generating PDF: $e")),
+         );
+       }
+    }
+  }
+
+  Future<void> _viewPdf(String path) async {
+    await OpenFilex.open(path);
+  }
+
+  Future<void> _sharePdf(String path) async {
+    await Share.shareXFiles([XFile(path)], text: 'Exam Report');
+  }
+
+  Future<void> _savePdfToDownloads(File pdfFile) async {
+    try {
+      // Simple Approach for Android 10+ (Scoped Storage) and below
+      // Using /storage/emulated/0/Download/ folder directly
+      Directory? downloadsDir;
+      if (Platform.isAndroid) {
+         downloadsDir = Directory('/storage/emulated/0/Download');
+      } else {
+         // Fallback/IOS (not primarily targeted but safe)
+         downloadsDir = await getDownloadsDirectory(); 
+      }
+
+      if (downloadsDir != null && !downloadsDir.existsSync()) {
+        // Try creating it?
+        downloadsDir.createSync(recursive: true);
+      }
+      
+      if (downloadsDir != null) {
+          final fileName = pdfFile.uri.pathSegments.last;
+          final newPath = "${downloadsDir.path}/$fileName";
+          await pdfFile.copy(newPath);
+          
+          if (mounted) {
+             ScaffoldMessenger.of(context).showSnackBar(
+               SnackBar(content: Text("Saved to Downloads: $fileName")),
+             );
+          }
+      } else {
+          throw "Downloads directory not found";
+      }
+
+    } catch (e) {
+       // Fallback to Share if permission fails or other error
+       if (mounted) {
+         ScaffoldMessenger.of(context).showSnackBar(
+           SnackBar(content: Text("Could not save automatically. Please use Share to save.")),
+         );
+         _sharePdf(pdfFile.path); // Use share as fallback
+       }
+    }
+  }
+
   Future<String?> _showNameDialog() async {
+    // Revert to simple name dialog
     final TextEditingController _nameController = TextEditingController();
-    // Pre-fill with existing name if any
     if (_document.name != null) {
       _nameController.text = _document.name!;
     }
-
     return await showDialog<String>(
       context: context,
       barrierDismissible: false,
@@ -961,7 +1109,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text("Please enter a name for this paper before saving:"),
+            const Text("Enter a name for this paper:"),
             const SizedBox(height: 16),
             TextField(
               controller: _nameController,
