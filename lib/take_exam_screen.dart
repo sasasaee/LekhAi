@@ -133,11 +133,10 @@ class _TakeExamScreenState extends State<TakeExamScreen> {
             shape: BoxShape.circle,
             border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
           ),
-          child: IconButton(
+          child: AccessibleIconButton(
             icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
             tooltip: "Back",
             onPressed: () {
-              widget.accessibilityService.trigger(AccessibilityEvent.action);
               Navigator.pop(context);
             },
           ),
@@ -283,12 +282,14 @@ class _ExamActionTileState extends State<_ExamActionTile>
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return DoubleTapWrapper(
+      onActivate: widget.onTap,
+      announcement: widget.label,
+      builder: (context, hook) => GestureDetector(
       onTapDown: (_) => _controller.forward(),
       onTapUp: (_) {
         _controller.reverse();
-        AccessibilityService().trigger(AccessibilityEvent.action);
-        widget.onTap();
+        hook();
       },
       onTapCancel: () => _controller.reverse(),
       child:
@@ -367,6 +368,7 @@ class _ExamActionTileState extends State<_ExamActionTile>
               .animate()
               .fadeIn(delay: widget.delay.ms)
               .slideX(begin: 0.1, end: 0, curve: Curves.easeOutBack),
+      ),
     );
   }
 }
