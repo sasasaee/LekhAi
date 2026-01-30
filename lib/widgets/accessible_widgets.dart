@@ -41,6 +41,13 @@ class _DoubleTapWrapperState extends State<DoubleTapWrapper> {
       return;
     }
 
+    // Check preference: If "Single Tap Announce" is disabled, activate immediately on single tap
+    if (!_service.oneTapAnnounce) {
+      _service.trigger(widget.activationEvent);
+      widget.onActivate!();
+      return;
+    }
+
     final now = DateTime.now();
     if (_lastTapTime != null &&
         now.difference(_lastTapTime!) < _doubleTapThreshold) {

@@ -59,9 +59,9 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
   Timer? _examTimer; // This controls the ticking
   int _remainingSeconds = 0; // This holds the time left
   bool _isExamRunning = false;
-  bool _showCountdown = false;
-  int _countdownValue = 3;
-  bool _isRecordingAnswer = false;
+  // bool _showCountdown = false; // Removed
+  // int _countdownValue = 3; // Removed
+  // bool _isRecordingAnswer = false; // Removed
 
   List<dynamic> _allExamQuestions = [];
 
@@ -71,7 +71,8 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
     _loadQuestions();
 
     if (widget.examMode) {
-      _startExamSequence();
+    // Exam sequence initiation handled by PaperDetailScreen logic now.
+    // _startExamSequence(); // Removed
     } else {
       widget.ttsService.speak("Welcome to saved papers.");
       _initVoiceCommandListener();
@@ -173,88 +174,13 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
   //   }
   // }
 
-  void _startExamSequence() {
-    if (widget.document != null) {
-      _allExamQuestions = widget.document!.sections
-          .expand((section) => section.questions)
-          .toList();
-    }
+  // Removed _startExamSequence, _beginExam, _readCurrentQuestion, _nextQuestion as they are handled in PaperDetailScreen now.
 
-    _remainingSeconds = 900; // 15 Minutes
-    setState(() {
-      _showCountdown = true;
-      _countdownValue = 3;
-    });
-
-    // 3-2-1 Countdown
-    Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-      if (_countdownValue > 1) {
-        setState(() => _countdownValue--);
-      } else {
-        timer.cancel();
-        _beginExam();
-      }
-    });
-  }
-
-  void _beginExam() {
-    setState(() {
-      _showCountdown = false;
-      _isExamRunning = true;
-    });
-
-    widget.ttsService.speak("Exam started.");
-
-    _examTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) return;
-      if (_remainingSeconds > 0) {
-        setState(() => _remainingSeconds--);
-        if (_remainingSeconds == 900) {
-          widget.ttsService.speak("Fifteen minutes remaining.");
-        }
-      } else {
-        _finishExam();
-      }
-    });
-
-    _readCurrentQuestion();
-  }
-
-  void _readCurrentQuestion() {
-    // FIX: Use _allExamQuestions instead of widget.document!.questions
-    if (_allExamQuestions.isNotEmpty) {
-      String text = _allExamQuestions[_currentQuestionIndex].prompt;
-      widget.ttsService.stop();
-      widget.ttsService.speak("Question ${_currentQuestionIndex + 1}. $text");
-    }
-  }
-
-  void _toggleAnswerRecording() {
-    setState(() {
-      _isRecordingAnswer = !_isRecordingAnswer;
-    });
-    // Add your actual _sttService.listen() call here if needed later
-  }
-
-  void _nextQuestion() {
-    if (_currentQuestionIndex < _allExamQuestions.length - 1) {
-      setState(() {
-        _currentQuestionIndex++;
-        _isRecordingAnswer = false;
-      });
-      _readCurrentQuestion();
-    } else {
-      _finishExam();
-    }
-  }
+  // _confirmEndExam moved to PaperDetailScreen
 
   void _finishExam() {
-    _examTimer?.cancel();
-    widget.ttsService.speak("Exam finished.");
+    _examTimer?.cancel(); // Cancel any local timer if existing
+    widget.ttsService.speak("Exam finished. Returning to dashboard.");
     Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
@@ -315,6 +241,7 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
           accessibilityService: widget.accessibilityService,
           timestamp: DateTime.now()
               .toIso8601String(), // Temporary until model update
+          examMode: widget.examMode, // Pass the mode
         ),
       ),
     ).then((_) => _initVoiceCommandListener());
@@ -322,126 +249,11 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.examMode) {
-      // A. The 3-2-1 Countdown Screen
-      if (_showCountdown) {
-        return Scaffold(
-          body: Center(
-            child: Text(
-              "$_countdownValue",
-              style: GoogleFonts.outfit(
-                fontSize: 100,
-                fontWeight: FontWeight.bold,
-                color: Colors.deepPurple,
-              ),
-            ),
-          ),
-        );
-      }
-
-      // B. The Active Exam Screen
-      // Safety Check: If document is null, show error to avoid crash
-      if (_allExamQuestions.isEmpty) {
-        return const Scaffold(
-          body: Center(child: Text("Error: No questions loaded.")),
-        );
-      }
-
-      final question = _allExamQuestions[_currentQuestionIndex];
-
-      return Scaffold(
-        appBar: AppBar(
-          title: Text("Time: ${_formatTime(_remainingSeconds)}"),
-          automaticallyImplyLeading: false,
-          centerTitle: true,
-        ),
-        body: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                "Question ${_currentQuestionIndex + 1} of ${_allExamQuestions.length}",
-                style: GoogleFonts.outfit(fontSize: 20, color: Colors.grey),
-              ),
-              const SizedBox(height: 30),
-
-              Expanded(
-                child: Center(
-                  child: SingleChildScrollView(
-                    child: Text(
-                      question.prompt,
-                      style: GoogleFonts.outfit(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              // Mic Button
-              DoubleTapWrapper(
-                onActivate: _toggleAnswerRecording,
-                announcement: _isRecordingAnswer ? "Stop Recording" : "Start Answer",
-                builder: (context, hook) => GestureDetector(
-                  onTap: hook,
-                  child: CircleAvatar(
-                    radius: 40,
-                    backgroundColor: _isRecordingAnswer
-                        ? Colors.redAccent
-                        : Colors.deepPurple,
-                    child: Icon(
-                      _isRecordingAnswer ? Icons.stop : Icons.mic,
-                      size: 40,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                _isRecordingAnswer ? "Listening..." : "Tap to Answer",
-                style: GoogleFonts.outfit(color: Colors.grey),
-              ),
-
-              const SizedBox(height: 40),
-
-              // Next Button
-              AccessibleElevatedButton(
-                onPressed: _nextQuestion,
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 60),
-                  backgroundColor: Colors.deepPurple,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-                child: Text(
-                  _currentQuestionIndex == _allExamQuestions.length - 1
-                      ? "Finish Exam"
-                      : "Next Question",
-                  style: GoogleFonts.outfit(
-                    fontSize: 18,
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: Text(
-          'Saved Papers',
+          widget.examMode ? 'Exam Mode' : 'Saved Papers',
           style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
@@ -686,6 +498,10 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
                         ).animate().fadeIn(delay: (index * 100).ms).slideX(begin: 0.1, end: 0),
                       );
                     }).toList(),
+
+                    if (widget.examMode) ...[
+                      // "End Exam" moved to PaperDetailScreen as per user request
+                    ],
                   ],
                 ),
         ),

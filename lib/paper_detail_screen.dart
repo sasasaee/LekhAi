@@ -310,6 +310,65 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
     }
   }
 
+  void _confirmEndExam() {
+    // 1. Calculate Progress
+    int total = 0;
+    int answered = 0;
+    for (var section in _document.sections) {
+      for (var q in section.questions) {
+        total++;
+        bool hasText = q.answer.isNotEmpty;
+        bool hasAudio = q.audioPath != null && q.audioPath!.isNotEmpty;
+        if (hasText || hasAudio) answered++;
+      }
+    }
+
+    // 2. Announce
+    widget.ttsService.speak(
+      "Ending exam. You have answered $answered out of $total questions. Double tap confirm to submit.",
+    );
+
+    // 3. Show Dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.grey[900],
+        title: Text(
+          "Submit Exam?",
+          style: GoogleFonts.outfit(color: Colors.white),
+        ),
+        content: Text(
+          "You have answered $answered out of $total questions.\nAre you sure you want to submit?",
+          style: GoogleFonts.outfit(color: Colors.white70, fontSize: 16),
+        ),
+        actions: [
+          AccessibleTextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              widget.ttsService.speak("Exam continued.");
+            },
+            child: Text("Cancel", style: GoogleFonts.outfit(color: Colors.white)),
+          ),
+          AccessibleTextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _finalizeExam(); // Calls existing finish logic
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+            child: Text(
+              "Submit",
+              style: GoogleFonts.outfit(
+                color: Colors.redAccent,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   String _formatTime(int totalSeconds) {
     int minutes = totalSeconds ~/ 60;
     int seconds = totalSeconds % 60;
@@ -414,6 +473,65 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
     }
   }
 
+  void _openNextQuestion(ParsedQuestion currentQuestion) {
+    // Flatten list of all questions to find index
+    List<ParsedQuestion> allQuestions = [];
+    for (var section in _document.sections) {
+      allQuestions.addAll(section.questions);
+    }
+
+    int index = allQuestions.indexOf(currentQuestion);
+    if (index >= 0 && index < allQuestions.length - 1) {
+      final nextQ = allQuestions[index + 1];
+      // Find context for nextQ
+      String? contextText;
+      for (var section in _document.sections) {
+        if (section.questions.contains(nextQ)) {
+          contextText = section.context;
+          break;
+        }
+      }
+
+      // Close current SingleScreen (handled by callback logic usually, but here we push replacement or handle it)
+      // Actually, since we are inside the callback from the *current* screen, 
+      // we first pop the current screen, then push the new one.
+      
+      // But _openQuestionByNumber/Logic usually pushes.
+      // So:
+      // Navigator.pop(context); (Done in callback wrapper)
+      // Push next.
+      
+      // Let's reuse specific logic here.
+       widget.ttsService.speak("Opening next question.");
+       
+        // Stop local listening before pushing new screen
+      _sttService.stopListening();
+      
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => SingleQuestionScreen(
+            question: nextQ,
+            contextText: contextText,
+            ttsService: widget.ttsService,
+            voiceService: widget.voiceService,
+            accessibilityService: widget.accessibilityService,
+            onNext: () {
+                Navigator.pop(context);
+                _openNextQuestion(nextQ);
+            },
+          ),
+        ),
+      ).then((_) {
+        // Resume listening when returning
+        _initVoiceCommandListener();
+      });
+
+    } else {
+      widget.ttsService.speak("No more questions.");
+    }
+  }
+
   // Helper to open a question via voice
   void _openQuestionByNumber(int number) {
     ParsedQuestion? target;
@@ -445,6 +563,10 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
             ttsService: widget.ttsService,
             voiceService: widget.voiceService,
             accessibilityService: widget.accessibilityService,
+            onNext: () {
+                Navigator.pop(context);
+                _openNextQuestion(target!);
+            },
           ),
         ),
       ).then((_) {
@@ -680,8 +802,32 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
                 // --- 2. YOUR EXISTING LIST GOES HERE ---
                 Expanded(
                   child: ListView.builder(
-                    itemCount: items.length,
+                    itemCount: items.length + (widget.examMode ? 1 : 0),
                     itemBuilder: (context, index) {
+                      if (widget.examMode && index == items.length) {
+                        return Padding(
+                          padding: const EdgeInsets.all(24.0),
+                          child: AccessibleElevatedButton(
+                            onPressed: _confirmEndExam,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.redAccent,
+                              minimumSize: const Size(double.infinity, 56),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            child: Text(
+                              "End Exam",
+                              style: GoogleFonts.outfit(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+
                       // COPY AND PASTE YOUR EXISTING ITEM BUILDER CODE HERE
                       // (The exact same code you already have for _HeaderItem, _SectionItem, _QuestionItem)
 
@@ -976,6 +1122,17 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
 
   Future<void> _finalizeExam() async {
     // This is called when Time Up or User explicitly submits via voice/menu
+    
+    // Ensure Kiosk Mode is disabled immediately
+    await KioskService().disableKioskMode();
+    if (mounted) {
+      setState(() {
+        _kioskEnabled = false;
+        _showCountdown = false; // Ensure countdown UI is gone
+        _examTimer?.cancel();   // Ensure timer is stopped
+      });
+    }
+
     try {
       String sName = widget.studentName ?? "Unknown Student";
       String sId = widget.studentId ?? "Unknown ID";
@@ -1198,6 +1355,7 @@ class SingleQuestionScreen extends StatefulWidget {
   final TtsService ttsService;
   final VoiceCommandService voiceService; // Added
   final AccessibilityService? accessibilityService;
+  final VoidCallback? onNext; // Added
 
   const SingleQuestionScreen({
     super.key,
@@ -1206,6 +1364,7 @@ class SingleQuestionScreen extends StatefulWidget {
     required this.ttsService,
     required this.voiceService, // Added
     this.accessibilityService,
+    this.onNext,
   });
 
   @override
@@ -1817,6 +1976,26 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                         const SizedBox(height: 32),
                         const Divider(color: Colors.white24),
                         const SizedBox(height: 16),
+                        // NEXT BUTTON
+                        if (widget.onNext != null) ...[
+                           AccessibleElevatedButton(
+                              onPressed: widget.onNext,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.white10,
+                                foregroundColor: Colors.white,
+                                minimumSize: const Size(double.infinity, 50),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text("Next Question", style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.bold)),
+                                  const SizedBox(width: 8),
+                                  const Icon(Icons.arrow_forward_rounded, size: 20),
+                                ],
+                              ),
+                           ),
+                           const SizedBox(height: 32),
+                        ],
                         Text(
                           "Your Answer:",
                           style: GoogleFonts.outfit(
@@ -1916,6 +2095,8 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                     ),
                   ),
                 ),
+                const SizedBox(height: 16),
+
 
                 // Controls
                 Container(
@@ -1978,7 +2159,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 16),
+                      
                       Row(
                         children: [
                           Expanded(
