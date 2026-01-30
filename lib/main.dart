@@ -496,7 +496,7 @@ class _HomeScreenState extends State<HomeScreen>
                           color: Colors.white.withOpacity(0.1),
                         ),
                       ),
-                      child: AccessibleIconButton(
+                      child: IconButton(
                         icon: const Icon(Icons.info_outline_rounded),
                         color: Colors.white70,
                         tooltip: "About",
@@ -611,11 +611,11 @@ class _DashboardCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DoubleTapWrapper(
-      onActivate: onTap,
-      announcement: label,
-      builder: (context, hook) => GestureDetector(
-        onTap: hook,
+    return GestureDetector(
+      onTap: () async {
+        AccessibilityService().trigger(AccessibilityEvent.action);
+        onTap();
+      },
       child:
           Container(
                 margin: const EdgeInsets.symmetric(vertical: 8), // Add margin for spacing
@@ -691,7 +691,6 @@ class _DashboardCard extends StatelessWidget {
               .animate()
               .fadeIn(delay: delay.ms, duration: 600.ms)
               .slideX(begin: 0.1, end: 0, curve: Curves.easeOutBack),
-      ),
     );
   }
 }
