@@ -986,6 +986,10 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
                                         voiceService: widget.voiceService,
                                         accessibilityService:
                                             widget.accessibilityService,
+                                        onNext: () {
+                                          Navigator.pop(context);
+                                          _openNextQuestion(q);
+                                        },
                                       ),
                                     ),
                                   );
