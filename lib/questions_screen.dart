@@ -384,17 +384,21 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
               const SizedBox(height: 20),
 
               // Mic Button
-              GestureDetector(
-                onTap: _toggleAnswerRecording,
-                child: CircleAvatar(
-                  radius: 40,
-                  backgroundColor: _isRecordingAnswer
-                      ? Colors.redAccent
-                      : Colors.deepPurple,
-                  child: Icon(
-                    _isRecordingAnswer ? Icons.stop : Icons.mic,
-                    size: 40,
-                    color: Colors.white,
+              DoubleTapWrapper(
+                onActivate: _toggleAnswerRecording,
+                announcement: _isRecordingAnswer ? "Stop Recording" : "Start Answer",
+                builder: (context, hook) => GestureDetector(
+                  onTap: hook,
+                  child: CircleAvatar(
+                    radius: 40,
+                    backgroundColor: _isRecordingAnswer
+                        ? Colors.redAccent
+                        : Colors.deepPurple,
+                    child: Icon(
+                      _isRecordingAnswer ? Icons.stop : Icons.mic,
+                      size: 40,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
               ),
@@ -407,7 +411,7 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
               const SizedBox(height: 40),
 
               // Next Button
-              ElevatedButton(
+              AccessibleElevatedButton(
                 onPressed: _nextQuestion,
                 style: ElevatedButton.styleFrom(
                   minimumSize: const Size(double.infinity, 60),
@@ -450,7 +454,7 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
             shape: BoxShape.circle,
             border: Border.all(color: Colors.white.withOpacity(0.1)),
           ),
-          child: IconButton(
+          child: AccessibleIconButton(
             icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
             tooltip: "Back",
             onPressed: () => Navigator.pop(context),
@@ -464,14 +468,13 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
               shape: BoxShape.circle,
               border: Border.all(color: Colors.red.withOpacity(0.3)),
             ),
-            child: IconButton(
+            child: AccessibleIconButton(
               icon: const Icon(
                 Icons.delete_forever_rounded,
                 color: Colors.redAccent,
               ),
               tooltip: 'Clear All',
               onPressed: () async {
-                AccessibilityService().trigger(AccessibilityEvent.warning);
                 await _storageService.clearDocuments();
                 _loadQuestions();
                 widget.ttsService.speak("All papers deleted.");
@@ -617,7 +620,7 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
                             borderRadius: BorderRadius.circular(20),
                             child: BackdropFilter(
                               filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-                              child: ListTile(
+                              child: AccessibleListTile(
                                 contentPadding: const EdgeInsets.all(16),
                                 leading: Container(
                                   padding: const EdgeInsets.all(12),
@@ -654,14 +657,10 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
                                   size: 16,
                                 ),
                                 onTap: () {
-                                  AccessibilityService().trigger(
-                                    AccessibilityEvent.action,
-                                  );
-
                                     // 1. CHECK: Are we in Exam Selection Mode?
                                     if (widget.isSelectionMode) {
                                       // YES -> Go to Exam Info (Rules, Timer, Name)
-                                      AccessibilityService().trigger(AccessibilityEvent.action);
+                                      // AccessibilityService().trigger(AccessibilityEvent.action); // Handled by widget
                                       Navigator.push(
                                         context,
                                         MaterialPageRoute(
