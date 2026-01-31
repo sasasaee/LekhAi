@@ -63,7 +63,9 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
   final GeminiQuestionService _geminiService = GeminiQuestionService();
   final QuestionStorageService _storageService = QuestionStorageService();
   final SttService _sttService = SttService();
-  bool _isListening = false;
+  final bool _isListening =
+      false; // Effectively constant in this screen's logic
+
   Timer? _examTimer;
   late int _remainingSeconds;
 
@@ -382,7 +384,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
   void _initVoiceCommandListener() async {
     bool available = await _sttService.init(
       onStatus: (status) {
-        print("Paper List STT Status: $status");
+        debugPrint("Paper List STT Status: $status");
         // Keep-alive loop for the listener
         if ((status == 'notListening' || status == 'done') && !_isListening) {
           Future.delayed(const Duration(milliseconds: 500), () {
@@ -390,7 +392,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
           });
         }
       },
-      onError: (error) => print("Paper List STT Error: $error"),
+      onError: (error) => debugPrint("Paper List STT Error: $error"),
     );
 
     if (available) {
@@ -462,11 +464,11 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
           setState(() {
             _kioskEnabled = false;
           });
-          _savePaper(context); // Then normal save
+          if (mounted) _savePaper(context); // Then normal save
           if (mounted) Navigator.pop(context); // And exit
         } else {
           await widget.ttsService.speak("Saving paper progress.");
-          _savePaper(context);
+          if (mounted) _savePaper(context);
         }
         break;
 
@@ -680,7 +682,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
 
     return PopScope(
       canPop: !_kioskEnabled,
-      onPopInvoked: (didPop) {
+      onPopInvokedWithResult: (didPop, result) {
         if (!didPop && _kioskEnabled) {
           // widget.ttsService.speak("Exam is locked.");
         }
@@ -700,9 +702,9 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
           leading: Container(
             margin: const EdgeInsets.only(left: 16, top: 8, bottom: 8),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.1),
+              color: Colors.white.withValues(alpha: 0.1),
               shape: BoxShape.circle,
-              border: Border.all(color: Colors.white.withOpacity(0.1)),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
             ),
             child: IconButton(
               icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
@@ -726,9 +728,11 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
               Container(
                 margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.1),
+                  color: Colors.white.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white.withOpacity(0.1)),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.1),
+                  ),
                 ),
                 child: AccessibleIconButton(
                   icon: const Icon(Icons.save_rounded, color: Colors.white),
@@ -744,7 +748,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                Theme.of(context).cardTheme.color!.withOpacity(0.8),
+                Theme.of(context).cardTheme.color!.withValues(alpha: 0.8),
                 Theme.of(context).scaffoldBackgroundColor,
                 Colors.black,
               ],
@@ -764,7 +768,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
                       borderRadius: BorderRadius.circular(20),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.deepPurple.withOpacity(0.5),
+                          color: Colors.deepPurple.withValues(alpha: 0.5),
                           blurRadius: 10,
                           offset: const Offset(0, 4),
                         ),
@@ -844,10 +848,10 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
                           child: Container(
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.05),
+                              color: Colors.white.withValues(alpha: 0.05),
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                color: Colors.white.withOpacity(0.1),
+                                color: Colors.white.withValues(alpha: 0.1),
                               ),
                             ),
                             child: Text(
@@ -880,9 +884,11 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
                                   margin: const EdgeInsets.only(top: 8),
                                   padding: const EdgeInsets.all(16),
                                   decoration: BoxDecoration(
-                                    color: Colors.amber.withOpacity(0.1),
+                                    color: Colors.amber.withValues(alpha: 0.1),
                                     border: Border.all(
-                                      color: Colors.amber.withOpacity(0.3),
+                                      color: Colors.amber.withValues(
+                                        alpha: 0.3,
+                                      ),
                                     ),
                                     borderRadius: BorderRadius.circular(12),
                                   ),
@@ -914,12 +920,12 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
                             borderRadius: BorderRadius.circular(16),
                             gradient: LinearGradient(
                               colors: [
-                                Colors.white.withOpacity(0.08),
-                                Colors.white.withOpacity(0.03),
+                                Colors.white.withValues(alpha: 0.08),
+                                Colors.white.withValues(alpha: 0.03),
                               ],
                             ),
                             border: Border.all(
-                              color: Colors.white.withOpacity(0.1),
+                              color: Colors.white.withValues(alpha: 0.1),
                             ),
                             boxShadow: [
                               BoxShadow(
@@ -943,7 +949,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
                                   decoration: BoxDecoration(
                                     color: Theme.of(
                                       context,
-                                    ).primaryColor.withOpacity(0.2),
+                                    ).primaryColor.withValues(alpha: 0.2),
                                     shape: BoxShape.circle,
                                   ),
                                   child: Text(
@@ -1022,7 +1028,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
             ),
             boxShadow: [
               BoxShadow(
-                color: Theme.of(context).primaryColor.withOpacity(0.4),
+                color: Theme.of(context).primaryColor.withValues(alpha: 0.4),
                 blurRadius: 12,
                 offset: const Offset(0, 6),
               ),
@@ -1032,8 +1038,8 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
             onPressed: () => _onAddPage(context),
             backgroundColor: Colors.transparent,
             elevation: 0,
-            child: const Icon(Icons.add_a_photo_outlined, color: Colors.white),
             tooltip: 'Add Page',
+            child: const Icon(Icons.add_a_photo_outlined, color: Colors.white),
           ),
         ),
       ),
@@ -1147,9 +1153,11 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       // Re-saving document to ensure answers are persisted
       await _storageService.saveDocument(_document);
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Generating PDF Result...")));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Generating PDF Result...")),
+        );
+      }
 
       final pdfFile = await PdfService().generateExamPdf(
         studentName: sName,
@@ -1286,9 +1294,9 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
 
   Future<String?> _showNameDialog() async {
     // Revert to simple name dialog
-    final TextEditingController _nameController = TextEditingController();
+    final TextEditingController nameController = TextEditingController();
     if (_document.name != null) {
-      _nameController.text = _document.name!;
+      nameController.text = _document.name!;
     }
     return await showDialog<String>(
       context: context,
@@ -1302,7 +1310,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
             const Text("Enter a name for this paper:"),
             const SizedBox(height: 16),
             TextField(
-              controller: _nameController,
+              controller: nameController,
               autofocus: true,
               decoration: const InputDecoration(
                 hintText: "e.g. Physics Chapter 1",
@@ -1319,7 +1327,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
           ),
           AccessibleElevatedButton(
             onPressed: () {
-              final text = _nameController.text.trim();
+              final text = nameController.text.trim();
               if (text.isNotEmpty) {
                 Navigator.pop(ctx, text);
               }
@@ -1416,7 +1424,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
   void _initVoiceCommandListener() async {
     bool available = await _sttService.init(
       onStatus: (status) {
-        print("STT Status: $status");
+        debugPrint("STT Status: $status");
         // FIX: If the engine stops (status 'done' or 'notListening') and
         // the student isn't currently dictating an answer, restart it.
         if ((status == 'notListening' || status == 'done') && !_isListening) {
@@ -1426,7 +1434,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
           });
         }
       },
-      onError: (error) => print("STT Error: $error"),
+      onError: (error) => debugPrint("STT Error: $error"),
     );
 
     if (available) {
@@ -1503,7 +1511,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
 
       case VoiceAction.goBack:
         await widget.ttsService.speak("Going back.");
-        Navigator.pop(context);
+        if (mounted) Navigator.pop(context);
         break;
 
       default:
@@ -1599,8 +1607,9 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
       sb.write("Context: ${widget.contextText}. ");
       sb.write("\n\n");
     }
-    if (widget.question.number != null)
+    if (widget.question.number != null) {
       sb.write("Question ${widget.question.number}. ");
+    }
     sb.write(widget.question.prompt);
     sb.write("\n");
     sb.write(widget.question.body.join("\n"));
@@ -1835,7 +1844,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         });
         _discardAudio();
       } catch (e) {
-        print("Error saving audio: $e");
+        debugPrint("Error saving audio: $e");
       }
     }
   }
@@ -1866,9 +1875,9 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         leading: Container(
           margin: const EdgeInsets.only(left: 16, top: 8, bottom: 8),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.1),
+            color: Colors.white.withValues(alpha: 0.1),
             shape: BoxShape.circle,
-            border: Border.all(color: Colors.white.withOpacity(0.1)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
           ),
           child: IconButton(
             icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
@@ -1883,7 +1892,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              Theme.of(context).cardTheme.color!.withOpacity(0.8),
+              Theme.of(context).cardTheme.color!.withValues(alpha: 0.8),
               Theme.of(context).scaffoldBackgroundColor,
               Colors.black,
             ],
@@ -1904,9 +1913,9 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                           Container(
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
-                              color: Colors.amber.withOpacity(0.1),
+                              color: Colors.amber.withValues(alpha: 0.1),
                               border: Border.all(
-                                color: Colors.amber.withOpacity(0.3),
+                                color: Colors.amber.withValues(alpha: 0.3),
                               ),
                               borderRadius: BorderRadius.circular(12),
                             ),
@@ -2033,17 +2042,17 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                               color: Colors.white30,
                             ),
                             filled: true,
-                            fillColor: Colors.white.withOpacity(0.05),
+                            fillColor: Colors.white.withValues(alpha: 0.05),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                               borderSide: BorderSide(
-                                color: Colors.white.withOpacity(0.1),
+                                color: Colors.white.withValues(alpha: 0.1),
                               ),
                             ),
                             enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                               borderSide: BorderSide(
-                                color: Colors.white.withOpacity(0.1),
+                                color: Colors.white.withValues(alpha: 0.1),
                               ),
                             ),
                             focusedBorder: OutlineInputBorder(
@@ -2131,8 +2140,6 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                           Expanded(
                             child: AccessibleElevatedButton(
                               onPressed: onRead,
-                              icon: Icon(readIcon),
-                              child: Text(readLabel),
                               style: ElevatedButton.styleFrom(
                                 padding: const EdgeInsets.symmetric(
                                   vertical: 14,
@@ -2146,14 +2153,14 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
+                              icon: Icon(readIcon),
+                              child: Text(readLabel),
                             ),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: AccessibleElevatedButton(
                               onPressed: onStop,
-                              icon: Icon(stopIcon),
-                              child: Text(stopLabel),
                               style: ElevatedButton.styleFrom(
                                 padding: const EdgeInsets.symmetric(
                                   vertical: 14,
@@ -2169,6 +2176,8 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
+                              icon: Icon(stopIcon),
+                              child: Text(stopLabel),
                             ),
                           ),
                         ],
@@ -2179,10 +2188,6 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                           Expanded(
                             child: AccessibleElevatedButton(
                               onPressed: _changeSpeed,
-                              icon: const Icon(Icons.speed_rounded, size: 18),
-                              child: Text(
-                                "${_displaySpeed.toStringAsFixed(2)}x",
-                              ),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.white10,
                                 foregroundColor: Colors.white,
@@ -2191,12 +2196,24 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                               ),
+                              icon: const Icon(Icons.speed_rounded, size: 18),
+                              child: Text(
+                                "${_displaySpeed.toStringAsFixed(2)}x",
+                              ),
                             ),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: AccessibleElevatedButton(
                               onPressed: _changeVolume,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.white10,
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
                               icon: Icon(
                                 _currentVolume < 0.5
                                     ? Icons.volume_down_rounded
@@ -2205,14 +2222,6 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                               ),
                               child: Text(
                                 "Vol: ${(_currentVolume * 100).toInt()}%",
-                              ),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.white10,
-                                foregroundColor: Colors.white,
-                                elevation: 0,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
                               ),
                             ),
                           ),
@@ -2237,8 +2246,9 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     for (var line in body) {
       final trimmed = line.trim();
       if (trimmed.startsWith("[[BOX:") && trimmed.endsWith("]]")) {
-        if (inBox)
+        if (inBox) {
           widgets.add(_buildBoxWidget(currentBoxTitle, currentBoxItems));
+        }
         inBox = true;
         currentBoxTitle = trimmed.substring(6, trimmed.length - 2).trim();
         currentBoxItems = [];
@@ -2272,8 +2282,8 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
       width: double.infinity,
       margin: const EdgeInsets.symmetric(vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.05),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
+        color: Colors.white.withValues(alpha: 0.05),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -2282,7 +2292,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.1),
+              color: Colors.white.withValues(alpha: 0.1),
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(12),
               ),

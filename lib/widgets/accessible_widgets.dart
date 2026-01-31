@@ -413,7 +413,7 @@ class AccessibleSwitchListTile extends StatelessWidget {
       subtitle: subtitle,
       contentPadding: contentPadding,
       visualDensity: visualDensity,
-      activeColor: activeColor,
+      activeTrackColor: activeColor,
     );
   }
 }

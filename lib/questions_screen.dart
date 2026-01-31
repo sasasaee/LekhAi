@@ -51,7 +51,7 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
   List<ParsedDocument> _papers = [];
   bool _isLoading = true;
   final SttService _sttService = SttService();
-  bool _isListening = false;
+  final bool _isListening = false;
   // bool _isSelectingForExam = false; // REMOVED
   //int _examTimer = 0; // seconds
   //bool _timerStarted = false;
@@ -85,7 +85,7 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
         // Just log status, rely on SttService internal loop for restarts
         // print("QuestionsScreen STT Status: $status");
       },
-      onError: (error) => print("QuestionsScreen STT Error: $error"),
+      onError: (error) => debugPrint("QuestionsScreen STT Error: $error"),
     );
 
     if (available) {
@@ -99,7 +99,7 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
     _sttService.startListening(
       localeId: "en-US",
       onResult: (text) {
-        print("QuestionsScreen received: '$text'");
+        debugPrint("QuestionsScreen received: '$text'");
         final result = widget.voiceService.parse(
           text,
           context: VoiceContext.savedPapers,
@@ -333,16 +333,82 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
                       );
 
                       return Dismissible(
-                        // key: Key(doc.toString() + index.toString()),
                         key: Key(doc.id),
-                        direction: DismissDirection.endToStart,
+                        direction: DismissDirection.horizontal, // Allow both
                         background: Container(
+                          alignment: Alignment.centerLeft,
+                          padding: const EdgeInsets.only(left: 20),
+                          color: Colors.green, // Swipe Right -> Rename
+                          child: const Icon(Icons.edit, color: Colors.white),
+                        ),
+                        secondaryBackground: Container(
                           alignment: Alignment.centerRight,
                           padding: const EdgeInsets.only(right: 20),
-                          color: Colors.redAccent,
+                          color: Colors.redAccent, // Swipe Left -> Delete
                           child: const Icon(Icons.delete, color: Colors.white),
                         ),
-                        onDismissed: (direction) => _deletePaper(index),
+                        confirmDismiss: (direction) async {
+                          if (direction == DismissDirection.startToEnd) {
+                            // RENAME ACTION
+                            String? newName = await showDialog<String>(
+                              context: context,
+                              builder: (ctx) {
+                                final TextEditingController nameController =
+                                    TextEditingController(text: doc.name);
+                                return AlertDialog(
+                                  title: const Text("Rename Paper"),
+                                  content: TextField(
+                                    controller: nameController,
+                                    autofocus: true,
+                                    decoration: const InputDecoration(
+                                      labelText: "New Name",
+                                    ),
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(ctx, null),
+                                      child: const Text("Cancel"),
+                                    ),
+                                    ElevatedButton(
+                                      onPressed: () {
+                                        if (nameController.text
+                                            .trim()
+                                            .isNotEmpty) {
+                                          Navigator.pop(
+                                            ctx,
+                                            nameController.text.trim(),
+                                          );
+                                        }
+                                      },
+                                      child: const Text("Rename"),
+                                    ),
+                                  ],
+                                );
+                              },
+                            );
+
+                            if (newName != null && newName != doc.name) {
+                              setState(() {
+                                doc.name = newName;
+                              });
+                              // Save the update
+                              await _storageService.saveDocument(doc);
+                              widget.ttsService.speak(
+                                "Paper renamed to $newName.",
+                              );
+                            }
+                            // Do not dismiss the row
+                            return false;
+                          } else {
+                            // DELETE ACTION
+                            return true; // Proceed to onDismissed
+                          }
+                        },
+                        onDismissed: (direction) {
+                          if (direction == DismissDirection.endToStart) {
+                            _deletePaper(index);
+                          }
+                        },
                         child: Container(
                           margin: const EdgeInsets.symmetric(vertical: 8),
                           decoration: BoxDecoration(

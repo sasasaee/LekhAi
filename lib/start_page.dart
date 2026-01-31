@@ -41,7 +41,7 @@ class _StartPageState extends State<StartPage> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Theme.of(context).primaryColor.withOpacity(0.1),
+              Theme.of(context).primaryColor.withValues(alpha: 0.1),
               Theme.of(context).scaffoldBackgroundColor,
             ],
           ),
@@ -109,7 +109,7 @@ class _StartPageState extends State<StartPage> {
                           elevation: 8,
                           shadowColor: Theme.of(
                             context,
-                          ).primaryColor.withOpacity(0.5),
+                          ).primaryColor.withValues(alpha: 0.5),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(24),
                           ),

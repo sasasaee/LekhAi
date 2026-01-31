@@ -2,6 +2,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'dart:async';
 import 'dart:ui';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/foundation.dart';
 import 'math_text_processor.dart';
 
 class TtsService {
@@ -42,16 +43,16 @@ class TtsService {
 
   void _setupHandlers() {
     _tts.setStartHandler(() {
-      print("TTS → setStartHandler callback fired");
+      debugPrint("TTS → setStartHandler callback fired");
       _isSpeaking = true;
       _speakingController.add(true);
     });
 
     _defaultCompletionHandler = () {
-      print("TTS → setCompletionHandler callback fired");
+      debugPrint("TTS → setCompletionHandler callback fired");
       _isSpeaking = false;
       _currentWordStart = 0;
-      print("TTS → Broadcasting speakingStream: FALSE");
+      debugPrint("TTS → Broadcasting speakingStream: FALSE");
       _speakingController.add(false);
     };
 
@@ -62,28 +63,28 @@ class TtsService {
     });
 
     _tts.setPauseHandler(() {
-      print("TTS → setPauseHandler callback fired");
+      debugPrint("TTS → setPauseHandler callback fired");
       _isPaused = true;
       _isSpeaking = false;
       _speakingController.add(false);
     });
 
     _tts.setContinueHandler(() {
-      print("TTS → setContinueHandler callback fired");
+      debugPrint("TTS → setContinueHandler callback fired");
       _isPaused = false;
       _isSpeaking = true;
       _speakingController.add(true);
     });
 
     _tts.setCancelHandler(() {
-      print("TTS → setCancelHandler callback fired");
+      debugPrint("TTS → setCancelHandler callback fired");
       _isSpeaking = false;
       _currentWordStart = 0;
       _speakingController.add(false);
     });
 
     _tts.setErrorHandler((msg) {
-      print("TTS → setErrorHandler callback fired: $msg");
+      debugPrint("TTS → setErrorHandler callback fired: $msg");
       _isSpeaking = false;
       _speakingController.add(false);
     });
@@ -119,7 +120,7 @@ class TtsService {
         _tts.setCompletionHandler(_defaultCompletionHandler!);
       }
       _tts.setCancelHandler(() {
-        print("TTS → Speech Cancelled");
+        debugPrint("TTS → Speech Cancelled");
         _isSpeaking = false;
         _currentWordStart = 0;
       });
@@ -144,7 +145,7 @@ class TtsService {
     // Stop any current speech - this ends the previous utterance
     // Broadcast FALSE to signal the previous speech has stopped
     if (_isSpeaking) {
-      print(
+      debugPrint(
         "TTS → Stopping previous speech, broadcasting speakingStream: FALSE",
       );
       await _tts.stop();
@@ -178,7 +179,9 @@ class TtsService {
     print("TTS → Setting fallback timer for ${estimatedDurationMs}ms");
     Future.delayed(Duration(milliseconds: estimatedDurationMs), () {
       if (_isSpeaking) {
-        print("TTS → Fallback timer fired. Broadcasting speakingStream: FALSE");
+        debugPrint(
+          "TTS → Fallback timer fired. Broadcasting speakingStream: FALSE",
+        );
         _isSpeaking = false;
         _speakingController.add(false);
       }

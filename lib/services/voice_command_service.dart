@@ -78,6 +78,7 @@ class VoiceCommandService {
   final TtsService tts;
   final GeminiQuestionService _geminiService = GeminiQuestionService();
   final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+  final QuestionStorageService _storageService = QuestionStorageService();
   bool _isScanDialogOpen = false;
 
   VoiceCommandService(this.tts);
@@ -86,7 +87,7 @@ class VoiceCommandService {
     String text, {
     VoiceContext context = VoiceContext.global,
   }) {
-    print(
+    debugPrint(
       "VoiceCommandService.parse called with text: '$text', context: $context",
     );
     text = text.toLowerCase();
@@ -121,10 +122,14 @@ class VoiceCommandService {
 
     // Confirm Exam Start Context
     if (context == VoiceContext.confirmExamStart) {
-      if (text.contains("start") || text.contains("confirm") || text.contains("yes")) {
+      if (text.contains("start") ||
+          text.contains("confirm") ||
+          text.contains("yes")) {
         return CommandResult(VoiceAction.confirmExamStart);
       }
-      if (text.contains("cancel") || text.contains("stop") || text.contains("no")) {
+      if (text.contains("cancel") ||
+          text.contains("stop") ||
+          text.contains("no")) {
         return CommandResult(VoiceAction.cancelExamStart);
       }
     }
@@ -148,7 +153,7 @@ class VoiceCommandService {
 
     // Saved Papers Context
     if (context == VoiceContext.savedPapers) {
-      print("Saved Papers Context Parsing: '$text'");
+      debugPrint("Saved Papers Context Parsing: '$text'");
       // Parsing for DELETE commands (Check first!)
       final RegExp deleteRegex = RegExp(
         r"(delete|remove)\s+(paper|question|scan|number)\s+([a-z0-9]+)",
@@ -156,7 +161,7 @@ class VoiceCommandService {
       final deleteMatch = deleteRegex.firstMatch(text);
       if (deleteMatch != null) {
         String rawNumber = deleteMatch.group(3)!;
-        print("DELETE MATCH FOUND: rawNumber='$rawNumber'");
+        debugPrint("DELETE MATCH FOUND: rawNumber='$rawNumber'");
         int? index = int.tryParse(rawNumber);
 
         if (index == null) {
@@ -188,7 +193,7 @@ class VoiceCommandService {
       final match = selectionRegex.firstMatch(text);
       if (match != null) {
         String rawNumber = match.group(2)!;
-        print("MATCH FOUND: rawNumber='$rawNumber'");
+        debugPrint("MATCH FOUND: rawNumber='$rawNumber'");
         int? index = int.tryParse(rawNumber); // Try parsing digit
 
         if (index == null) {
@@ -208,13 +213,13 @@ class VoiceCommandService {
           index = numberMap[rawNumber];
         }
 
-        print("PARSED INDEX: $index");
+        debugPrint("PARSED INDEX: $index");
 
         if (index != null) {
           return CommandResult(VoiceAction.openPaper, payload: index);
         }
       } else {
-        print("NO MATCH for regex in Saved Papers");
+        debugPrint("NO MATCH for regex in Saved Papers");
       }
     }
 
@@ -322,7 +327,7 @@ class VoiceCommandService {
       return CommandResult(VoiceAction.appendAnswer);
     }
     if (text.contains("write the answer") || text.contains("write answer")) {
-       return CommandResult(VoiceAction.appendAnswer);
+      return CommandResult(VoiceAction.appendAnswer);
     }
     if (text.contains("overwrite") || text.contains("replace answer")) {
       return CommandResult(VoiceAction.overwriteAnswer);
@@ -358,22 +363,22 @@ class VoiceCommandService {
   Future<void> performGlobalNavigation(CommandResult result) async {
     // Kiosk Mode Security Check
     if (KioskService().isKioskActive) {
-       // Allowed actions in Kiosk Mode (if any) could be checked here.
-       // Generally, we want to BLOCK leaving the screen.
-       bool isRestricted = 
+      // Allowed actions in Kiosk Mode (if any) could be checked here.
+      // Generally, we want to BLOCK leaving the screen.
+      bool isRestricted =
           result.action == VoiceAction.goToHome ||
           result.action == VoiceAction.goToSettings ||
           result.action == VoiceAction.goToSavedPapers ||
-          result.action == VoiceAction.goToTakeExam || 
+          result.action == VoiceAction.goToTakeExam ||
           result.action == VoiceAction.goToReadPDF; // Add others if needed
 
-       if (isRestricted) {
-         tts.speak("Exam execution in progress. Navigation is locked.");
-         return;
-       }
+      if (isRestricted) {
+        tts.speak("Exam execution in progress. Navigation is locked.");
+        return;
+      }
     }
 
-    print("Performing navigation for: ${result.action}");
+    debugPrint("VoiceCommandService - Global Navigation: ${result.action}");
     switch (result.action) {
       case VoiceAction.goBack:
         final canPop = await navigatorKey.currentState?.maybePop() ?? false;
@@ -461,7 +466,7 @@ class VoiceCommandService {
         tts.speak("Paper $targetIndex not found.");
       }
     } catch (e) {
-      print("Error opening paper via voice: $e");
+      debugPrint("Error opening paper via voice: $e");
       tts.speak("Could not open paper.");
     }
   }
@@ -489,13 +494,15 @@ class VoiceCommandService {
                 tts.speak(
                   "Gemini API Key missing. Please set it in preferences.",
                 );
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      "Gemini API Key missing. Please set in Preferences.",
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        "Gemini API Key missing. Please set in Preferences.",
+                      ),
                     ),
-                  ),
-                );
+                  );
+                }
               }
             },
             child: const Text("Use Gemini AI"),
@@ -527,7 +534,7 @@ class VoiceCommandService {
     } else {
       tts.speak("Gemini API Key missing. Please set it in preferences.");
       final context = navigatorKey.currentContext;
-      if (context != null) {
+      if (context != null && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text("Gemini API Key missing. Please set in Preferences."),
@@ -545,12 +552,102 @@ class VoiceCommandService {
     final context = navigatorKey.currentContext;
     if (context == null) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Processing with Gemini AI...")),
-    );
+    // Cancellation flag
+    bool isCancelled = false;
+
+    if (context.mounted) {
+      // Show blocking progress dialog with Cancel button
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: const Text("Processing Paper"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              const Text("Asking Gemini to analyze..."),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                isCancelled = true;
+                Navigator.pop(ctx); // Close dialog
+              },
+              child: const Text("Cancel"),
+            ),
+          ],
+        ),
+      );
+    } else {
+      return;
+    }
 
     try {
+      // We pass the cancellation check inside? No, Gemini service is future-based.
+      // We wait for it, then check flag. Ideally we could cancel the request,
+      // but standard http/dio futures are hard to cancel without CancelToken.
+      // For now, we just ignore the result if cancelled.
+
       final doc = await _geminiService.processImage(image.path, apiKey);
+
+      // Close the Progress Dialog if it's still open (and not cancelled via button which closes it)
+      // Actually, if we are here, the dialog is still open unless cancelled.
+      if (!isCancelled) {
+        if (context.mounted) Navigator.pop(context); // Close Progress Dialog
+      } else {
+        // Was cancelled, just return
+        return;
+      }
+
+      if (isCancelled || !context.mounted) return;
+
+      // Ask for Rename
+      String? paperName = await showDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) {
+          final TextEditingController nameController = TextEditingController();
+          return AlertDialog(
+            title: const Text("Name this Paper"),
+            content: TextField(
+              controller: nameController,
+              autofocus: true,
+              decoration: const InputDecoration(
+                hintText: "e.g. Physics Midterm",
+                labelText: "Paper Name",
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, null), // Skip/Default
+                child: const Text("Skip"),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  if (nameController.text.trim().isNotEmpty) {
+                    Navigator.pop(ctx, nameController.text.trim());
+                  }
+                },
+                child: const Text("Save"),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (paperName != null && paperName.isNotEmpty) {
+        doc.name = paperName;
+      } else {
+        doc.name =
+            "Scanned Doc ${DateTime.now().hour}:${DateTime.now().minute}";
+      }
+
+      // Auto-save the document
+      await _storageService.saveDocument(doc);
+      tts.speak("Saved as ${doc.name}");
 
       navigatorKey.currentState?.push(
         MaterialPageRoute(
@@ -563,9 +660,14 @@ class VoiceCommandService {
         ),
       );
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
-      );
+      if (!isCancelled && context.mounted) {
+        Navigator.pop(context); // Close dialog on error
+      }
+      if (!isCancelled && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
+        );
+      }
     }
   }
 
@@ -605,7 +707,7 @@ class VoiceCommandService {
         tts.speak("No file selected.");
       }
     } catch (e) {
-      print("Error picking PDF: $e");
+      debugPrint("Error picking PDF: $e");
       tts.speak("Sorry, I couldn't open the file picker.");
     }
   }

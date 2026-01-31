@@ -72,18 +72,18 @@ class _AnimatedButtonState extends State<AnimatedButton>
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    buttonColor.withOpacity(0.8),
-                    buttonColor.withOpacity(0.5),
+                    buttonColor.withValues(alpha: 0.8),
+                    buttonColor.withValues(alpha: 0.5),
                   ],
                 ),
                 borderRadius: BorderRadius.circular(22),
                 border: Border.all(
-                  color: Colors.white.withOpacity(0.2),
+                  color: Colors.white.withValues(alpha: 0.2),
                   width: 1.5,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: buttonColor.withOpacity(0.3),
+                    color: buttonColor.withValues(alpha: 0.3),
                     blurRadius: 16,
                     offset: const Offset(0, 8),
                   ),
@@ -96,7 +96,7 @@ class _AnimatedButtonState extends State<AnimatedButton>
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
+                        color: Colors.white.withValues(alpha: 0.2),
                         shape: BoxShape.circle,
                       ),
                       child: Icon(widget.icon, color: Colors.white, size: 32),

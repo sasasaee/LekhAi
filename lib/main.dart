@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'dart:ui';
 import 'theme/app_theme.dart';
 import 'dart:async';
 import 'package:file_picker/file_picker.dart';
@@ -18,6 +17,7 @@ import 'questions_screen.dart';
 import 'pdf_viewer_screen.dart';
 import 'start_page.dart'; // Imported StartPage
 
+// import 'dart:ui';
 // import 'package:shared_preferences/shared_preferences.dart';
 // import 'package:image_picker/image_picker.dart';
 // import 'services/gemini_question_service.dart';
@@ -537,6 +537,32 @@ class _HomeScreenState extends State<HomeScreen>
                           color: const Color(0xFFF43F5E), // Rose
                           delay: 700,
                           onTap: _openPdf,
+                        ),
+                        const SizedBox(height: 20),
+                        _DashboardCard(
+                          icon: Icons.library_books_rounded,
+                          label: "Saved Papers",
+                          subLabel: "Review Exams",
+                          color: const Color(0xFF10B981), // Emerald
+                          delay: 800,
+                          onTap: () async {
+                            widget.ttsService.speak("Opening saved papers.");
+                            _shouldListen = false;
+                            await _sttService.stopListening();
+                            if (!mounted) return;
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => QuestionsScreen(
+                                  ttsService: widget.ttsService,
+                                  voiceService: widget.voiceService,
+                                ),
+                              ),
+                            ).then((_) {
+                              _shouldListen = true;
+                              _initVoiceCommandListener();
+                            });
+                          },
                         ),
                         const SizedBox(height: 20),
                         _DashboardCard(

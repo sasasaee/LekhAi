@@ -52,7 +52,7 @@ class _OcrScreenState extends State<OcrScreen> {
   final ImagePicker _picker = ImagePicker();
 
   final SttService _sttService = SttService();
-  bool _isListening = false;
+  final bool _isListening = false;
 
   bool _isProcessing = false;
   File? _imageFile;
@@ -82,7 +82,7 @@ class _OcrScreenState extends State<OcrScreen> {
           });
         }
       },
-      onError: (error) => print("OCR Screen STT Error: $error"),
+      onError: (error) => debugPrint("OCR Screen STT Error: $error"),
     );
 
     if (available) {
@@ -208,7 +208,6 @@ class _OcrScreenState extends State<OcrScreen> {
   }
 
   Future<void> _saveParsed() async {
-    AccessibilityService().trigger(AccessibilityEvent.loading);
     final doc = _doc;
 
     if (doc == null) {
@@ -216,10 +215,59 @@ class _OcrScreenState extends State<OcrScreen> {
       return;
     }
 
+    // Prompt for Name
+    String? paperName = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        final TextEditingController nameController = TextEditingController();
+        if (doc.header.isNotEmpty) {
+          // Try to guess name from header?
+          // nameController.text = doc.header.first;
+        }
+
+        return AlertDialog(
+          title: const Text("Name this Paper"),
+          content: TextField(
+            controller: nameController,
+            autofocus: true,
+            decoration: const InputDecoration(
+              hintText: "e.g. Math Homework",
+              labelText: "Paper Name",
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, null), // Skip/Default
+              child: const Text("Skip"),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (nameController.text.trim().isNotEmpty) {
+                  Navigator.pop(ctx, nameController.text.trim());
+                }
+              },
+              child: const Text("Save"),
+            ),
+          ],
+        );
+      },
+    );
+
+    AccessibilityService().trigger(AccessibilityEvent.loading);
+
+    if (paperName != null && paperName.isNotEmpty) {
+      doc.name = paperName;
+    } else {
+      // Only set default if null (it might be set by parser logic if we had it)
+      doc.name ??=
+          "Scanned Doc ${DateTime.now().hour}:${DateTime.now().minute}";
+    }
+
     try {
       await _storageService.saveDocument(doc);
       AccessibilityService().trigger(AccessibilityEvent.success);
-      widget.ttsService.speak("Saved successfully");
+      widget.ttsService.speak("Saved successfully as ${doc.name}.");
 
       if (!mounted) return;
 
@@ -310,9 +358,9 @@ class _OcrScreenState extends State<OcrScreen> {
         leading: Container(
           margin: const EdgeInsets.only(left: 16, top: 8, bottom: 8),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.1),
+            color: Colors.white.withValues(alpha: 0.1),
             shape: BoxShape.circle,
-            border: Border.all(color: Colors.white.withOpacity(0.1)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
           ),
           child: IconButton(
             icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
@@ -327,7 +375,7 @@ class _OcrScreenState extends State<OcrScreen> {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              Theme.of(context).cardTheme.color!.withOpacity(0.8),
+              Theme.of(context).cardTheme.color!.withValues(alpha: 0.8),
               Theme.of(context).scaffoldBackgroundColor,
               Colors.black,
             ],
@@ -371,9 +419,11 @@ class _OcrScreenState extends State<OcrScreen> {
                     height: 300,
                     margin: const EdgeInsets.only(top: 32),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.03),
+                      color: Colors.white.withValues(alpha: 0.03),
                       borderRadius: BorderRadius.circular(24),
-                      border: Border.all(color: Colors.white.withOpacity(0.05)),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.05),
+                      ),
                     ),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -383,7 +433,7 @@ class _OcrScreenState extends State<OcrScreen> {
                               decoration: BoxDecoration(
                                 color: Theme.of(
                                   context,
-                                ).primaryColor.withOpacity(0.1),
+                                ).primaryColor.withValues(alpha: 0.1),
                                 shape: BoxShape.circle,
                               ),
                               child: Icon(
@@ -391,7 +441,7 @@ class _OcrScreenState extends State<OcrScreen> {
                                 size: 64,
                                 color: Theme.of(
                                   context,
-                                ).primaryColor.withOpacity(0.8),
+                                ).primaryColor.withValues(alpha: 0.8),
                               ),
                             )
                             .animate(
@@ -429,7 +479,9 @@ class _OcrScreenState extends State<OcrScreen> {
                   Container(
                     height: 240,
                     decoration: BoxDecoration(
-                      border: Border.all(color: Colors.white.withOpacity(0.2)),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.2),
+                      ),
                       borderRadius: BorderRadius.circular(16),
                       color: Colors.black12,
                     ),
@@ -501,7 +553,7 @@ class _OcrScreenState extends State<OcrScreen> {
                       elevation: 8,
                       shadowColor: Theme.of(
                         context,
-                      ).primaryColor.withOpacity(0.5),
+                      ).primaryColor.withValues(alpha: 0.5),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
                       ),
@@ -571,11 +623,14 @@ class _GlassButton extends StatelessWidget {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(20),
           gradient: LinearGradient(
-            colors: [color.withOpacity(0.2), color.withOpacity(0.1)],
+            colors: [
+              color.withValues(alpha: 0.2),
+              color.withValues(alpha: 0.1),
+            ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
-          border: Border.all(color: color.withOpacity(0.3)),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
         ),
         child: Column(
           children: [

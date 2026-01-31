@@ -19,7 +19,7 @@ class SttService with WidgetsBindingObserver {
   SttIntendedState get _intendedState => _intendedStateValue;
   set _intendedState(SttIntendedState value) {
     if (_intendedStateValue != value) {
-      print(
+      debugPrint(
         "STT: State changing $_intendedStateValue -> $value. Stack: ${StackTrace.current}",
       );
       _intendedStateValue = value;
@@ -76,12 +76,12 @@ class SttService with WidgetsBindingObserver {
         _ttsSubscription = (tts as dynamic).speakingStream.listen((
           bool isSpeaking,
         ) {
-          print("STT: TTS speaking=$isSpeaking");
+          debugPrint("STT: TTS speaking=$isSpeaking");
 
           if (isSpeaking) {
             _pausedByTts = true;
             if (_speech.isListening) {
-              print("STT: Pausing due to TTS");
+              debugPrint("STT: Pausing due to TTS");
               _speech.stop();
             }
           } else {
@@ -93,7 +93,7 @@ class SttService with WidgetsBindingObserver {
           }
         });
       } catch (e) {
-        print("STT: Failed to bind TTS stream: $e");
+        debugPrint("STT: Failed to bind TTS stream: $e");
       }
     }
 
@@ -197,7 +197,7 @@ class SttService with WidgetsBindingObserver {
   Future<void> _evaluateAndRun() async {
     // 1. Mutex Check: Don't run if already running
     if (_isProcessActive) {
-      print("STT: Loop skipped - Process is active.");
+      debugPrint("STT: Loop skipped - Process is active.");
       return;
     }
     _isProcessActive = true;
@@ -205,13 +205,13 @@ class SttService with WidgetsBindingObserver {
     try {
       // ---------- STATE CHECK ----------
       if (_intendedState != SttIntendedState.listening) {
-        print("STT: Loop skipped - Intended state is $_intendedState.");
+        debugPrint("STT: Loop skipped - Intended state is $_intendedState.");
         return;
       }
 
       if (_pausedByTts || _pausedByLifecycle) {
         // If paused by TTS or App Lifecycle (background), verify again later
-        print(
+        debugPrint(
           "STT: Loop skipped - Paused by TTS($_pausedByTts) or Lifecycle($_pausedByLifecycle).",
         );
         _kickLoop(delay: 500);
@@ -220,22 +220,22 @@ class SttService with WidgetsBindingObserver {
 
       // Check active status right before listening
       if (_speech.isListening) {
-        print("STT: Loop skipped - Already listening.");
+        debugPrint("STT: Loop skipped - Already listening.");
         return;
       }
       if (!_isAvailable) {
-        print("STT: Loop skipped - Not available.");
+        debugPrint("STT: Loop skipped - Not available.");
         return;
       }
 
       if (!_voiceEnabled) {
-        print("STT: Voice disabled via settings");
+        debugPrint("STT: Voice disabled via settings");
         _intendedState = SttIntendedState.stopped;
         return;
       }
 
       // ---------- START ENGINE ----------
-      print("STT: Starting engine...");
+      debugPrint("STT: Starting engine...");
       _didErrorOccur = false;
 
       // CRITICAL: Always forcing a stop ensures native layer is clean.
@@ -248,20 +248,20 @@ class SttService with WidgetsBindingObserver {
         listenFor: const Duration(seconds: 30),
         pauseFor: const Duration(seconds: 5),
         partialResults: true,
-        cancelOnError: false,
+        listenOptions: stt.SpeechListenOptions(cancelOnError: false),
         onResult: (SpeechRecognitionResult result) {
-          print(">>> STT HEARD: '${result.recognizedWords}'");
+          debugPrint(">>> STT HEARD: '${result.recognizedWords}'");
           if (_intendedState != SttIntendedState.listening) return;
           _savedOnResult?.call(result.recognizedWords);
         },
       );
     } catch (e) {
-      print("STT: Engine start exception: $e");
+      debugPrint("STT: Engine start exception: $e");
       _didErrorOccur = true;
 
       if (e.toString().contains('error_busy') ||
           e.toString().contains('busy')) {
-        print("STT: Busy -> Force canceling and waiting.");
+        debugPrint("STT: Busy -> Force canceling and waiting.");
         _speech.cancel(); // Force reset
         _kickLoop(delay: 2000);
       } else {
@@ -289,7 +289,7 @@ class SttService with WidgetsBindingObserver {
       if (!_didErrorOccur) {
         _kickLoop(delay: 100);
       } else {
-        print(
+        debugPrint(
           "STT: Status 'done' received after error. Respecting error backoff.",
         );
       }
@@ -309,7 +309,7 @@ class SttService with WidgetsBindingObserver {
         !msg.contains('client')) {
       onError?.call(error.errorMsg);
     } else {
-      print("STT: Suppressed error '$msg'");
+      debugPrint("STT: Suppressed error '$msg'");
     }
 
     // RESTART STRATEGY
@@ -318,7 +318,9 @@ class SttService with WidgetsBindingObserver {
     if (msg.contains('busy') || msg.contains('client')) {
       // Critical error: The engine might be stuck.
       // 'stop()' might not be enough. Use 'cancel()' to force native teardown.
-      print("STT: Critical error '$msg' -> performing hard reset (cancel).");
+      debugPrint(
+        "STT: Critical error '$msg' -> performing hard reset (cancel).",
+      );
       _speech.cancel();
       retryDelay = 2000;
     } else if (msg.contains('no_match') || msg.contains('speech_timeout')) {
@@ -356,7 +358,7 @@ class SttService with WidgetsBindingObserver {
           !_isProcessActive && // Don't interfere if we are currently starting
           !_pausedByTts &&
           !_pausedByLifecycle) {
-        print("STT Watchdog: Service seems dead. Kicking loop...");
+        debugPrint("STT Watchdog: Service seems dead. Kicking loop...");
         _kickLoop(delay: 0);
       }
     });

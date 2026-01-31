@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart';
 import 'package:record/record.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:io';
@@ -23,24 +24,24 @@ class AudioRecorderService {
         // Ensure directory exists
         final file = File(path);
         if (!await file.parent.exists()) {
-           await file.parent.create(recursive: true);
+          await file.parent.create(recursive: true);
         }
 
         // Start recording to file
         await _audioRecorder.start(
           const RecordConfig(
-             encoder: AudioEncoder.aacLc, // Good balance of quality/size
-             bitRate: 128000,
-             sampleRate: 44100,
-          ), 
-          path: path
+            encoder: AudioEncoder.aacLc, // Good balance of quality/size
+            bitRate: 128000,
+            sampleRate: 44100,
+          ),
+          path: path,
         );
         _isRecording = true;
       } else {
         throw Exception("Microphone permission not granted");
       }
     } catch (e) {
-      print("Error starting record: $e");
+      debugPrint("Error starting record: $e");
       rethrow;
     }
   }
@@ -51,8 +52,8 @@ class AudioRecorderService {
       _isRecording = false;
       return path;
     } catch (e) {
-       print("Error stopping record: $e");
-       return null;
+      debugPrint("Error stopping record: $e");
+      return null;
     }
   }
 
