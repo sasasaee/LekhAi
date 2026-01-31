@@ -88,7 +88,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
     _totalExamSeconds = widget.examDurationSeconds ?? 3600;
     _remainingSeconds = _totalExamSeconds;
     _document = widget.document;
-    
+
     // Init Kiosk Service Observer
     KioskService().init();
 
@@ -111,8 +111,10 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
     });
 
     // Audio Prompt
-    widget.ttsService.speak("Exam will start in locked mode. Say Start to confirm. Or Cancel to exit.");
-    
+    widget.ttsService.speak(
+      "Exam will start in locked mode. Say Start to confirm. Or Cancel to exit.",
+    );
+
     // Visual Dialog
     showDialog(
       context: context,
@@ -128,11 +130,11 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
             AccessibleTextButton(
               onPressed: () {
                 Navigator.pop(ctx); // Close dialog
-                 _handleCancelConfirmation();
+                _handleCancelConfirmation();
               },
               child: const Text("Cancel"),
             ),
-             AccessibleElevatedButton(
+            AccessibleElevatedButton(
               onPressed: () {
                 Navigator.pop(ctx); // Close dialog
                 _handleConfirmExamStart();
@@ -146,23 +148,23 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
   }
 
   void _handleConfirmExamStart() async {
-     setState(() {
-       _isWaitingForConfirmation = false;
-       _kioskEnabled = true;
-     });
-     
-     // 1. Enable Kiosk Mode
-     await KioskService().enableKioskMode();
-     
-     // 2. Start Countdown
-     _startCountdownSequence();
+    setState(() {
+      _isWaitingForConfirmation = false;
+      _kioskEnabled = true;
+    });
+
+    // 1. Enable Kiosk Mode
+    await KioskService().enableKioskMode();
+
+    // 2. Start Countdown
+    _startCountdownSequence();
   }
 
   void _handleCancelConfirmation() {
-     setState(() {
-       _isWaitingForConfirmation = false;
-     });
-     Navigator.pop(context); // Go back to scan/list screen
+    setState(() {
+      _isWaitingForConfirmation = false;
+    });
+    Navigator.pop(context); // Go back to scan/list screen
   }
 
   void _startCountdownSequence() {
@@ -193,33 +195,33 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
   }
 
   Future<void> _initExamSession() async {
-      final prefs = await SharedPreferences.getInstance();
-      final now = DateTime.now().millisecondsSinceEpoch;
-      
-      // Check for existing session (Crash Recovery)
-      // For this simplified version, we'll overwrite if it's a "new" entry, 
-      // but in a real app check IDs. For now, assume new exam or simple restart.
-      // Let's just SAVE the start time.
-      await prefs.setInt('exam_start_timestamp', now);
-      await prefs.setInt('exam_total_duration', _totalExamSeconds);
+    final prefs = await SharedPreferences.getInstance();
+    final now = DateTime.now().millisecondsSinceEpoch;
 
-      setState(() {
-         _examStartTimestamp = now;
-      });
+    // Check for existing session (Crash Recovery)
+    // For this simplified version, we'll overwrite if it's a "new" entry,
+    // but in a real app check IDs. For now, assume new exam or simple restart.
+    // Let's just SAVE the start time.
+    await prefs.setInt('exam_start_timestamp', now);
+    await prefs.setInt('exam_total_duration', _totalExamSeconds);
 
-      _startExamTimer();
-      
-      int minutes = _remainingSeconds ~/ 60;
-      widget.ttsService.speak("Exam started. You have $minutes minutes.");
+    setState(() {
+      _examStartTimestamp = now;
+    });
+
+    _startExamTimer();
+
+    int minutes = _remainingSeconds ~/ 60;
+    widget.ttsService.speak("Exam started. You have $minutes minutes.");
   }
 
   @override
   void dispose() {
     _examTimer?.cancel();
     _sttService.stopListening();
-    if (_kioskEnabled) {
-      KioskService().disableKioskMode();
-    }
+    // if (_kioskEnabled) {
+    KioskService().disableKioskMode();
+    // }
     KioskService().dispose();
     super.dispose();
   }
@@ -229,14 +231,14 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       if (!mounted) return;
 
       int remaining = _remainingSeconds;
-      
+
       // Fast Drift Correction using cached timestamp
       if (_examStartTimestamp != null) {
-         final now = DateTime.now().millisecondsSinceEpoch;
-         final elapsedSecs = (now - _examStartTimestamp!) ~/ 1000;
-         remaining = _totalExamSeconds - elapsedSecs;
+        final now = DateTime.now().millisecondsSinceEpoch;
+        final elapsedSecs = (now - _examStartTimestamp!) ~/ 1000;
+        remaining = _totalExamSeconds - elapsedSecs;
       } else {
-         remaining--;
+        remaining--;
       }
 
       setState(() {
@@ -244,58 +246,68 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       });
 
       if (_remainingSeconds > 0) {
-          // Dynamic Alerts
-          double progress = _remainingSeconds / _totalExamSeconds;
-          
-          // Approx 50% left
-          if (progress <= 0.50 && !_alert50Triggered) {
-             _alert50Triggered = true;
-             _speakTimeRemaining("Halftime.");
-          }
+        // Dynamic Alerts
+        double progress = _remainingSeconds / _totalExamSeconds;
 
-          // Approx 25% left
-          if (progress <= 0.25 && !_alert25Triggered) {
-             _alert25Triggered = true;
-             _speakTimeRemaining("Attention.");
-          }
-           // Approx 10% left
-          if (progress <= 0.10 && !_alert10Triggered) {
-             _alert10Triggered = true;
-             _speakTimeRemaining("Warning.");
-          }
-          
-           // Critical 1 minute alert
-          if (_remainingSeconds <= 60 && !_alert1MinTriggered && _totalExamSeconds > 120) {
-             _alert1MinTriggered = true;
-             widget.ttsService.speak("1 minute remaining.");
-             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("1 Minute Remaining")));
-          }
+        // Approx 50% left
+        if (progress <= 0.50 && !_alert50Triggered) {
+          _alert50Triggered = true;
+          _speakTimeRemaining("Halftime.");
+        }
 
+        // Approx 25% left
+        if (progress <= 0.25 && !_alert25Triggered) {
+          _alert25Triggered = true;
+          _speakTimeRemaining("Attention.");
+        }
+        // Approx 10% left
+        if (progress <= 0.10 && !_alert10Triggered) {
+          _alert10Triggered = true;
+          _speakTimeRemaining("Warning.");
+        }
+
+        // Critical 1 minute alert
+        if (_remainingSeconds <= 60 &&
+            !_alert1MinTriggered &&
+            _totalExamSeconds > 120) {
+          _alert1MinTriggered = true;
+          widget.ttsService.speak("1 minute remaining.");
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text("1 Minute Remaining")));
+        }
       } else {
-          // Time Up
-          timer.cancel();
-          widget.ttsService.speak("Time is up. Exam finished. Submitting your answers.");
-          KioskService().disableKioskMode();
-          // Force exam completion flow (PDF generation)
-          if (mounted) _finalizeExam(); 
+        // Time Up
+        timer.cancel();
+        widget.ttsService.speak(
+          "Time is up. Exam finished. Submitting your answers.",
+        );
+        KioskService().disableKioskMode();
+        setState(() {
+          _kioskEnabled = false;
+        });
+        // Force exam completion flow (PDF generation)
+        if (mounted) _finalizeExam();
       }
     });
   }
 
   void _speakTimeRemaining(String prefix) {
-      int mins = _remainingSeconds ~/ 60;
-      String timeStr = mins > 0 ? "$mins minutes remaining." : "$_remainingSeconds seconds remaining.";
-      widget.ttsService.speak("$prefix $timeStr");
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("$prefix $timeStr"),
-            duration: const Duration(seconds: 3),
-            backgroundColor: Colors.orange,
-          )
-        );
-      }
+    int mins = _remainingSeconds ~/ 60;
+    String timeStr = mins > 0
+        ? "$mins minutes remaining."
+        : "$_remainingSeconds seconds remaining.";
+    widget.ttsService.speak("$prefix $timeStr");
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("$prefix $timeStr"),
+          duration: const Duration(seconds: 3),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
   }
 
   String _formatTime(int totalSeconds) {
@@ -332,10 +344,12 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       onResult: (text) {
         final result = widget.voiceService.parse(
           text,
-          context: _isWaitingForConfirmation ? VoiceContext.confirmExamStart : VoiceContext.global,
+          context: _isWaitingForConfirmation
+              ? VoiceContext.confirmExamStart
+              : VoiceContext.global,
         );
         if (result.action != VoiceAction.unknown) {
-           _executeVoiceCommand(result);
+          _executeVoiceCommand(result);
         }
       },
     );
@@ -345,16 +359,16 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
     switch (result.action) {
       case VoiceAction.confirmExamStart:
         if (_isWaitingForConfirmation) {
-           // If dialog is open, pop it first (we know it's top of stack)
-           if (Navigator.canPop(context)) Navigator.pop(context);
-           _handleConfirmExamStart();
+          // If dialog is open, pop it first (we know it's top of stack)
+          if (Navigator.canPop(context)) Navigator.pop(context);
+          _handleConfirmExamStart();
         }
         break;
-        
+
       case VoiceAction.cancelExamStart:
         if (_isWaitingForConfirmation) {
-           if (Navigator.canPop(context)) Navigator.pop(context);
-           _handleCancelConfirmation();
+          if (Navigator.canPop(context)) Navigator.pop(context);
+          _handleCancelConfirmation();
         }
         break;
 
@@ -368,7 +382,9 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
 
       case VoiceAction.goBack:
         if (_kioskEnabled) {
-          widget.ttsService.speak("Exam is locked. You cannot go back until you submit.");
+          widget.ttsService.speak(
+            "Exam is locked. You cannot go back until you submit.",
+          );
           return;
         }
         await widget.ttsService.speak("Going back to home.");
@@ -377,15 +393,18 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
 
       case VoiceAction.submitExam: // Use this as "Save" for this screen
         if (_kioskEnabled) {
-             // Handle Exam Submission specifically
-             // For now, simpler flow: Just save and unlock
-             await widget.ttsService.speak("Submitting exam.");
-             await KioskService().disableKioskMode();
-             _savePaper(context); // Then normal save
-             if (mounted) Navigator.pop(context); // And exit
+          // Handle Exam Submission specifically
+          // For now, simpler flow: Just save and unlock
+          await widget.ttsService.speak("Submitting exam.");
+          await KioskService().disableKioskMode();
+          setState(() {
+            _kioskEnabled = false;
+          });
+          _savePaper(context); // Then normal save
+          if (mounted) Navigator.pop(context); // And exit
         } else {
-             await widget.ttsService.speak("Saving paper progress.");
-             _savePaper(context);
+          await widget.ttsService.speak("Saving paper progress.");
+          _savePaper(context);
         }
         break;
 
@@ -482,32 +501,34 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       return PopScope(
         canPop: false,
         child: Scaffold(
-        backgroundColor: Colors.deepPurple,
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                "Starting Exam",
-                style: GoogleFonts.outfit(
-                  fontSize: 24,
-                  color: Colors.white70,
+          backgroundColor: Colors.deepPurple,
+          body: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  "Starting Exam",
+                  style: GoogleFonts.outfit(
+                    fontSize: 24,
+                    color: Colors.white70,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 24),
-              Text(
-                "$_countdownValue",
-                style: GoogleFonts.outfit(
-                  fontSize: 120,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ).animate(key: ValueKey(_countdownValue)).scale(duration: 300.ms, curve: Curves.easeOutBack),
-            ],
+                const SizedBox(height: 24),
+                Text(
+                      "$_countdownValue",
+                      style: GoogleFonts.outfit(
+                        fontSize: 120,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    )
+                    .animate(key: ValueKey(_countdownValue))
+                    .scale(duration: 300.ms, curve: Curves.easeOutBack),
+              ],
+            ),
           ),
         ),
-      ),
-    );
+      );
     }
 
     final items = <_ListItem>[];
@@ -541,328 +562,330 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
         }
       },
       child: Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: Text(
-          _document.name != null && _document.name!.isNotEmpty
-              ? _document.name!
-              : 'Paper $dateStr',
-          style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
-        ),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: true,
-        leading: Container(
-          margin: const EdgeInsets.only(left: 16, top: 8, bottom: 8),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.1),
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white.withOpacity(0.1)),
+        extendBodyBehindAppBar: true,
+        appBar: AppBar(
+          title: Text(
+            _document.name != null && _document.name!.isNotEmpty
+                ? _document.name!
+                : 'Paper $dateStr',
+            style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
           ),
-          child: IconButton(
-            icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-            tooltip: "Back",
-            onPressed: () {
-              if (_kioskEnabled) {
-                widget.ttsService.speak("Exam is locked. Finish the exam to exit.");
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Exam Locked")),
-                );
-              } else {
-                Navigator.pop(context);
-              }
-            },
-          ),
-        ),
-        actions: [
-          if (!widget.examMode)
-            Container(
-              margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.1),
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white.withOpacity(0.1)),
-              ),
-              child: AccessibleIconButton(
-                icon: const Icon(Icons.save_rounded, color: Colors.white),
-                tooltip: "Save Paper",
-                onPressed: () => _savePaper(context),
-              ),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          centerTitle: true,
+          leading: Container(
+            margin: const EdgeInsets.only(left: 16, top: 8, bottom: 8),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.1),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white.withOpacity(0.1)),
             ),
-        ],
-      ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Theme.of(context).cardTheme.color!.withOpacity(0.8),
-              Theme.of(context).scaffoldBackgroundColor,
-              Colors.black,
-            ],
+            child: IconButton(
+              icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+              tooltip: "Back",
+              onPressed: () {
+                if (_kioskEnabled) {
+                  widget.ttsService.speak(
+                    "Exam is locked. Finish the exam to exit.",
+                  );
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(const SnackBar(content: Text("Exam Locked")));
+                } else {
+                  Navigator.pop(context);
+                }
+              },
+            ),
           ),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              // --- 1. INSERT THE TIMER HERE ---
-              if (widget.examMode)
-                Container(
-                  width: double.infinity,
-                  margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.deepPurple,
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.deepPurple.withOpacity(0.5),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    children: [
-                      Text(
-                        _formatTime(_remainingSeconds), // 60:00 countdown
-                        style: GoogleFonts.outfit(
-                          fontSize: 48,
-                          fontWeight: FontWeight.bold,
-                          color: _remainingSeconds < 900
-                              ? Colors.redAccent
-                              : Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        "Student: ${widget.studentName ?? 'Unknown'}",
-                        style: GoogleFonts.outfit(
-                          fontSize: 18,
-                          color: Colors.white70,
-                        ),
-                      ),
-                      Text(
-                        "ID: ${widget.studentId ?? '---'}",
-                        style: GoogleFonts.outfit(
-                          fontSize: 14,
-                          color: Colors.white38,
-                        ),
-                      ),
-                    ],
-                  ),
+          actions: [
+            if (!widget.examMode)
+              Container(
+                margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white.withOpacity(0.1)),
                 ),
-
-              // --- 2. YOUR EXISTING LIST GOES HERE ---
-              Expanded(
-                child: ListView.builder(
-                  itemCount: items.length,
-                  itemBuilder: (context, index) {
-                    // COPY AND PASTE YOUR EXISTING ITEM BUILDER CODE HERE
-                    // (The exact same code you already have for _HeaderItem, _SectionItem, _QuestionItem)
-
-                    final item = items[index];
-
-                    if (item is _HeaderItem) {
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
+                child: AccessibleIconButton(
+                  icon: const Icon(Icons.save_rounded, color: Colors.white),
+                  tooltip: "Save Paper",
+                  onPressed: () => _savePaper(context),
+                ),
+              ),
+          ],
+        ),
+        body: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Theme.of(context).cardTheme.color!.withOpacity(0.8),
+                Theme.of(context).scaffoldBackgroundColor,
+                Colors.black,
+              ],
+            ),
+          ),
+          child: SafeArea(
+            child: Column(
+              children: [
+                // --- 1. INSERT THE TIMER HERE ---
+                if (widget.examMode)
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.deepPurple,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.deepPurple.withOpacity(0.5),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
                         ),
-                        child: Container(
-                          padding: const EdgeInsets.all(16),
+                      ],
+                    ),
+                    child: Column(
+                      children: [
+                        Text(
+                          _formatTime(_remainingSeconds), // 60:00 countdown
+                          style: GoogleFonts.outfit(
+                            fontSize: 48,
+                            fontWeight: FontWeight.bold,
+                            color: _remainingSeconds < 900
+                                ? Colors.redAccent
+                                : Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          "Student: ${widget.studentName ?? 'Unknown'}",
+                          style: GoogleFonts.outfit(
+                            fontSize: 18,
+                            color: Colors.white70,
+                          ),
+                        ),
+                        Text(
+                          "ID: ${widget.studentId ?? '---'}",
+                          style: GoogleFonts.outfit(
+                            fontSize: 14,
+                            color: Colors.white38,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                // --- 2. YOUR EXISTING LIST GOES HERE ---
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: items.length,
+                    itemBuilder: (context, index) {
+                      // COPY AND PASTE YOUR EXISTING ITEM BUILDER CODE HERE
+                      // (The exact same code you already have for _HeaderItem, _SectionItem, _QuestionItem)
+
+                      final item = items[index];
+
+                      if (item is _HeaderItem) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                          child: Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.05),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: Colors.white.withOpacity(0.1),
+                              ),
+                            ),
+                            child: Text(
+                              item.text,
+                              style: GoogleFonts.outfit(
+                                fontStyle: FontStyle.italic,
+                                color: Colors.white70,
+                              ),
+                            ),
+                          ),
+                        );
+                      } else if (item is _SectionItem) {
+                        return Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (item.title != null && item.title!.isNotEmpty)
+                                Text(
+                                  item.title!,
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              if (item.context != null &&
+                                  item.context!.isNotEmpty)
+                                Container(
+                                  margin: const EdgeInsets.only(top: 8),
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: Colors.amber.withOpacity(0.1),
+                                    border: Border.all(
+                                      color: Colors.amber.withOpacity(0.3),
+                                    ),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    item.context!,
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 15,
+                                      color: Colors.amber.shade100,
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        );
+                      } else if (item is _QuestionItem) {
+                        final q = item.question;
+                        final qTitle = q.number != null
+                            ? "Q${q.number}"
+                            : "Question";
+                        final marks = q.marks != null ? "(${q.marks})" : "";
+
+                        return Container(
+                          margin: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.05),
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(16),
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.white.withOpacity(0.08),
+                                Colors.white.withOpacity(0.03),
+                              ],
+                            ),
                             border: Border.all(
                               color: Colors.white.withOpacity(0.1),
                             ),
-                          ),
-                          child: Text(
-                            item.text,
-                            style: GoogleFonts.outfit(
-                              fontStyle: FontStyle.italic,
-                              color: Colors.white70,
-                            ),
-                          ),
-                        ),
-                      );
-                    } else if (item is _SectionItem) {
-                      return Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (item.title != null && item.title!.isNotEmpty)
-                              Text(
-                                item.title!,
-                                style: GoogleFonts.outfit(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black12,
+                                blurRadius: 8,
+                                offset: const Offset(0, 4),
                               ),
-                            if (item.context != null &&
-                                item.context!.isNotEmpty)
-                              Container(
-                                margin: const EdgeInsets.only(top: 8),
-                                padding: const EdgeInsets.all(16),
-                                decoration: BoxDecoration(
-                                  color: Colors.amber.withOpacity(0.1),
-                                  border: Border.all(
-                                    color: Colors.amber.withOpacity(0.3),
-                                  ),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Text(
-                                  item.context!,
-                                  style: GoogleFonts.outfit(
-                                    fontSize: 15,
-                                    color: Colors.amber.shade100,
-                                    height: 1.4,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      );
-                    } else if (item is _QuestionItem) {
-                      final q = item.question;
-                      final qTitle = q.number != null
-                          ? "Q${q.number}"
-                          : "Question";
-                      final marks = q.marks != null ? "(${q.marks})" : "";
-
-                      return Container(
-                        margin: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(16),
-                          gradient: LinearGradient(
-                            colors: [
-                              Colors.white.withOpacity(0.08),
-                              Colors.white.withOpacity(0.03),
                             ],
                           ),
-                          border: Border.all(
-                            color: Colors.white.withOpacity(0.1),
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black12,
-                              blurRadius: 8,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(16),
-                          child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-                            child: AccessibleListTile(
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 8,
-                              ),
-                              leading: Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: Theme.of(
-                                    context,
-                                  ).primaryColor.withOpacity(0.2),
-                                  shape: BoxShape.circle,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: BackdropFilter(
+                              filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+                              child: AccessibleListTile(
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
                                 ),
-                                child: Text(
-                                  q.number ?? "Q",
-                                  style: GoogleFonts.outfit(
-                                    fontWeight: FontWeight.bold,
-                                    color: Theme.of(context).primaryColor,
+                                leading: Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(
+                                      context,
+                                    ).primaryColor.withOpacity(0.2),
+                                    shape: BoxShape.circle,
                                   ),
-                                ),
-                              ),
-                              title: Text(
-                                "$qTitle $marks",
-                                style: GoogleFonts.outfit(
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              subtitle: Padding(
-                                padding: const EdgeInsets.only(top: 4),
-                                child: Text(
-                                  q.prompt + (q.body.isNotEmpty ? "..." : ""),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: GoogleFonts.outfit(
-                                    color: Colors.white70,
-                                  ),
-                                ),
-                              ),
-                              trailing: Icon(
-                                Icons.arrow_forward_ios_rounded,
-                                color: Colors.white24,
-                                size: 16,
-                              ),
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => SingleQuestionScreen(
-                                      question: q,
-                                      contextText: item.context,
-                                      ttsService: widget.ttsService,
-                                      voiceService: widget.voiceService,
-                                      accessibilityService:
-                                          widget.accessibilityService,
+                                  child: Text(
+                                    q.number ?? "Q",
+                                    style: GoogleFonts.outfit(
+                                      fontWeight: FontWeight.bold,
+                                      color: Theme.of(context).primaryColor,
                                     ),
                                   ),
-                                );
-                              },
+                                ),
+                                title: Text(
+                                  "$qTitle $marks",
+                                  style: GoogleFonts.outfit(
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                subtitle: Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text(
+                                    q.prompt + (q.body.isNotEmpty ? "..." : ""),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.outfit(
+                                      color: Colors.white70,
+                                    ),
+                                  ),
+                                ),
+                                trailing: Icon(
+                                  Icons.arrow_forward_ios_rounded,
+                                  color: Colors.white24,
+                                  size: 16,
+                                ),
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => SingleQuestionScreen(
+                                        question: q,
+                                        contextText: item.context,
+                                        ttsService: widget.ttsService,
+                                        voiceService: widget.voiceService,
+                                        accessibilityService:
+                                            widget.accessibilityService,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
                             ),
                           ),
-                        ),
-                      );
-                    }
-                    return const SizedBox.shrink();
-                  },
+                        );
+                      }
+                      return const SizedBox.shrink();
+                    },
+                  ),
                 ),
+              ],
+            ),
+          ),
+        ),
+        floatingActionButton: Container(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: LinearGradient(
+              colors: [
+                Theme.of(context).primaryColor,
+                Theme.of(context).primaryColorDark,
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Theme.of(context).primaryColor.withOpacity(0.4),
+                blurRadius: 12,
+                offset: const Offset(0, 6),
               ),
             ],
           ),
-        ),
-      ),
-      floatingActionButton: Container(
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: LinearGradient(
-            colors: [
-              Theme.of(context).primaryColor,
-              Theme.of(context).primaryColorDark,
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+          child: FloatingActionButton(
+            onPressed: () => _onAddPage(context),
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            child: const Icon(Icons.add_a_photo_outlined, color: Colors.white),
+            tooltip: 'Add Page',
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Theme.of(context).primaryColor.withOpacity(0.4),
-              blurRadius: 12,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: FloatingActionButton(
-          onPressed: () => _onAddPage(context),
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          child: const Icon(Icons.add_a_photo_outlined, color: Colors.white),
-          tooltip: 'Add Page',
         ),
       ),
-    ),
-  ); // Close PopScope
+    ); // Close PopScope
   }
 
   Future<void> _onAddPage(BuildContext context) async {
@@ -961,9 +984,9 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       // Re-saving document to ensure answers are persisted
       await _storageService.saveDocument(_document);
 
-       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Generating PDF Result...")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Generating PDF Result...")));
 
       final pdfFile = await PdfService().generateExamPdf(
         studentName: sName,
@@ -973,74 +996,75 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       );
 
       if (mounted) {
-         // Show specific dialog with View, Share, Save options
-         showDialog(
-           context: context,
-           barrierDismissible: false,
-           builder: (ctx) => AlertDialog(
-             title: const Text("Exam Completed"),
-             content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text("Your exam has been submitted and the PDF report generated."),
-                  const SizedBox(height: 20),
-                  AccessibleElevatedButton(
-                    onPressed: () => _viewPdf(pdfFile.path),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.visibility),
-                        SizedBox(width: 8),
-                        Text("View PDF"),
-                      ],
-                    ),
+        // Show specific dialog with View, Share, Save options
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            title: const Text("Exam Completed"),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  "Your exam has been submitted and the PDF report generated.",
+                ),
+                const SizedBox(height: 20),
+                AccessibleElevatedButton(
+                  onPressed: () => _viewPdf(pdfFile.path),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.visibility),
+                      SizedBox(width: 8),
+                      Text("View PDF"),
+                    ],
                   ),
-                  const SizedBox(height: 10),
-                  AccessibleElevatedButton(
-                    onPressed: () => _sharePdf(pdfFile.path),
-                    child: const Row(
-                       mainAxisAlignment: MainAxisAlignment.center,
-                       children: [
-                         Icon(Icons.share),
-                         SizedBox(width: 8),
-                         Text("Share PDF"),
-                       ]
-                    ),
+                ),
+                const SizedBox(height: 10),
+                AccessibleElevatedButton(
+                  onPressed: () => _sharePdf(pdfFile.path),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.share),
+                      SizedBox(width: 8),
+                      Text("Share PDF"),
+                    ],
                   ),
-                  const SizedBox(height: 10),
-                  AccessibleElevatedButton(
-                    onPressed: () => _savePdfToDownloads(pdfFile),
-                    child: const Row(
-                       mainAxisAlignment: MainAxisAlignment.center,
-                       children: [
-                         Icon(Icons.download),
-                         SizedBox(width: 8),
-                         Text("Save to Downloads"),
-                       ]
-                    ),
+                ),
+                const SizedBox(height: 10),
+                AccessibleElevatedButton(
+                  onPressed: () => _savePdfToDownloads(pdfFile),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.download),
+                      SizedBox(width: 8),
+                      Text("Save to Downloads"),
+                    ],
                   ),
-                ],
-             ),
-             actions: [
-               AccessibleTextButton(
-                 onPressed: () {
-                    Navigator.pop(ctx);
-                    Navigator.pop(context); // Exit PaperDetailScreen
-                 },
-                 child: const Text("Close & Exit"),
-               )
-             ]
-           )
-         );
+                ),
+              ],
+            ),
+            actions: [
+              AccessibleTextButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  Navigator.pop(context); // Exit PaperDetailScreen
+                },
+                child: const Text("Close & Exit"),
+              ),
+            ],
+          ),
+        );
       }
-
     } catch (e) {
-       AccessibilityService().trigger(AccessibilityEvent.error);
-       if (mounted) {
-         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error generating PDF: $e")),
-         );
-       }
+      AccessibilityService().trigger(AccessibilityEvent.error);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Error generating PDF: $e")));
+      }
     }
   }
 
@@ -1058,39 +1082,42 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       // Using /storage/emulated/0/Download/ folder directly
       Directory? downloadsDir;
       if (Platform.isAndroid) {
-         downloadsDir = Directory('/storage/emulated/0/Download');
+        downloadsDir = Directory('/storage/emulated/0/Download');
       } else {
-         // Fallback/IOS (not primarily targeted but safe)
-         downloadsDir = await getDownloadsDirectory(); 
+        // Fallback/IOS (not primarily targeted but safe)
+        downloadsDir = await getDownloadsDirectory();
       }
 
       if (downloadsDir != null && !downloadsDir.existsSync()) {
         // Try creating it?
         downloadsDir.createSync(recursive: true);
       }
-      
-      if (downloadsDir != null) {
-          final fileName = pdfFile.uri.pathSegments.last;
-          final newPath = "${downloadsDir.path}/$fileName";
-          await pdfFile.copy(newPath);
-          
-          if (mounted) {
-             ScaffoldMessenger.of(context).showSnackBar(
-               SnackBar(content: Text("Saved to Downloads: $fileName")),
-             );
-          }
-      } else {
-          throw "Downloads directory not found";
-      }
 
+      if (downloadsDir != null) {
+        final fileName = pdfFile.uri.pathSegments.last;
+        final newPath = "${downloadsDir.path}/$fileName";
+        await pdfFile.copy(newPath);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Saved to Downloads: $fileName")),
+          );
+        }
+      } else {
+        throw "Downloads directory not found";
+      }
     } catch (e) {
-       // Fallback to Share if permission fails or other error
-       if (mounted) {
-         ScaffoldMessenger.of(context).showSnackBar(
-           SnackBar(content: Text("Could not save automatically. Please use Share to save.")),
-         );
-         _sharePdf(pdfFile.path); // Use share as fallback
-       }
+      // Fallback to Share if permission fails or other error
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              "Could not save automatically. Please use Share to save.",
+            ),
+          ),
+        );
+        _sharePdf(pdfFile.path); // Use share as fallback
+      }
     }
   }
 
@@ -1201,7 +1228,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
   bool _isProcessingAudio = false;
   String? _tempAudioPath;
   final AudioPlayer _audioPlayer = AudioPlayer();
-  
+
   // Hands-Free State
   bool _isAppending = true;
 
@@ -1274,22 +1301,22 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         break;
 
       case VoiceAction.appendAnswer:
-         await widget.ttsService.speak("Appending to answer.");
-         _startListening(append: true);
-         break;
+        await widget.ttsService.speak("Appending to answer.");
+        _startListening(append: true);
+        break;
 
       case VoiceAction.overwriteAnswer:
-         await widget.ttsService.speak("Overwriting answer. Speak new answer.");
-         _startListening(append: false);
-         break;
+        await widget.ttsService.speak("Overwriting answer. Speak new answer.");
+        _startListening(append: false);
+        break;
 
       case VoiceAction.clearAnswer:
-         _clearAnswer();
-         break;
+        _clearAnswer();
+        break;
 
       case VoiceAction.readLastSentence:
-         _readLastSentence();
-         break;
+        _readLastSentence();
+        break;
 
       case VoiceAction.stopDictation:
         await widget.ttsService.speak("Stopping dictation.");
@@ -1534,7 +1561,8 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         // Append Mode
         String separator = _answerController.text.endsWith('.') ? " " : ". ";
         if (_answerController.text.trim().isEmpty) separator = "";
-        _answerController.text = _answerController.text + separator + transcribedText;
+        _answerController.text =
+            _answerController.text + separator + transcribedText;
       } else {
         // Replace Mode (Overwrite)
         _answerController.text = transcribedText;
@@ -1543,27 +1571,27 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     await Future.delayed(const Duration(milliseconds: 100));
     _onDictationFinished();
   }
-  
+
   void _clearAnswer() async {
-     setState(() {
-       _answerController.clear();
-     });
-     await widget.ttsService.speak("Answer cleared.");
+    setState(() {
+      _answerController.clear();
+    });
+    await widget.ttsService.speak("Answer cleared.");
   }
 
   void _readLastSentence() async {
-     String text = _answerController.text.trim();
-     if (text.isEmpty) {
-       await widget.ttsService.speak("Answer is empty.");
-       return;
-     }
-     
-     // Simple split by period, handling common abbreviations briefly
-     List<String> sentences = text.split(RegExp(r'(?<=[.?!])\s+'));
-     if (sentences.isNotEmpty) {
-       String last = sentences.last;
-       await widget.ttsService.speak("Last sentence: $last");
-     }
+    String text = _answerController.text.trim();
+    if (text.isEmpty) {
+      await widget.ttsService.speak("Answer is empty.");
+      return;
+    }
+
+    // Simple split by period, handling common abbreviations briefly
+    List<String> sentences = text.split(RegExp(r'(?<=[.?!])\s+'));
+    if (sentences.isNotEmpty) {
+      String last = sentences.last;
+      await widget.ttsService.speak("Last sentence: $last");
+    }
   }
 
   void _onDictationFinished() async {
