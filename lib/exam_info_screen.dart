@@ -38,11 +38,64 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
   // bool _isListeningName = false;
   // bool _isListeningId = false;
 
+  bool _shouldListen = true;
+
   @override
   void initState() {
     super.initState();
     widget.ttsService.speak(
-      "Exam Setup. Please review rules and enter details.",
+      "Exam Setup. Please review rules and enter details. Say Start Exam to begin.",
+    );
+    _initVoiceListener();
+  }
+
+  @override
+  void dispose() {
+    _shouldListen = false;
+    widget.sttService.stopListening();
+    super.dispose();
+  }
+
+  void _initVoiceListener() async {
+    // We can use the passed sttService or create a new one. 
+    // The widget receives `sttService`. Let's use it.
+    // Ensure it's not listening elsewhere? SttService manages its own state.
+    
+    // Actually SttService might need init if it was stopped/disposed previously?
+    // The passed service is likely initialized in main or home, but let's re-init/check availability.
+    bool available = await widget.sttService.init(
+      tts: widget.ttsService,
+      onStatus: (status) {
+        if ((status == 'notListening' || status == 'done') && _shouldListen) {
+           Future.delayed(const Duration(milliseconds: 500), () {
+            if (mounted && _shouldListen) _startListening();
+          });
+        }
+      },
+    );
+
+    if (available) {
+      _startListening();
+    }
+  }
+
+  void _startListening() {
+    if (!_shouldListen) return;
+    widget.sttService.startListening(
+      localeId: 'en-US',
+      onResult: (text) {
+        final result = widget.voiceService.parse(text, context: VoiceContext.confirmExamStart);
+        
+        if (result.action == VoiceAction.confirmExamStart || 
+            result.action == VoiceAction.enterExamMode ||
+            result.action == VoiceAction.submitForm) {
+          _confirmAndStartExam();
+        } else if (result.action == VoiceAction.goBack || result.action == VoiceAction.cancelExamStart) {
+          Navigator.pop(context);
+        } else if (result.action == VoiceAction.goToHome) {
+           widget.voiceService.performGlobalNavigation(result);
+        }
+      },
     );
   }
 
