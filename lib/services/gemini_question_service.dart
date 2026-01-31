@@ -3,19 +3,18 @@ import 'dart:convert';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:http/http.dart' as http;
 import '../models/question_model.dart';
+import 'package:flutter/foundation.dart';
 
 class GeminiQuestionService {
   Future<ParsedDocument> processImage(String imagePath, String apiKey) async {
     // 1. Find a valid model name dynamically
     final modelName = await _findValidModel(apiKey) ?? 'gemini-1.5-flash';
-    print("GeminiService using model: $modelName");
+    debugPrint("GeminiService using model: $modelName");
 
     final model = GenerativeModel(
       model: modelName,
       apiKey: apiKey,
-      generationConfig: GenerationConfig(
-        responseMimeType: 'application/json',
-      ),
+      generationConfig: GenerationConfig(responseMimeType: 'application/json'),
     );
 
     final imageBytes = await File(imagePath).readAsBytes();
@@ -25,8 +24,11 @@ class GeminiQuestionService {
       final response = await model.generateContent([
         Content.multi([
           TextPart(prompt),
-          DataPart('image/jpeg', imageBytes), // Assuming JPEG, but API is flexible
-        ])
+          DataPart(
+            'image/jpeg',
+            imageBytes,
+          ), // Assuming JPEG, but API is flexible
+        ]),
       ]);
 
       if (response.text == null) {
@@ -35,45 +37,50 @@ class GeminiQuestionService {
 
       return _parseResponse(response.text!);
     } catch (e) {
-      print("Gemini Processing Error: $e");
+      debugPrint("Gemini Processing Error: $e");
       rethrow;
     }
   }
 
   Future<String?> _findValidModel(String apiKey) async {
     try {
-      final url = Uri.parse('https://generativelanguage.googleapis.com/v1beta/models?key=$apiKey');
+      final url = Uri.parse(
+        'https://generativelanguage.googleapis.com/v1beta/models?key=$apiKey',
+      );
       final response = await http.get(url);
-      
+
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body);
         final models = json['models'] as List;
-        
+
         String? bestMatch;
-        
+
         for (final m in models) {
           final name = m['name'].toString(); // e.g. models/gemini-1.5-flash
           final supportedMethods = m['supportedGenerationMethods'] as List?;
-          
-          if (supportedMethods != null && supportedMethods.contains('generateContent')) {
-             // Clean name
-             final cleanName = name.replaceFirst('models/', '');
-             
-             // Prefer flash
-             if (cleanName.contains('flash')) {
-               // If we already have a flash match, maybe check for 'latest' or versions? 
-               // For now, just taking the first 'flash' or updating if we find a '1.5-flash' specifically
-               bestMatch = cleanName;
-               if (cleanName == 'gemini-1.5-flash') return cleanName; // Perfect match
-             }
-             
-             bestMatch ??= cleanName; // Fallback to any valid model
+
+          if (supportedMethods != null &&
+              supportedMethods.contains('generateContent')) {
+            // Clean name
+            final cleanName = name.replaceFirst('models/', '');
+
+            // Prefer flash
+            if (cleanName.contains('flash')) {
+              // If we already have a flash match, maybe check for 'latest' or versions?
+              // For now, just taking the first 'flash' or updating if we find a '1.5-flash' specifically
+              bestMatch = cleanName;
+              if (cleanName == 'gemini-1.5-flash') {
+                return cleanName; // Perfect match
+              }
+            }
+
+            bestMatch ??= cleanName; // Fallback to any valid model
           }
         }
         return bestMatch;
       }
     } catch (e) {
-      print("Error listing models: $e");
+      debugPrint("Error listing models: $e");
     }
     return null; // Fallback to default
   }
@@ -137,12 +144,16 @@ class GeminiQuestionService {
     """;
   }
 
-
   ParsedDocument _parseResponse(String jsonString) {
     // Clean up potential markdown blocks if API returns ```json ... ```
-    final initialClean = jsonString.replaceAll(RegExp(r'^```json\s*'), ''); // Remove start
-    final cleanJson = initialClean.replaceAll(RegExp(r'\s*```$'), '').trim(); // Remove end
-    
+    final initialClean = jsonString.replaceAll(
+      RegExp(r'^```json\s*'),
+      '',
+    ); // Remove start
+    final cleanJson = initialClean
+        .replaceAll(RegExp(r'\s*```$'), '')
+        .trim(); // Remove end
+
     final Map<String, dynamic> data = jsonDecode(cleanJson);
     final sectionsList = data['sections'] as List;
 
@@ -152,50 +163,53 @@ class GeminiQuestionService {
       String? title = sec['title'];
       String? context = sec['context']; // Extract context
       List<ParsedQuestion> questions = [];
-      
+
       if (sec['questions'] != null) {
         for (var q in sec['questions']) {
-          questions.add(ParsedQuestion(
-            number: q['number']?.toString() ?? '',
-            prompt: q['prompt']?.toString() ?? '',
-            body: (q['body'] as List?)?.map((e) => e.toString()).toList() ?? [],
-            marks: q['marks']?.toString(),
-            sourceLineIndices: [], // No source lines from Gemini
-          ));
+          questions.add(
+            ParsedQuestion(
+              number: q['number']?.toString() ?? '',
+              prompt: q['prompt']?.toString() ?? '',
+              body:
+                  (q['body'] as List?)?.map((e) => e.toString()).toList() ?? [],
+              marks: q['marks']?.toString(),
+              sourceLineIndices: [], // No source lines from Gemini
+            ),
+          );
         }
       }
-      parsedSections.add(ParsedSection(title: title, context: context, questions: questions));
+      parsedSections.add(
+        ParsedSection(title: title, context: context, questions: questions),
+      );
     }
-    return ParsedDocument(
-      header: [], 
-      sections: parsedSections,
-    );
+    return ParsedDocument(header: [], sections: parsedSections);
   }
 
   Future<String> transcribeAudio(String audioPath, String apiKey) async {
     final modelName = await _findValidModel(apiKey) ?? 'gemini-1.5-flash';
-    final model = GenerativeModel(
-      model: modelName,
-      apiKey: apiKey,
-    );
+    final model = GenerativeModel(model: modelName, apiKey: apiKey);
 
     final audioBytes = await File(audioPath).readAsBytes();
-    final prompt = "Transcribe the following audio exactly as spoken. Do not add any commentary or extra text.";
+    final prompt =
+        "Transcribe the following audio exactly as spoken. Do not add any commentary or extra text.";
 
     try {
       final response = await model.generateContent([
         Content.multi([
           TextPart(prompt),
-          DataPart('audio/mp4', audioBytes), // Assuming standard format, Gemini handles most
-        ])
+          DataPart(
+            'audio/mp4',
+            audioBytes,
+          ), // Assuming standard format, Gemini handles most
+        ]),
       ]);
 
       if (response.text == null) {
-         throw Exception("Empty transcription from Gemini");
+        throw Exception("Empty transcription from Gemini");
       }
       return response.text!;
     } catch (e) {
-      print("Gemini Transcription Error: $e");
+      debugPrint("Gemini Transcription Error: $e");
       rethrow;
     }
   }

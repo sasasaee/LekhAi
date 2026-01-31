@@ -48,10 +48,11 @@ class AccessibilityService {
     enabled = prefs.getBool('haptics') ?? true;
     oneTapAnnounce = prefs.getBool('one_tap_announce') ?? true;
 
-    if (debugLogs)
+    if (debugLogs) {
       debugPrint(
         "Accessibility: Vibrator=$_hasVibrator, Custom=$_hasCustomVibrations, Enabled=$enabled, OneTapAnnounce=$oneTapAnnounce",
       );
+    }
   }
 
   /// Toggles the haptic feedback on/off.
@@ -63,8 +64,9 @@ class AccessibilityService {
   /// Toggles the "Single Tap Announce" behavior.
   void setOneTapAnnounce(bool value) {
     oneTapAnnounce = value;
-    if (debugLogs)
+    if (debugLogs) {
       debugPrint("Accessibility: One Tap Announce Enabled = $oneTapAnnounce");
+    }
   }
 
   /// Triggers haptic feedback for a specific semantic event.

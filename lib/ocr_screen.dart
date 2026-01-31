@@ -660,8 +660,8 @@ class _GlassBox extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       width: double.infinity,
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.05),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
+        color: Colors.white.withValues(alpha: 0.05),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
         borderRadius: BorderRadius.circular(12),
       ),
       child: child,

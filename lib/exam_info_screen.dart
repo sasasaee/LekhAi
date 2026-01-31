@@ -18,16 +18,16 @@ class ExamInfoScreen extends StatefulWidget {
   final SttService sttService;
 
   const ExamInfoScreen({
-    Key? key,
+    super.key,
     required this.document,
     required this.ttsService,
     required this.voiceService,
     required this.accessibilityService,
     required this.sttService,
-  }) : super(key: key);
+  });
 
   @override
-  _ExamInfoScreenState createState() => _ExamInfoScreenState();
+  State<ExamInfoScreen> createState() => _ExamInfoScreenState();
 }
 
 class _ExamInfoScreenState extends State<ExamInfoScreen> {
@@ -100,9 +100,9 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
         leading: Container(
           margin: const EdgeInsets.only(left: 16, top: 8, bottom: 8),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.1),
+            color: Colors.white.withValues(alpha: 0.1),
             shape: BoxShape.circle,
-            border: Border.all(color: Colors.white.withOpacity(0.1)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
           ),
           child: IconButton(
             icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
@@ -117,7 +117,7 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              Theme.of(context).cardTheme.color!.withOpacity(0.8),
+              Theme.of(context).cardTheme.color!.withValues(alpha: 0.8),
               Theme.of(context).scaffoldBackgroundColor,
               Colors.black,
             ],
@@ -136,9 +136,9 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
                     padding: const EdgeInsets.all(20),
                     margin: const EdgeInsets.only(bottom: 24),
                     decoration: BoxDecoration(
-                      color: Colors.redAccent.withOpacity(0.1),
+                      color: Colors.redAccent.withValues(alpha: 0.1),
                       border: Border.all(
-                        color: Colors.redAccent.withOpacity(0.3),
+                        color: Colors.redAccent.withValues(alpha: 0.3),
                       ),
                       borderRadius: BorderRadius.circular(16),
                     ),
@@ -229,8 +229,9 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
                       Icons.timer,
                     ),
                     validator: (val) {
-                      if (val == null || val.isEmpty)
+                      if (val == null || val.isEmpty) {
                         return "Duration required";
+                      }
                       final n = int.tryParse(val);
                       if (n == null || n <= 0) return "Must be positive";
                       return null;
@@ -295,7 +296,7 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
       labelStyle: const TextStyle(color: Colors.white60),
       prefixIcon: Icon(icon, color: Colors.white60),
       filled: true,
-      fillColor: Colors.white.withOpacity(0.05),
+      fillColor: Colors.white.withValues(alpha: 0.05),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide.none,

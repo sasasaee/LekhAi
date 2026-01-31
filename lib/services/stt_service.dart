@@ -65,7 +65,7 @@ class SttService with WidgetsBindingObserver {
     Function(String)? onError,
     dynamic tts, // dynamic to avoid circular dependency
   }) async {
-    this.onStatusChange = onStatus;
+    onStatusChange = onStatus;
     this.onError = onError;
 
     await _loadSettings();
@@ -115,7 +115,7 @@ class SttService with WidgetsBindingObserver {
     required Function(String) onResult,
     required String localeId,
   }) async {
-    print("STT: Intended state → LISTENING");
+    debugPrint("STT: Intended state → LISTENING");
 
     _savedOnResult = onResult;
     _savedLocaleId = localeId;
@@ -126,7 +126,9 @@ class SttService with WidgetsBindingObserver {
   }
 
   Future<void> stopListening() async {
-    print("STT: Intended state → STOPPED. CallerStack: ${StackTrace.current}");
+    debugPrint(
+      "STT: Intended state → STOPPED. CallerStack: ${StackTrace.current}",
+    );
 
     _intendedState = SttIntendedState.stopped;
     _loopTimer?.cancel();
@@ -165,7 +167,7 @@ class SttService with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    print("STT: Lifecycle state changed to $state");
+    debugPrint("STT: Lifecycle state changed to $state");
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
       // App going to background (or picker opening) -> Pause STT
@@ -244,11 +246,13 @@ class SttService with WidgetsBindingObserver {
 
       await _speech.listen(
         localeId: _savedLocaleId ?? 'en-US',
-        listenMode: stt.ListenMode.dictation,
         listenFor: const Duration(seconds: 30),
         pauseFor: const Duration(seconds: 5),
-        partialResults: true,
-        listenOptions: stt.SpeechListenOptions(cancelOnError: false),
+        listenOptions: stt.SpeechListenOptions(
+          cancelOnError: false,
+          listenMode: stt.ListenMode.dictation,
+          partialResults: false,
+        ),
         onResult: (SpeechRecognitionResult result) {
           debugPrint(">>> STT HEARD: '${result.recognizedWords}'");
           if (_intendedState != SttIntendedState.listening) return;
@@ -278,7 +282,7 @@ class SttService with WidgetsBindingObserver {
   // =================================================
 
   void _handleStatus(String status) {
-    print("STT status: $status");
+    debugPrint("STT status: $status");
     onStatusChange?.call(status);
 
     if ((status == 'done' || status == 'notListening') &&
@@ -297,7 +301,7 @@ class SttService with WidgetsBindingObserver {
   }
 
   void _handleError(SpeechRecognitionError error) {
-    print("STT error: ${error.errorMsg}");
+    debugPrint("STT error: ${error.errorMsg}");
     final msg = error.errorMsg.toLowerCase();
 
     _didErrorOccur = true; // Mark error so 'done' doesn't interfere

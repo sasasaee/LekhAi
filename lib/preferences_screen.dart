@@ -30,7 +30,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   double _volume = 0.7;
 
   final SttService _sttService = SttService();
-  bool _isListening = false;
+  final bool _isListening = false;
   bool _voiceCommandsEnabled = true; // Default ON
   bool _oneTapAnnounce = true; // Default ON
   final TextEditingController _apiKeyController = TextEditingController();
@@ -55,7 +55,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       tts: widget.ttsService, // Pass TTS to enable auto-pause
       // onStatus removed: SttService now manages its own restart logic internally.
       // onStatus: (status) { ... }
-      onError: (error) => print("PreferencesScreen STT Error: $error"),
+      onError: (error) => debugPrint("PreferencesScreen STT Error: $error"),
     );
 
     if (available) {
@@ -249,9 +249,9 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
         leading: Container(
           margin: const EdgeInsets.only(left: 16, top: 8, bottom: 8),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.1),
+            color: Colors.white.withValues(alpha: 0.1),
             shape: BoxShape.circle,
-            border: Border.all(color: Colors.white.withOpacity(0.1)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
           ),
           child: IconButton(
             icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
@@ -266,7 +266,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              Theme.of(context).cardTheme.color!.withOpacity(0.8),
+              Theme.of(context).cardTheme.color!.withValues(alpha: 0.8),
               Theme.of(context).scaffoldBackgroundColor,
               Colors.black,
             ],
@@ -298,7 +298,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                           hintText: 'Enter your API Key here',
                           hintStyle: GoogleFonts.outfit(color: Colors.white38),
                           filled: true,
-                          fillColor: Colors.black.withOpacity(0.2),
+                          fillColor: Colors.black.withValues(alpha: 0.2),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide.none,
@@ -405,7 +405,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                 _GlassCard(
                   child: SwitchListTile(
                     value: AccessibilityService().enabled,
-                    activeColor: Theme.of(context).primaryColor,
+                    activeThumbColor: Theme.of(context).primaryColor,
                     title: Text(
                       "Haptic Feedback",
                       style: GoogleFonts.outfit(
@@ -422,10 +422,11 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                       setState(() {
                         AccessibilityService().setEnabled(val);
                       });
-                      if (val)
+                      if (val) {
                         AccessibilityService().trigger(
                           AccessibilityEvent.action,
                         );
+                      }
                     },
                   ),
                 ),
@@ -435,7 +436,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                 _GlassCard(
                   child: SwitchListTile(
                     value: _oneTapAnnounce,
-                    activeColor: Theme.of(context).primaryColor,
+                    activeThumbColor: Theme.of(context).primaryColor,
                     title: Text(
                       "Single Tap to Announce",
                       style: GoogleFonts.outfit(
@@ -453,10 +454,11 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                         _oneTapAnnounce = val;
                         AccessibilityService().setOneTapAnnounce(val);
                       });
-                      if (val)
+                      if (val) {
                         AccessibilityService().trigger(
                           AccessibilityEvent.action,
                         );
+                      }
                     },
                   ),
                 ),
@@ -466,7 +468,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                 _GlassCard(
                   child: SwitchListTile(
                     value: _voiceCommandsEnabled,
-                    activeColor: Theme.of(context).primaryColor,
+                    activeThumbColor: Theme.of(context).primaryColor,
                     title: Text(
                       "Voice Commands",
                       style: GoogleFonts.outfit(
@@ -512,7 +514,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                             borderRadius: BorderRadius.circular(16),
                           ),
                           elevation: 8,
-                          shadowColor: Colors.blueAccent.withOpacity(0.4),
+                          shadowColor: Colors.blueAccent.withValues(alpha: 0.4),
                         ),
                         child: Text(
                           'Save',
@@ -570,16 +572,16 @@ class _GlassCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         gradient: LinearGradient(
           colors: [
-            Colors.white.withOpacity(0.08),
-            Colors.white.withOpacity(0.03),
+            Colors.white.withValues(alpha: 0.08),
+            Colors.white.withValues(alpha: 0.03),
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),

@@ -11,68 +11,73 @@ Future<void> main() async {
     exit(1);
   }
 
-  print("Querying API for available models...");
+  stdout.writeln("Querying API for available models...");
   String? validModelName;
 
   try {
-    final url = Uri.parse('https://generativelanguage.googleapis.com/v1beta/models?key=$apiKey');
+    final url = Uri.parse(
+      'https://generativelanguage.googleapis.com/v1beta/models?key=$apiKey',
+    );
     final response = await http.get(url);
-    
+
     if (response.statusCode == 200) {
       final json = jsonDecode(response.body);
       final models = json['models'] as List;
-      print("Found ${models.length} models.");
-      
+      stdout.writeln("Found ${models.length} models.");
+
       for (final m in models) {
         final name = m['name'].toString(); // e.g., models/gemini-1.5-flash
         final supportedMethods = m['supportedGenerationMethods'] as List?;
-        
+
         // We need a model that supports 'generateContent'
-        if (supportedMethods != null && supportedMethods.contains('generateContent')) {
-           // Prefer flash if available, otherwise take the first valid one
-           if (validModelName == null || name.contains('flash')) {
-             validModelName = name;
-           }
+        if (supportedMethods != null &&
+            supportedMethods.contains('generateContent')) {
+          // Prefer flash if available, otherwise take the first valid one
+          if (validModelName == null || name.contains('flash')) {
+            validModelName = name;
+          }
         }
       }
     } else {
-      print("Failed to list models. Status: ${response.statusCode}, Body: ${response.body}");
+      stderr.writeln(
+        "Failed to list models. Status: ${response.statusCode}, Body: ${response.body}",
+      );
     }
   } catch (e) {
-    print("Error listing models: $e");
+    stderr.writeln("Error listing models: $e");
   }
 
   if (validModelName == null) {
-    print("No valid models found. Exiting.");
+    stderr.writeln("No valid models found. Exiting.");
     return;
   }
-  
+
   // Clean up model name from 'models/gemini-1.5-flash' to 'gemini-1.5-flash' if needed by SDK
-  final cleanModelName = validModelName!.replaceFirst('models/', '');
-  print("Using model: $cleanModelName");
+  final cleanModelName = validModelName.replaceFirst('models/', '');
+  stdout.writeln("Using model: $cleanModelName");
 
   final model = GenerativeModel(model: cleanModelName, apiKey: apiKey);
 
   final testCases = [
     "I am fond (a) — angling.",
     "(a) The bee is one of the busiest insects.",
-    "turned (c) – a great", 
-    "Table | row | data"
+    "turned (c) – a great",
+    "Table | row | data",
   ];
 
-  print("\nRunning Gemini Prototype for TTS Preprocessing...\n");
+  stdout.writeln("\nRunning Gemini Prototype for TTS Preprocessing...\n");
 
   for (final text in testCases) {
-    print("Input: '$text'");
+    stdout.writeln("Input: '$text'");
     try {
       final response = await model.generateContent([
         Content.text(_buildPrompt(text)),
       ]);
-      print("Output: '${response.text?.trim()}'");
+      stdout.writeln("Output: '${response.text?.trim()}'");
     } catch (e) {
-      print("Error: $e");
+      stderr.writeln("Error: $e");
     }
-    print("---");
+    stdout.writeln("---");
   }
 }
 

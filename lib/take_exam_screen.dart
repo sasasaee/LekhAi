@@ -66,7 +66,7 @@ class _TakeExamScreenState extends State<TakeExamScreen> {
           });
         }
       },
-      onError: (error) => print("TakeExam Screen STT Error: $error"),
+      onError: (error) => debugPrint("TakeExam Screen STT Error: $error"),
     );
 
     if (available && mounted && _shouldListen) {

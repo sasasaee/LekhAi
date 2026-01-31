@@ -28,7 +28,7 @@ class PdfViewerScreen extends StatefulWidget {
 class _PdfViewerScreenState extends State<PdfViewerScreen> {
   final PdfViewerController _pdfController = PdfViewerController();
   final SttService _sttService = SttService();
-  bool _isListening = false;
+  final bool _isListening = false;
 
   PDFDoc? _doc;
   List<String> _sentences = [];
@@ -59,7 +59,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
           });
         }
       },
-      onError: (error) => print("PDF Screen STT Error: $error"),
+      onError: (error) => debugPrint("PDF Viewer STT Error: $error"),
     );
 
     if (available) {
@@ -186,8 +186,8 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
         leading: Container(
           margin: const EdgeInsets.only(left: 16, top: 8, bottom: 8),
           decoration: BoxDecoration(
-            color: Colors.black.withOpacity(
-              0.3,
+            color: Colors.black.withValues(
+              alpha: 0.3,
             ), // Darker background for visibility over PDF?
             shape: BoxShape.circle,
           ),
@@ -229,7 +229,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
                 decoration: BoxDecoration(
                   color: Colors.black87,
                   border: Border(
-                    top: BorderSide(color: Colors.white.withOpacity(0.1)),
+                    top: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
                   ),
                 ),
                 child: SafeArea(
@@ -298,7 +298,7 @@ class _ControlBtn extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
         decoration: BoxDecoration(
-          color: baseColor.withOpacity(isPrimary || isDanger ? 1.0 : 0.2),
+          color: baseColor.withValues(alpha: isPrimary || isDanger ? 1.0 : 0.2),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: isPrimary || isDanger ? Colors.transparent : Colors.white30,

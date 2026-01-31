@@ -476,7 +476,7 @@ class VoiceCommandService {
     final apiKey = prefs.getString('gemini_api_key');
     final context = navigatorKey.currentContext;
 
-    if (context == null) return;
+    if (context == null || !context.mounted) return;
 
     _isScanDialogOpen = true;
     showDialog(

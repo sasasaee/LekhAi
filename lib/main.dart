@@ -127,7 +127,7 @@ class _SplashScreenState extends State<SplashScreen> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              Theme.of(context).primaryColor.withOpacity(0.2),
+              Theme.of(context).primaryColor.withValues(alpha: 0.2),
               Theme.of(context).scaffoldBackgroundColor,
             ],
           ),
@@ -238,7 +238,7 @@ class _HomeScreenState extends State<HomeScreen>
           });
         }
       },
-      onError: (error) => print("Home STT Error: $error"),
+      onError: (error) => debugPrint("Home STT Error: $error"),
     );
 
     if (available) {
@@ -415,7 +415,7 @@ class _HomeScreenState extends State<HomeScreen>
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              Theme.of(context).cardTheme.color!.withOpacity(0.8),
+              Theme.of(context).cardTheme.color!.withValues(alpha: 0.8),
               Theme.of(context).scaffoldBackgroundColor,
               Colors.black,
             ],
@@ -452,10 +452,10 @@ class _HomeScreenState extends State<HomeScreen>
                               vertical: 8,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.05),
+                              color: Colors.white.withValues(alpha: 0.05),
                               borderRadius: BorderRadius.circular(30),
                               border: Border.all(
-                                color: Colors.white.withOpacity(0.1),
+                                color: Colors.white.withValues(alpha: 0.1),
                               ),
                             ),
                             child: Row(
@@ -490,10 +490,10 @@ class _HomeScreenState extends State<HomeScreen>
                     // About Button
                     Container(
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.05),
+                        color: Colors.white.withValues(alpha: 0.05),
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: Colors.white.withOpacity(0.1),
+                          color: Colors.white.withValues(alpha: 0.1),
                         ),
                       ),
                       child: IconButton(
@@ -549,7 +549,7 @@ class _HomeScreenState extends State<HomeScreen>
                             widget.ttsService.speak("Opening saved papers.");
                             _shouldListen = false;
                             await _sttService.stopListening();
-                            if (!mounted) return;
+                            if (!context.mounted) return;
                             Navigator.push(
                               context,
                               MaterialPageRoute(
@@ -575,7 +575,7 @@ class _HomeScreenState extends State<HomeScreen>
                             widget.ttsService.speak("Opening preferences.");
                             _shouldListen = false;
                             await _sttService.stopListening();
-                            if (!mounted) return;
+                            if (!context.mounted) return;
                             Navigator.push(
                               context,
                               MaterialPageRoute(
@@ -655,15 +655,17 @@ class _DashboardCard extends StatelessWidget {
                   // Glassmorphism effect
                   gradient: LinearGradient(
                     colors: [
-                      Colors.white.withOpacity(0.08),
-                      Colors.white.withOpacity(0.03),
+                      Colors.white.withValues(alpha: 0.08),
+                      Colors.white.withValues(alpha: 0.03),
                     ],
                   ),
                   borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: Colors.white.withOpacity(0.1)),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.1),
+                  ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
+                      color: Colors.black.withValues(alpha: 0.1),
                       blurRadius: 10,
                       offset: const Offset(0, 4),
                     ),
@@ -674,9 +676,9 @@ class _DashboardCard extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: color.withOpacity(0.15),
+                        color: color.withValues(alpha: 0.15),
                         shape: BoxShape.circle,
-                        border: Border.all(color: color.withOpacity(0.3)),
+                        border: Border.all(color: color.withValues(alpha: 0.3)),
                       ),
                       child: Icon(icon, size: 30, color: color),
                     ),
