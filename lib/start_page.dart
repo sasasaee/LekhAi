@@ -5,7 +5,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'services/tts_service.dart';
 import 'services/voice_command_service.dart';
 import 'services/accessibility_service.dart';
-import 'widgets/accessible_widgets.dart';
 import 'main.dart'; // Import main to access HomeScreen if needed or just use named routes if setup
 
 class StartPage extends StatefulWidget {
@@ -87,8 +86,11 @@ class _StartPageState extends State<StartPage> {
                 SizedBox(
                       width: double.infinity,
                       height: 68, // Slightly taller
-                      child: AccessibleElevatedButton(
+                      child: ElevatedButton(
                         onPressed: () {
+                          widget.accessibilityService.trigger(
+                            AccessibilityEvent.action,
+                          );
                           Navigator.pushReplacement(
                             context,
                             MaterialPageRoute(
@@ -101,7 +103,6 @@ class _StartPageState extends State<StartPage> {
                             ),
                           );
                         },
-                        semanticLabel: "Get Started",
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Theme.of(context).primaryColor,
                           foregroundColor: Colors.white,
