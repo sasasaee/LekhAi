@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -14,16 +13,17 @@ import 'services/voice_command_service.dart';
 import 'services/stt_service.dart';
 
 import 'services/accessibility_service.dart';
-import 'widgets/accessible_widgets.dart'; // Added
 // import 'widgets/animated_button.dart';
 
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_animate/flutter_animate.dart'; // Ensure animate is available
-import 'dart:ui'; // For ImageFilter
-
-import 'exam_info_screen.dart';
-import 'services/stt_service.dart';
 import 'dart:async';
+import 'exam_info_screen.dart';
+
+// import 'dart:ui'; // For ImageFilter
+// import 'dart:convert';
+// import 'widgets/accessible_widgets.dart'; // Added
+// import 'services/stt_service.dart';
 
 // ... existing imports
 
@@ -616,23 +616,23 @@ class _GlassBox extends StatelessWidget {
 
 // ... (keep _SectionPreview but maybe update styling slightly if needed, or leave generic)
 
-class _BoxText extends StatelessWidget {
-  final String text;
-  const _BoxText(this.text);
+// class _BoxText extends StatelessWidget {
+//   final String text;
+//   const _BoxText(this.text);
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(text, style: GoogleFonts.outfit(color: Colors.white70)),
-    );
-  }
-}
+//   @override
+//   Widget build(BuildContext context) {
+//     return Container(
+//       padding: const EdgeInsets.all(12),
+//       decoration: BoxDecoration(
+//         color: Colors.white.withValues(alpha: 0.05),
+//         border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+//         borderRadius: BorderRadius.circular(8),
+//       ),
+//       child: Text(text, style: GoogleFonts.outfit(color: Colors.white70)),
+//     );
+//   }
+// }
 
 class _SectionPreview extends StatelessWidget {
   final ParsedSection section;

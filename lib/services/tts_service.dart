@@ -294,7 +294,7 @@ class TtsService {
     return {
       'speed': speed,
       'volume': volume,
-      'volume': volume,
+
       'haptics': prefs.getBool('haptics') ?? true,
       'one_tap_announce': prefs.getBool('one_tap_announce') ?? true,
     };

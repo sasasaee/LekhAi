@@ -5,7 +5,6 @@ import 'services/gemini_question_service.dart';
 import 'services/question_storage_service.dart';
 import 'models/question_model.dart';
 import 'services/tts_service.dart';
-import 'dart:convert';
 import 'services/stt_service.dart';
 import 'services/audio_recorder_service.dart';
 import 'services/voice_command_service.dart'; // Added
@@ -16,8 +15,6 @@ import 'services/kiosk_service.dart'; // Added KioskService
 import 'services/pdf_service.dart'; // Added PdfService
 import 'package:open_filex/open_filex.dart'; // Added for View PDF
 import 'package:share_plus/share_plus.dart'; // Added for Share PDF
-import 'package:permission_handler/permission_handler.dart'; // Added for Save PDF permissions
-import 'package:path_provider/path_provider.dart'; // Added for downloads path
 
 // --- PAPER DETAIL SCREEN ---
 
@@ -25,9 +22,12 @@ import 'services/accessibility_service.dart';
 import 'widgets/accessible_widgets.dart'; // Added
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:ui';
-import 'exam_info_screen.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'dart:async';
+// import 'package:permission_handler/permission_handler.dart'; // Added for Save PDF permissions
+// import 'package:path_provider/path_provider.dart'; // Added for downloads path
+// import 'exam_info_screen.dart';
+// import 'dart:convert';
 
 class PaperDetailScreen extends StatefulWidget {
   final ParsedDocument document;
@@ -348,7 +348,10 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
               Navigator.pop(ctx);
               widget.ttsService.speak("Exam continued.");
             },
-            child: Text("Cancel", style: GoogleFonts.outfit(color: Colors.white)),
+            child: Text(
+              "Cancel",
+              style: GoogleFonts.outfit(color: Colors.white),
+            ),
           ),
           AccessibleTextButton(
             onPressed: () {
@@ -493,20 +496,20 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       }
 
       // Close current SingleScreen (handled by callback logic usually, but here we push replacement or handle it)
-      // Actually, since we are inside the callback from the *current* screen, 
+      // Actually, since we are inside the callback from the *current* screen,
       // we first pop the current screen, then push the new one.
-      
+
       // But _openQuestionByNumber/Logic usually pushes.
       // So:
       // Navigator.pop(context); (Done in callback wrapper)
       // Push next.
-      
+
       // Let's reuse specific logic here.
-       widget.ttsService.speak("Opening next question.");
-       
-        // Stop local listening before pushing new screen
+      widget.ttsService.speak("Opening next question.");
+
+      // Stop local listening before pushing new screen
       _sttService.stopListening();
-      
+
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -517,8 +520,8 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
             voiceService: widget.voiceService,
             accessibilityService: widget.accessibilityService,
             onNext: () {
-                Navigator.pop(context);
-                _openNextQuestion(nextQ);
+              Navigator.pop(context);
+              _openNextQuestion(nextQ);
             },
           ),
         ),
@@ -526,7 +529,6 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
         // Resume listening when returning
         _initVoiceCommandListener();
       });
-
     } else {
       widget.ttsService.speak("No more questions.");
     }
@@ -564,8 +566,8 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
             voiceService: widget.voiceService,
             accessibilityService: widget.accessibilityService,
             onNext: () {
-                Navigator.pop(context);
-                _openNextQuestion(target!);
+              Navigator.pop(context);
+              _openNextQuestion(target!);
             },
           ),
         ),
@@ -1057,7 +1059,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
               AccessibleTextButton(
                 onPressed: () {
                   Navigator.pop(ctx);
-                  _processWithGemini(context, apiKey!);
+                  _processWithGemini(context, apiKey);
                 },
                 child: const Text("Use Gemini AI"),
               ),
@@ -1126,14 +1128,14 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
 
   Future<void> _finalizeExam() async {
     // This is called when Time Up or User explicitly submits via voice/menu
-    
+
     // Ensure Kiosk Mode is disabled immediately
     await KioskService().disableKioskMode();
     if (mounted) {
       setState(() {
         _kioskEnabled = false;
         _showCountdown = false; // Ensure countdown UI is gone
-        _examTimer?.cancel();   // Ensure timer is stopped
+        _examTimer?.cancel(); // Ensure timer is stopped
       });
     }
 
@@ -1982,23 +1984,32 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                         const SizedBox(height: 16),
                         // NEXT BUTTON
                         if (widget.onNext != null) ...[
-                           AccessibleElevatedButton(
-                              onPressed: widget.onNext,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.white10,
-                                foregroundColor: Colors.white,
-                                minimumSize: const Size(double.infinity, 50),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text("Next Question", style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.bold)),
-                                  const SizedBox(width: 8),
-                                  const Icon(Icons.arrow_forward_rounded, size: 20),
-                                ],
-                              ),
-                           ),
-                           const SizedBox(height: 32),
+                          AccessibleElevatedButton(
+                            onPressed: widget.onNext,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.white10,
+                              foregroundColor: Colors.white,
+                              minimumSize: const Size(double.infinity, 50),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  "Next Question",
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                const Icon(
+                                  Icons.arrow_forward_rounded,
+                                  size: 20,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 32),
                         ],
                         Text(
                           "Your Answer:",
@@ -2101,7 +2112,6 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                 ),
                 const SizedBox(height: 16),
 
-
                 // Controls
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -2163,7 +2173,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                           ),
                         ],
                       ),
-                      
+
                       Row(
                         children: [
                           Expanded(

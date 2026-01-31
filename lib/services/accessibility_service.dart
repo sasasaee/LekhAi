@@ -1,10 +1,10 @@
-import 'package:flutter/services.dart';
 import 'package:vibration/vibration.dart'; // Upgrade to Vibration package
 import 'package:flutter_tts/flutter_tts.dart'; // Add TTS support
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart'; // For debugPrint
 
+// import 'package:flutter/services.dart';
 /// Defines semantic events for accessibility feedback.
 enum AccessibilityEvent {
   navigation, // Screen transitions, dialogs opening
@@ -21,7 +21,8 @@ class AccessibilityService {
   // Configuration
   bool debugLogs = true;
   bool enabled = true; // NEW: Toggle master switch
-  bool oneTapAnnounce = true; // Toggle for "Single Tap Announce + Double Tap Activate"
+  bool oneTapAnnounce =
+      true; // Toggle for "Single Tap Announce + Double Tap Activate"
   static const Duration _debounceDuration = Duration(milliseconds: 100);
 
   DateTime? _lastFeedbackTime;

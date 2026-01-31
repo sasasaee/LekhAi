@@ -1,8 +1,6 @@
-import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'dart:ui'; // For standard imports if needed
 import 'dart:async'; // For Timer/Future
 
 // Services
@@ -10,11 +8,13 @@ import 'services/tts_service.dart';
 import 'services/voice_command_service.dart';
 import 'services/accessibility_service.dart';
 import 'services/stt_service.dart';
-import 'widgets/accessible_widgets.dart';
-
 // Screens
 import 'questions_screen.dart';
 import 'preferences_screen.dart';
+
+// import 'dart:ui'; // For standard imports if needed
+// import 'widgets/accessible_widgets.dart';
+// import 'package:image_picker/image_picker.dart';
 
 class TakeExamScreen extends StatefulWidget {
   final TtsService ttsService;

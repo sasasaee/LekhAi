@@ -5,9 +5,10 @@ import 'package:flutter_pdf_text/flutter_pdf_text.dart';
 import 'dart:io';
 import 'services/voice_command_service.dart';
 import 'services/stt_service.dart';
-import 'widgets/accessible_widgets.dart'; // Added
 import 'package:google_fonts/google_fonts.dart'; // Added
-import 'dart:ui'; // Added
+
+// import 'dart:ui'; // Added
+// import 'widgets/accessible_widgets.dart'; // Added
 
 class PdfViewerScreen extends StatefulWidget {
   final String path;

@@ -3,16 +3,17 @@
 class MathTextProcessor {
   // Detects if a line contains math symbols, fractions, or algebraic structure.
   static bool isMathLine(String line) {
-    final hasMathSymbols = RegExp(r'[+\-×÷=<>≤≥≠√^°%‰]').hasMatch(line);
+    // final hasMathSymbols = RegExp(r'[+\-×÷=<>≤≥≠√^°%‰]').hasMatch(line);
     final hasFraction = RegExp(r'\d+/\d+').hasMatch(line);
 
     if (hasFraction) return true;
     if (RegExp(r'[=<>≤≥≠√^°]').hasMatch(line)) return true;
-    
+
     if (RegExp(r'[+\-×÷]').hasMatch(line)) {
-        return RegExp(r'\d').hasMatch(line) || RegExp(r'\b[a-zA-Z]\b').hasMatch(line);
+      return RegExp(r'\d').hasMatch(line) ||
+          RegExp(r'\b[a-zA-Z]\b').hasMatch(line);
     }
-    
+
     if (line.contains('%')) return true;
 
     return false;
@@ -25,25 +26,22 @@ class MathTextProcessor {
     processed = processed.replaceAll(RegExp(r'\s+'), ' ');
 
     // Fractions
-    processed = processed.replaceAllMapped(
-      RegExp(r'(\d+)\s*/\s*(\d+)'),
-      (m) {
-        final num = m[1]!;
-        final den = m[2]!;
-        if (den == "2") return "$num half ";
-        if (den == "4") return "$num quarter ";
-        return "$num over $den ";
-      }
-    );
-    
+    processed = processed.replaceAllMapped(RegExp(r'(\d+)\s*/\s*(\d+)'), (m) {
+      final num = m[1]!;
+      final den = m[2]!;
+      if (den == "2") return "$num half ";
+      if (den == "4") return "$num quarter ";
+      return "$num over $den ";
+    });
+
     // Exponents
     processed = processed.replaceAllMapped(
-      RegExp(r'([a-zA-Z\)])2(?![0-9])'), 
-      (m) => "${m[1]} squared "
+      RegExp(r'([a-zA-Z\)])2(?![0-9])'),
+      (m) => "${m[1]} squared ",
     );
     processed = processed.replaceAllMapped(
-      RegExp(r'([a-zA-Z\)])3(?![0-9])'), 
-      (m) => "${m[1]} cubed "
+      RegExp(r'([a-zA-Z\)])3(?![0-9])'),
+      (m) => "${m[1]} cubed ",
     );
 
     // Symbols & Operators

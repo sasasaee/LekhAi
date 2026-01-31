@@ -5,27 +5,27 @@ import 'theme/app_theme.dart';
 import 'dart:async';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:image_picker/image_picker.dart';
 
 // Services
 import 'services/tts_service.dart';
-import 'services/gemini_question_service.dart';
 import 'services/voice_command_service.dart';
 import 'services/stt_service.dart';
 import 'services/accessibility_service.dart';
-
 // Screens
+import 'take_exam_screen.dart'; // Extracted screen
 import 'preferences_screen.dart';
-import 'ocr_screen.dart';
 import 'questions_screen.dart';
 import 'pdf_viewer_screen.dart';
-import 'paper_detail_screen.dart';
 import 'start_page.dart'; // Imported StartPage
-import 'take_exam_screen.dart'; // Extracted screen
-import 'models/question_model.dart';
-import 'widgets/accessible_widgets.dart';
-import 'widgets/animated_button.dart';
+
+// import 'package:shared_preferences/shared_preferences.dart';
+// import 'package:image_picker/image_picker.dart';
+// import 'services/gemini_question_service.dart';
+// import 'ocr_screen.dart';
+// import 'paper_detail_screen.dart';
+// import 'models/question_model.dart';
+// import 'widgets/accessible_widgets.dart';
+// import 'widgets/animated_button.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -188,7 +188,7 @@ class _HomeScreenState extends State<HomeScreen>
   // Flag to track if we are intentionally listening
   bool _shouldListen = true;
 
-  static const Color buttonColor = Color(0xFF1283B2);
+  // static const Color buttonColor = Color(0xFF1283B2);
 
   @override
   void initState() {
@@ -618,7 +618,9 @@ class _DashboardCard extends StatelessWidget {
       },
       child:
           Container(
-                margin: const EdgeInsets.symmetric(vertical: 8), // Add margin for spacing
+                margin: const EdgeInsets.symmetric(
+                  vertical: 8,
+                ), // Add margin for spacing
                 padding: const EdgeInsets.symmetric(
                   horizontal: 24,
                   vertical: 20,
@@ -632,9 +634,7 @@ class _DashboardCard extends StatelessWidget {
                     ],
                   ),
                   borderRadius: BorderRadius.circular(24),
-                  border: Border.all(
-                    color: Colors.white.withOpacity(0.1),
-                  ),
+                  border: Border.all(color: Colors.white.withOpacity(0.1)),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withOpacity(0.1),
@@ -650,9 +650,7 @@ class _DashboardCard extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: color.withOpacity(0.15),
                         shape: BoxShape.circle,
-                        border: Border.all(
-                          color: color.withOpacity(0.3),
-                        ),
+                        border: Border.all(color: color.withOpacity(0.3)),
                       ),
                       child: Icon(icon, size: 30, color: color),
                     ),
