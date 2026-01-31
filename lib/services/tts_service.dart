@@ -278,6 +278,11 @@ class TtsService {
     await prefs.setBool('haptics', enabled);
   }
 
+  Future<void> saveOneTapAnnouncePreference(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('one_tap_announce', enabled);
+  }
+
   Future<Map<String, dynamic>> loadPreferences() async {
     final prefs = await SharedPreferences.getInstance();
     double speed = prefs.getDouble('speed') ?? 1.0;
@@ -289,13 +294,16 @@ class TtsService {
     return {
       'speed': speed,
       'volume': volume,
+      'volume': volume,
       'haptics': prefs.getBool('haptics') ?? true,
+      'one_tap_announce': prefs.getBool('one_tap_announce') ?? true,
     };
   }
 
   Future<void> resetPreferences() async {
     await savePreferences(speed: 1.0, volume: 0.7);
     await saveHapticPreference(true); // Default ON
+    await saveOneTapAnnouncePreference(true); // Default ON
     await setSpeed(1.0 * 0.5); // Apply scaling to match UI
     await setVolume(0.7);
   }

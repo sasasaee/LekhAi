@@ -1,8 +1,89 @@
 import 'package:flutter/material.dart';
 import '../services/accessibility_service.dart';
 
-/// A set of widgets that automatically trigger haptic feedback on interaction.
-/// Usage: Replace standard Flutter widgets with these accessible variants.
+/// A wrapper that handles Double Tap to Activate logic.
+class DoubleTapWrapper extends StatefulWidget {
+  final VoidCallback? onActivate;
+  final String announcement;
+  final Widget Function(BuildContext context, VoidCallback onTap) builder;
+  final AccessibilityEvent activationEvent;
+  final AccessibilityEvent focusEvent;
+
+  const DoubleTapWrapper({
+    super.key,
+    required this.onActivate,
+    required this.announcement,
+    required this.builder,
+    this.activationEvent = AccessibilityEvent.action,
+    this.focusEvent = AccessibilityEvent.focus,
+  });
+
+  @override
+  State<DoubleTapWrapper> createState() => _DoubleTapWrapperState();
+}
+
+class _DoubleTapWrapperState extends State<DoubleTapWrapper> {
+  final AccessibilityService _service = AccessibilityService();
+  DateTime? _lastTapTime;
+  static const Duration _doubleTapThreshold = Duration(
+    milliseconds: 400,
+  ); // Tweakable
+
+  void _handleTap() {
+    if (widget.onActivate == null) return;
+
+    // Check if system screen reader (TalkBack/VoiceOver) is active.
+    // If so, TalkBack handles the double-tap-to-activate interaction internally.
+    // The 'onTap' we receive here IS the activation.
+    final bool isScreenReaderActive = MediaQuery.of(
+      context,
+    ).accessibleNavigation;
+
+    if (isScreenReaderActive) {
+      _service.trigger(widget.activationEvent);
+      widget.onActivate!();
+      return;
+    }
+
+    // Check preference: If "Single Tap Announce" is disabled, activate immediately on single tap
+    if (!_service.oneTapAnnounce) {
+      _service.trigger(widget.activationEvent);
+      widget.onActivate!();
+      return;
+    }
+
+    final now = DateTime.now();
+    if (_lastTapTime != null &&
+        now.difference(_lastTapTime!) < _doubleTapThreshold) {
+      // DOUBLE TAP detected
+      _service.trigger(widget.activationEvent);
+      widget.onActivate!();
+      _lastTapTime = null; // Reset
+    } else {
+      // SINGLE TAP detected
+      _lastTapTime = now;
+      // Announce
+      final msg = "${widget.announcement}. Double tap to activate.";
+      _service.announce(msg, widget.focusEvent);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: widget.announcement, // Expose label to TalkBack/VoiceOver
+      button: true, // Identify as button
+      container: true, // Group children
+      enabled: widget.onActivate != null,
+      onTap: widget.onActivate != null
+          ? _handleTap
+          : null, // Essential for TalkBack activation
+      excludeSemantics:
+          true, // Hide child semantics (e.g. "Button") to avoid double-speak
+      child: widget.builder(context, _handleTap),
+    );
+  }
+}
 
 class AccessibleIconButton extends StatelessWidget {
   final VoidCallback? onPressed;
@@ -46,7 +127,8 @@ class AccessibleIconButton extends StatelessWidget {
                   onPressed!();
                 },
           icon: icon,
-          tooltip: null, // Disable default tooltip to avoid double announcements
+          tooltip:
+              null, // Disable default tooltip to avoid double announcements
           color: color,
           iconSize: iconSize,
           style: style,
@@ -92,11 +174,7 @@ class AccessibleElevatedButton extends StatelessWidget {
       );
     }
 
-    return ElevatedButton(
-      onPressed: action,
-      style: style,
-      child: child,
-    );
+    return ElevatedButton(onPressed: action, style: style, child: child);
   }
 }
 
@@ -293,11 +371,7 @@ class AccessibleOutlinedButton extends StatelessWidget {
       );
     }
 
-    return OutlinedButton(
-      onPressed: action,
-      style: style,
-      child: child,
-    );
+    return OutlinedButton(onPressed: action, style: style, child: child);
   }
 }
 
@@ -330,7 +404,9 @@ class AccessibleSwitchListTile extends StatelessWidget {
       onChanged: onChanged == null
           ? null
           : (val) async {
-              await _service.trigger(AccessibilityEvent.action); // Toggle action
+              await _service.trigger(
+                AccessibilityEvent.action,
+              ); // Toggle action
               onChanged!(val);
             },
       title: title,
@@ -380,7 +456,9 @@ class AccessibleSlider extends StatelessWidget {
           ? null
           : (val) {
               if (val != value) {
-                _service.trigger(AccessibilityEvent.action); // Vibrate on change
+                _service.trigger(
+                  AccessibilityEvent.action,
+                ); // Vibrate on change
               }
               onChanged!(val);
             },

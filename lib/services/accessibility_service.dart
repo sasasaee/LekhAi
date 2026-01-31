@@ -21,6 +21,7 @@ class AccessibilityService {
   // Configuration
   bool debugLogs = true;
   bool enabled = true; // NEW: Toggle master switch
+  bool oneTapAnnounce = true; // Toggle for "Single Tap Announce + Double Tap Activate"
   static const Duration _debounceDuration = Duration(milliseconds: 100);
 
   DateTime? _lastFeedbackTime;
@@ -44,10 +45,11 @@ class AccessibilityService {
     // Load saved preference
     final prefs = await SharedPreferences.getInstance();
     enabled = prefs.getBool('haptics') ?? true;
+    oneTapAnnounce = prefs.getBool('one_tap_announce') ?? true;
 
     if (debugLogs)
       debugPrint(
-        "Accessibility: Vibrator=$_hasVibrator, Custom=$_hasCustomVibrations, Enabled=$enabled",
+        "Accessibility: Vibrator=$_hasVibrator, Custom=$_hasCustomVibrations, Enabled=$enabled, OneTapAnnounce=$oneTapAnnounce",
       );
   }
 
@@ -55,6 +57,13 @@ class AccessibilityService {
   void setEnabled(bool value) {
     enabled = value;
     if (debugLogs) debugPrint("Accessibility: Haptics Enabled = $enabled");
+  }
+
+  /// Toggles the "Single Tap Announce" behavior.
+  void setOneTapAnnounce(bool value) {
+    oneTapAnnounce = value;
+    if (debugLogs)
+      debugPrint("Accessibility: One Tap Announce Enabled = $oneTapAnnounce");
   }
 
   /// Triggers haptic feedback for a specific semantic event.

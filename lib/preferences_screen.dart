@@ -32,6 +32,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   final SttService _sttService = SttService();
   bool _isListening = false;
   bool _voiceCommandsEnabled = true; // Default ON
+  bool _oneTapAnnounce = true; // Default ON
   final TextEditingController _apiKeyController = TextEditingController();
 
   @override
@@ -175,6 +176,10 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
         bool hapticsEnabled = prefs['haptics'] as bool? ?? true;
         AccessibilityService().setEnabled(hapticsEnabled);
 
+        // Load One Tap Announce
+        _oneTapAnnounce = prefs['one_tap_announce'] as bool? ?? true;
+        AccessibilityService().setOneTapAnnounce(_oneTapAnnounce);
+
         // Load Voice Commands
         _voiceCommandsEnabled = sp.getBool('voice_commands_enabled') ?? true;
       });
@@ -198,6 +203,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     await widget.ttsService.saveHapticPreference(
       AccessibilityService().enabled,
     );
+    await widget.ttsService.saveOneTapAnnouncePreference(_oneTapAnnounce);
 
     final sp = await SharedPreferences.getInstance();
     await sp.setString('gemini_api_key', _apiKeyController.text.trim());
@@ -415,6 +421,37 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                     onChanged: (val) {
                       setState(() {
                         AccessibilityService().setEnabled(val);
+                      });
+                      if (val)
+                        AccessibilityService().trigger(
+                          AccessibilityEvent.action,
+                        );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // Single Tap Announce Toggle
+                _GlassCard(
+                  child: SwitchListTile(
+                    value: _oneTapAnnounce,
+                    activeColor: Theme.of(context).primaryColor,
+                    title: Text(
+                      "Single Tap to Announce",
+                      style: GoogleFonts.outfit(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    subtitle: Text(
+                      "Double tap to activate when enabled",
+                      style: GoogleFonts.outfit(color: Colors.white54),
+                    ),
+                    onChanged: (val) {
+                      setState(() {
+                        _oneTapAnnounce = val;
+                        AccessibilityService().setOneTapAnnounce(val);
                       });
                       if (val)
                         AccessibilityService().trigger(
