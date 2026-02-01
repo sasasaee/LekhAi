@@ -540,32 +540,6 @@ class _HomeScreenState extends State<HomeScreen>
                         ),
                         const SizedBox(height: 20),
                         _DashboardCard(
-                          icon: Icons.library_books_rounded,
-                          label: "Saved Papers",
-                          subLabel: "Review Exams",
-                          color: const Color(0xFF10B981), // Emerald
-                          delay: 800,
-                          onTap: () async {
-                            widget.ttsService.speak("Opening saved papers.");
-                            _shouldListen = false;
-                            await _sttService.stopListening();
-                            if (!context.mounted) return;
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => QuestionsScreen(
-                                  ttsService: widget.ttsService,
-                                  voiceService: widget.voiceService,
-                                ),
-                              ),
-                            ).then((_) {
-                              _shouldListen = true;
-                              _initVoiceCommandListener();
-                            });
-                          },
-                        ),
-                        const SizedBox(height: 20),
-                        _DashboardCard(
                           icon: Icons.settings_outlined,
                           label: "Preferences",
                           subLabel: "Customize App",

@@ -78,6 +78,9 @@ enum VoiceAction {
   restartReading,
   playAudioAnswer,
   toggleReadContext,
+  checkTime,
+  checkTotalQuestions,
+  checkRemainingQuestions,
   unknown,
 }
 
@@ -187,8 +190,7 @@ class VoiceCommandService {
         
         // ... Feature Toggle ...
         if (text.contains("play audio") || text.contains("play answer") || text.contains("listen") || text.contains("play the answer")) {
-            // "play the answer" mapped here, will handle text fallback in UI
-            return CommandResult(VoiceAction.readAnswer); // Changed from playAudioAnswer to readAnswer to handle both text/audio
+            return CommandResult(VoiceAction.readAnswer);
         }
         if (text.contains("context") || text.contains("read context")) {
             return CommandResult(VoiceAction.toggleReadContext);
@@ -206,8 +208,18 @@ class VoiceCommandService {
             return CommandResult(VoiceAction.pauseReading);
         }
 
+        // ... Status Queries ...
+        if (text.contains("how many questions left") || text.contains("questions left") || text.contains("remaining questions")) {
+           return CommandResult(VoiceAction.checkRemainingQuestions);
+        }
+        if (text.contains("how many questions") || text.contains("total questions")) {
+           return CommandResult(VoiceAction.checkTotalQuestions);
+        }
+        if (text.contains("how much time") || text.contains("time left") || text.contains("remaining time")) {
+           return CommandResult(VoiceAction.checkTime);
+        }
+
         // ... Direct Jump (New) ...
-        // Logic reused from paperDetail - ideally refactor to helper, but copy-paste for safety now
         final RegExp selectionRegex = RegExp(r"(question|number)\s+([a-z0-9]+)");
         final match = selectionRegex.firstMatch(text);
         if (match != null) {
