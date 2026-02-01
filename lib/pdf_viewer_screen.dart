@@ -98,6 +98,15 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
       case VoiceAction.stopDictation: // Reuse stop action
         _stopReading();
         break;
+      case VoiceAction.pauseReading:
+        _pauseReading();
+        break;
+      case VoiceAction.resumeReading:
+        _resumeReading();
+        break;
+      case VoiceAction.restartReading:
+        _restartReading();
+        break;
       case VoiceAction.goBack:
         Navigator.pop(context);
         break;

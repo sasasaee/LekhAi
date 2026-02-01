@@ -125,6 +125,9 @@ class _OcrScreenState extends State<OcrScreen> {
       case VoiceAction.saveResult:
         _saveParsed();
         break;
+      case VoiceAction.enterExamMode:
+        _promptExamMode();
+        break;
       case VoiceAction.goBack:
         Navigator.pop(context);
         break;

@@ -410,7 +410,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
           text,
           context: _isWaitingForConfirmation
               ? VoiceContext.confirmExamStart
-              : VoiceContext.global,
+              : VoiceContext.paperDetail,
         );
         if (result.action != VoiceAction.unknown) {
           _executeVoiceCommand(result);
@@ -455,21 +455,27 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
         if (mounted) Navigator.pop(context);
         break;
 
+      case VoiceAction.saveResult:
+         if (!_kioskEnabled) {
+             await widget.ttsService.speak("Saving paper.");
+             if (mounted) _savePaper(context);
+         } else {
+             widget.ttsService.speak("In exam mode, please submit exam to save.");
+         }
+         break;
+
       case VoiceAction.submitExam: // Use this as "Save" for this screen
         if (_kioskEnabled) {
-          // Handle Exam Submission specifically
-          // For now, simpler flow: Just save and unlock
-          await widget.ttsService.speak("Submitting exam.");
-          await KioskService().disableKioskMode();
-          setState(() {
-            _kioskEnabled = false;
-          });
-          if (mounted) _savePaper(context); // Then normal save
-          if (mounted) Navigator.pop(context); // And exit
+          _confirmEndExam(); 
         } else {
           await widget.ttsService.speak("Saving paper progress.");
           if (mounted) _savePaper(context);
         }
+        break;
+
+      case VoiceAction.scanQuestions:
+        widget.ttsService.speak("Scanning new page.");
+        _onAddPage(context);
         break;
 
       default:
@@ -1453,7 +1459,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         // Block command execution if the student is currently dictating an answer
         if (_isListening) return;
 
-        final result = widget.voiceService.parse(text);
+        final result = widget.voiceService.parse(text, context: VoiceContext.question);
         if (result.action != VoiceAction.unknown) {
           _executeVoiceCommand(result);
         }
@@ -1496,6 +1502,24 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         _stopListening();
         break;
 
+      case VoiceAction.pauseReading:
+        _onStopPressed();
+        break;
+
+      case VoiceAction.playAudioAnswer:
+         if (widget.question.audioPath != null) {
+            await widget.ttsService.speak("Playing answer.");
+            await _audioPlayer.play(DeviceFileSource(widget.question.audioPath!));
+         } else {
+            await widget.ttsService.speak("No audio answer recorded.");
+         }
+         break;
+
+      case VoiceAction.toggleReadContext:
+         setState(() => _playContext = !_playContext);
+         await widget.ttsService.speak("Context reading ${_playContext ? 'enabled' : 'disabled'}.");
+         break;
+
       case VoiceAction.readAnswer:
         widget.ttsService.speak(
           "Your current answer is: ${_answerController.text}",
@@ -1510,6 +1534,20 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         break;
 
       case VoiceAction.goBack:
+        await widget.ttsService.speak("Going back.");
+        if (mounted) Navigator.pop(context);
+        break;
+
+      case VoiceAction.nextPage:
+        if (widget.onNext != null) {
+          widget.onNext!();
+        } else {
+          widget.ttsService.speak("No next question.");
+        }
+        break;
+
+      case VoiceAction.previousPage:
+        // Treat as go back for now, or could link to previous if we passed a callback
         await widget.ttsService.speak("Going back.");
         if (mounted) Navigator.pop(context);
         break;

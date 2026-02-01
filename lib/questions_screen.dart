@@ -143,6 +143,11 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
     }
 
     // Delegate other global commands
+    if (result.action == VoiceAction.clearAllPapers) {
+      _clearAllPapers();
+      return;
+    }
+    
     widget.voiceService.performGlobalNavigation(result);
   }
 
@@ -173,6 +178,15 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
   // Removed unused _finishExam method
 
   // Removed unused _formatTime method
+
+  Future<void> _clearAllPapers() async {
+      await widget.ttsService.speak("Clearing all saved papers.");
+      await _storageService.clearDocuments();
+      setState(() {
+          _papers = [];
+      });
+      widget.ttsService.speak("All papers cleared.");
+  }
 
   Future<void> _loadQuestions() async {
     final docs = await _storageService.getDocuments();
