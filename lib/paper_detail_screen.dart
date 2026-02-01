@@ -484,7 +484,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
     }
   }
 
-  void _openNextQuestion(ParsedQuestion currentQuestion) {
+  void _openNextQuestion(ParsedQuestion currentQuestion, {bool replace = false}) {
     // Flatten list of all questions to find index
     List<ParsedQuestion> allQuestions = [];
     for (var section in _document.sections) {
@@ -503,47 +503,46 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
         }
       }
 
-      // Close current SingleScreen (handled by callback logic usually, but here we push replacement or handle it)
-      // Actually, since we are inside the callback from the *current* screen,
-      // we first pop the current screen, then push the new one.
-
-      // But _openQuestionByNumber/Logic usually pushes.
-      // So:
-      // Navigator.pop(context); (Done in callback wrapper)
-      // Push next.
-
-      // Let's reuse specific logic here.
       widget.ttsService.speak("Opening next question.");
 
       // Stop local listening before pushing new screen
       _sttService.stopListening();
 
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => SingleQuestionScreen(
-            question: nextQ,
-            contextText: contextText,
-            ttsService: widget.ttsService,
-            voiceService: widget.voiceService,
-            accessibilityService: widget.accessibilityService,
-            onNext: () {
-              Navigator.pop(context);
-              _openNextQuestion(nextQ);
-            },
-          ),
+      final route = MaterialPageRoute(
+        builder: (_) => SingleQuestionScreen(
+          question: nextQ,
+          contextText: contextText,
+          ttsService: widget.ttsService,
+          voiceService: widget.voiceService,
+          accessibilityService: widget.accessibilityService,
+          onNext: () {
+            // Replace current with next (recursive)
+            _openNextQuestion(nextQ, replace: true);
+          },
+          onJump: (n) {
+             // Replace current with jump target
+             _openQuestionByNumber(n, replace: true);
+          },
         ),
-      ).then((_) {
-        // Resume listening when returning
-        _initVoiceCommandListener();
-      });
+      );
+
+      if (replace) {
+        Navigator.pushReplacement(context, route).then((_) {
+            _initVoiceCommandListener();
+        });
+      } else {
+        Navigator.push(context, route).then((_) {
+          _initVoiceCommandListener();
+        });
+      }
+
     } else {
       widget.ttsService.speak("No more questions.");
     }
   }
 
   // Helper to open a question via voice
-  void _openQuestionByNumber(int number) {
+  void _openQuestionByNumber(int number, {bool replace = false}) {
     ParsedQuestion? target;
     String? contextText;
 
@@ -564,25 +563,32 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       // Stop local listening before pushing new screen
       _sttService.stopListening();
 
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => SingleQuestionScreen(
-            question: target!,
-            contextText: contextText,
-            ttsService: widget.ttsService,
-            voiceService: widget.voiceService,
-            accessibilityService: widget.accessibilityService,
-            onNext: () {
-              Navigator.pop(context);
-              _openNextQuestion(target!);
-            },
-          ),
+      final route = MaterialPageRoute(
+        builder: (_) => SingleQuestionScreen(
+          question: target!,
+          contextText: contextText,
+          ttsService: widget.ttsService,
+          voiceService: widget.voiceService,
+          accessibilityService: widget.accessibilityService,
+          onNext: () {
+            _openNextQuestion(target!, replace: true);
+          },
+          onJump: (n) {
+             _openQuestionByNumber(n, replace: true);
+          },
         ),
-      ).then((_) {
-        // Resume listening when returning
-        _initVoiceCommandListener();
-      });
+      );
+
+      if (replace) {
+        Navigator.pushReplacement(context, route).then((_) {
+             _initVoiceCommandListener();
+        });
+      } else {
+         Navigator.push(context, route).then((_) {
+           _initVoiceCommandListener();
+        });
+      }
+
     } else {
       widget.ttsService.speak("Question $number not found.");
     }
@@ -1376,15 +1382,17 @@ class SingleQuestionScreen extends StatefulWidget {
   final VoiceCommandService voiceService; // Added
   final AccessibilityService? accessibilityService;
   final VoidCallback? onNext; // Added
+  final Function(int)? onJump; // Added
 
   const SingleQuestionScreen({
     super.key,
     required this.question,
     this.contextText,
     required this.ttsService,
-    required this.voiceService, // Added
+    required this.voiceService,
     this.accessibilityService,
     this.onNext,
+    this.onJump,
   });
 
   @override
@@ -1570,6 +1578,14 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         // Treat as go back for now, or could link to previous if we passed a callback
         await widget.ttsService.speak("Going back.");
         if (mounted) Navigator.pop(context);
+        break;
+
+      case VoiceAction.goToQuestion:
+        if (result.payload is int && widget.onJump != null) {
+          widget.onJump!(result.payload);
+        } else {
+             widget.ttsService.speak("Jump not available.");
+        }
         break;
 
       default:
