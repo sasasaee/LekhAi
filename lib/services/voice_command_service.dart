@@ -186,13 +186,23 @@ class VoiceCommandService {
         }
         
         // ... Feature Toggle ...
-        if (text.contains("play audio") || text.contains("play answer") || text.contains("listen")) {
-            return CommandResult(VoiceAction.playAudioAnswer);
+        if (text.contains("play audio") || text.contains("play answer") || text.contains("listen") || text.contains("play the answer")) {
+            // "play the answer" mapped here, will handle text fallback in UI
+            return CommandResult(VoiceAction.readAnswer); // Changed from playAudioAnswer to readAnswer to handle both text/audio
         }
         if (text.contains("context") || text.contains("read context")) {
             return CommandResult(VoiceAction.toggleReadContext);
         }
-        if (text.contains("stop") || text.contains("pause")) {
+        
+        // ... Answer Dictation ...
+        if (text.contains("start answer") || text.contains("start") || text.contains("answer question")) {
+             return CommandResult(VoiceAction.startDictation);
+        }
+        if (text.contains("stop answer") || text.contains("stop") || text.contains("finish answer")) {
+             return CommandResult(VoiceAction.stopDictation);
+        }
+
+        if (text.contains("pause")) {
             return CommandResult(VoiceAction.pauseReading);
         }
 

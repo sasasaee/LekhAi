@@ -1418,6 +1418,8 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
 
   // Hands-Free State
   bool _isAppending = true;
+  bool _isVoiceDictationActive = false; // New flag for voice command dictation loop
+
 
   @override
   void initState() {
@@ -1444,7 +1446,13 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         if ((status == 'notListening' || status == 'done') && !_isListening) {
           // A 500ms delay ensures the OS has fully released the mic before we re-acquire it
           Future.delayed(const Duration(milliseconds: 500), () {
-            if (mounted && !_isListening) _startCommandStream();
+            if (mounted && !_isListening) {
+               if (_isVoiceDictationActive) {
+                 _startAnswerDictation(speakPrompt: false);
+               } else {
+                 _startCommandStream();
+               }
+            }
           });
         }
       },
@@ -1500,20 +1508,22 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         _startReadingQuestion();
         break;
 
-      case VoiceAction.startDictation:
-        await widget.ttsService.speak("Starting dictation.");
-        _startListening(append: true);
-        break;
-
+      // REMOVED manual mappings to _startListening in favor of new flow
+      // case VoiceAction.startDictation: ...
+      // case VoiceAction.appendAnswer: ...
+      // case VoiceAction.overwriteAnswer: ... 
+      // Handled now by generic startDictation or specific below
+      
       case VoiceAction.appendAnswer:
-        await widget.ttsService.speak("Appending to answer.");
-        _startListening(append: true);
+        _startAnswerDictation(speakPrompt: true);
         break;
-
+      
       case VoiceAction.overwriteAnswer:
-        await widget.ttsService.speak("Overwriting answer. Speak new answer.");
-        _startListening(append: false);
-        break;
+         // For voice command overwrite, we might need a flag, but simple 'start' defaults to append.
+         // Let's clear first for overwrite.
+         _clearAnswer();
+         _startAnswerDictation(speakPrompt: true);
+         break;
 
       case VoiceAction.clearAnswer:
         _clearAnswer();
@@ -1523,11 +1533,17 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         _readLastSentence();
         break;
 
+      case VoiceAction.startDictation:
+        // Use the new Voice Command Dictation Mode
+        _startAnswerDictation(speakPrompt: true);
+        break;
+
       case VoiceAction.stopDictation:
-        // If we are NOT reading (caught above), this might mean "Stop Dictation"
-        // But dictation captures its own "Stop" usually.
-        // If we are idle, "Stop" might just be feedback.
-        await widget.ttsService.speak("Dictation is not active.");
+        if (_isVoiceDictationActive) {
+           _stopAnswerDictation();
+        } else {
+           await widget.ttsService.speak("Dictation is not active.");
+        }
         break;
 
       case VoiceAction.pauseReading:
@@ -1549,9 +1565,16 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
          break;
 
       case VoiceAction.readAnswer:
-        widget.ttsService.speak(
-          "Your current answer is: ${_answerController.text}",
-        );
+        String textToRead = _answerController.text;
+        if (textToRead.isEmpty && widget.question.audioPath != null) {
+             // Fallback to audio if text is empty but audio exists
+             await widget.ttsService.speak("Playing answer.");
+             await _audioPlayer.play(DeviceFileSource(widget.question.audioPath!));
+        } else {
+             widget.ttsService.speak(
+              "Your current answer is: $textToRead",
+            );
+        }
         break;
 
       case VoiceAction.changeSpeed:
@@ -1798,11 +1821,87 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
       setState(() {
         _isListening = true;
         _isProcessingAudio = false;
+        // _isVoiceDictationActive remains false here (Manual Mode)
       });
     } catch (e) {
       widget.ttsService.speak("Failed to start recording.");
       _initVoiceCommandListener(); // Resume listener on fail
     }
+  }
+
+  // --- NEW VOICE COMMAND DICTATION ---
+  void _startAnswerDictation({bool speakPrompt = false}) async {
+     // 1. Set State
+     setState(() {
+       _isVoiceDictationActive = true;
+       _isListening = true; 
+     });
+
+     // 2. prompt
+     if (speakPrompt) {
+       await widget.ttsService.speak("Start answering.");
+       // Wait for speech to finish roughly
+       await Future.delayed(const Duration(milliseconds: 1000)); 
+     }
+
+     // 3. Start STT
+     _sttService.startListening(
+       localeId: "en-US",
+       onResult: (text) {
+         if (!_isVoiceDictationActive) return;
+
+         String lower = text.toLowerCase();
+         // Check for STOP keywords
+         if (lower.contains("stop answer") || lower.contains("stop") || lower.contains("finish answer")) {
+            // detected stop
+            // Try to extract text BEFORE the stop word
+            // Note: simple split might lose context if "stop" appears earlier validly. 
+            // Assuming "Stop Answer" is the command.
+            
+            // Removing the command phrase
+            String finalText = text;
+            final stopPhrases = ["stop answer", "stop", "finish answer"];
+            for (var phrase in stopPhrases) {
+               final index = finalText.toLowerCase().lastIndexOf(phrase);
+               if (index != -1) {
+                  finalText = finalText.substring(0, index);
+                  break; // found one
+               }
+            }
+            
+            _appendDictatedText(finalText);
+            _stopAnswerDictation();
+         } else {
+            // Append and Keep Listening (relying on Loop Restart in _initVoiceCommandListener)
+            _appendDictatedText(text);
+         }
+       }
+     );
+  }
+
+  void _stopAnswerDictation() {
+     setState(() {
+       _isVoiceDictationActive = false;
+       _isListening = false;
+     });
+     _sttService.stopListening();
+     widget.ttsService.speak("Answer taken.");
+     // _initVoiceCommandListener will restart command stream automatically
+  }
+
+  void _appendDictatedText(String text) {
+      if (text.trim().isEmpty) return;
+      
+      String current = _answerController.text;
+      String separator = current.isEmpty || current.endsWith(" ") ? "" : " ";
+      // Basic check to avoid double-appending if STT sends partials repeatedly (partialResults: false usually safe)
+      // But we are in a loop where we restart. 
+      // Ideally we shouldn't append duplicate text. 
+      // For now, assuming One-Shot phrases.
+      
+      setState(() {
+        _answerController.text = current + separator + text.trim();
+      });
   }
 
   void _stopListening() async {
@@ -1821,6 +1920,9 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
       await _processAudioAnswer(path);
       // Resume Command Listener
       _initVoiceCommandListener();
+    } else if (_isVoiceDictationActive) {
+       // Should not happen via this method usually, but if button pressed while in voice mode:
+       _stopAnswerDictation();
     }
   }
 
