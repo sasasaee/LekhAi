@@ -1587,7 +1587,6 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
              widget.ttsService.speak("Jump not available.");
         }
         break;
-
       default:
         widget.voiceService.performGlobalNavigation(result);
         break;
