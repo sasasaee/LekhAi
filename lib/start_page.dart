@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'services/stt_service.dart';
 import 'services/tts_service.dart';
 import 'services/voice_command_service.dart';
 import 'services/accessibility_service.dart';
@@ -24,11 +25,69 @@ class StartPage extends StatefulWidget {
 }
 
 class _StartPageState extends State<StartPage> {
+  final SttService _sttService = SttService();
+  bool _shouldListen = true;
+
   @override
   void initState() {
     super.initState();
     widget.ttsService.speak(
-      "Welcome to LekhAi. Your intelligent study companion.",
+      "Welcome to LekhAi. Your intelligent study companion. Say Get Started to begin.",
+    );
+    _initVoiceListener();
+  }
+
+  @override
+  void dispose() {
+    _shouldListen = false;
+    _sttService.stopListening();
+    super.dispose();
+  }
+
+  void _initVoiceListener() async {
+    bool available = await _sttService.init(
+      tts: widget.ttsService,
+      onStatus: (status) {
+        if ((status == 'notListening' || status == 'done') && _shouldListen) {
+           Future.delayed(const Duration(milliseconds: 500), () {
+            if (mounted && _shouldListen) _startListening();
+          });
+        }
+      },
+    );
+
+    if (available) {
+      _startListening();
+    }
+  }
+
+  void _startListening() {
+    if (!_shouldListen) return;
+    _sttService.startListening(
+      localeId: 'en-US',
+      onResult: (text) {
+        final result = widget.voiceService.parse(text);
+        if (result.action == VoiceAction.startApp || 
+            text.toLowerCase().contains('get started')) {
+          _navigateToHome();
+        }
+      },
+    );
+  }
+
+  void _navigateToHome() {
+    _shouldListen = false;
+    _sttService.stopListening();
+    widget.accessibilityService.trigger(AccessibilityEvent.action);
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => HomeScreen(
+          ttsService: widget.ttsService,
+          voiceService: widget.voiceService,
+          accessibilityService: widget.accessibilityService,
+        ),
+      ),
     );
   }
 
@@ -87,22 +146,7 @@ class _StartPageState extends State<StartPage> {
                       width: double.infinity,
                       height: 68, // Slightly taller
                       child: ElevatedButton(
-                        onPressed: () {
-                          widget.accessibilityService.trigger(
-                            AccessibilityEvent.action,
-                          );
-                          Navigator.pushReplacement(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => HomeScreen(
-                                ttsService: widget.ttsService,
-                                voiceService: widget.voiceService,
-                                accessibilityService:
-                                    widget.accessibilityService,
-                              ),
-                            ),
-                          );
-                        },
+                        onPressed: _navigateToHome,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Theme.of(context).primaryColor,
                           foregroundColor: Colors.white,

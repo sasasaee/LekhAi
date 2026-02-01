@@ -132,6 +132,10 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
         _savePreferences();
         break;
 
+      case VoiceAction.resetPreferences:
+        _reset();
+        break;
+
       default:
         widget.voiceService.performGlobalNavigation(result);
         break;

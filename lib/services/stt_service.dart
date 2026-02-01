@@ -51,7 +51,13 @@ class SttService with WidgetsBindingObserver {
   // ---------------- TTS SUBSCRIPTION ----------------
   StreamSubscription<bool>? _ttsSubscription;
 
-  SttService() {
+  static final SttService _instance = SttService._internal();
+
+  factory SttService() {
+    return _instance;
+  }
+
+  SttService._internal() {
     _speech = stt.SpeechToText();
     WidgetsBinding.instance.addObserver(this); // Register observer
   }
@@ -76,7 +82,6 @@ class SttService with WidgetsBindingObserver {
         _ttsSubscription = (tts as dynamic).speakingStream.listen((
           bool isSpeaking,
         ) {
-          debugPrint("STT: TTS speaking=$isSpeaking");
 
           if (isSpeaking) {
             _pausedByTts = true;
@@ -88,7 +93,7 @@ class SttService with WidgetsBindingObserver {
             _pausedByTts = false;
             // Only resume if we are supposed to be listening
             if (_intendedState == SttIntendedState.listening) {
-              _kickLoop(delay: 500);
+              _kickLoop(delay: 200);
             }
           }
         });
@@ -98,12 +103,27 @@ class SttService with WidgetsBindingObserver {
     }
 
     // -------- STT ENGINE INIT --------
-    _isAvailable = await _speech.initialize(
-      debugLogging: false,
-      onStatus: _handleStatus,
-      onError: _handleError,
-    );
+    // Only initialize if not already available or if we want to force re-init
+    // But speech_to_text initialize is usually safe to call repeatedly.
+    // However, updating callbacks is crucial.
+    
+    // We strictly need to re-initialize to bind the new onStatus/onError callbacks 
+    // to the speech instance if the plugin doesn't support hot-swapping callbacks easily.
+    // Actually, initialize() accepts the callbacks. So calling it again updates them.
+    
+    try {
+      _isAvailable = await _speech.initialize(
+        debugLogging: true,
+        onStatus: _handleStatus,
+        onError: _handleError,
+      );
+    } catch (e) {
+      debugPrint("STT: Init error (might be already initialized): $e");
+      // Fallback: If error, maybe we are still good?
+      // But typically we want _isAvailable to reflect true status.
+    }
 
+    debugPrint("STT: Init result: $_isAvailable");
     return _isAvailable;
   }
 

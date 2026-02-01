@@ -410,7 +410,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
           text,
           context: _isWaitingForConfirmation
               ? VoiceContext.confirmExamStart
-              : VoiceContext.global,
+              : VoiceContext.paperDetail,
         );
         if (result.action != VoiceAction.unknown) {
           _executeVoiceCommand(result);
@@ -455,21 +455,27 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
         if (mounted) Navigator.pop(context);
         break;
 
+      case VoiceAction.saveResult:
+         if (!_kioskEnabled) {
+             await widget.ttsService.speak("Saving paper.");
+             if (mounted) _savePaper(context);
+         } else {
+             widget.ttsService.speak("In exam mode, please submit exam to save.");
+         }
+         break;
+
       case VoiceAction.submitExam: // Use this as "Save" for this screen
         if (_kioskEnabled) {
-          // Handle Exam Submission specifically
-          // For now, simpler flow: Just save and unlock
-          await widget.ttsService.speak("Submitting exam.");
-          await KioskService().disableKioskMode();
-          setState(() {
-            _kioskEnabled = false;
-          });
-          if (mounted) _savePaper(context); // Then normal save
-          if (mounted) Navigator.pop(context); // And exit
+          _confirmEndExam(); 
         } else {
           await widget.ttsService.speak("Saving paper progress.");
           if (mounted) _savePaper(context);
         }
+        break;
+
+      case VoiceAction.scanQuestions:
+        widget.ttsService.speak("Scanning new page.");
+        _onAddPage(context);
         break;
 
       default:
@@ -1453,7 +1459,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         // Block command execution if the student is currently dictating an answer
         if (_isListening) return;
 
-        final result = widget.voiceService.parse(text);
+        final result = widget.voiceService.parse(text, context: VoiceContext.question);
         if (result.action != VoiceAction.unknown) {
           _executeVoiceCommand(result);
         }
@@ -1462,10 +1468,28 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
   }
 
   void _executeVoiceCommand(CommandResult result) async {
+    // --- READING PHASE GUARD ---
+    // If we are currently reading, we ONLY accept:
+    // 1. Stop Reading (pauseReading / stopDictation)
+    // 2. Repeat Question (readQuestion)
+    if (_isReading) {
+      if (result.action == VoiceAction.pauseReading ||
+          result.action == VoiceAction.stopDictation) {
+        _stopReadingQuestion();
+        return;
+      }
+      if (result.action == VoiceAction.readQuestion) {
+        _startReadingQuestion(); // Restart/Repeat
+        return;
+      }
+      // Reject all other commands (silently or with log)
+      debugPrint("Ignored command '${result.action}' during reading phase.");
+      return;
+    }
+
     switch (result.action) {
       case VoiceAction.readQuestion:
-        await widget.ttsService.speak("Reading question.");
-        _onReadPressed();
+        _startReadingQuestion();
         break;
 
       case VoiceAction.startDictation:
@@ -1492,9 +1516,29 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         break;
 
       case VoiceAction.stopDictation:
-        await widget.ttsService.speak("Stopping dictation.");
-        _stopListening();
+        // If we are NOT reading (caught above), this might mean "Stop Dictation"
+        // But dictation captures its own "Stop" usually.
+        // If we are idle, "Stop" might just be feedback.
+        await widget.ttsService.speak("Dictation is not active.");
         break;
+
+      case VoiceAction.pauseReading:
+         // If idle, maybe just say nothing or "Already stopped".
+        break;
+
+      case VoiceAction.playAudioAnswer:
+         if (widget.question.audioPath != null) {
+            await widget.ttsService.speak("Playing answer.");
+            await _audioPlayer.play(DeviceFileSource(widget.question.audioPath!));
+         } else {
+            await widget.ttsService.speak("No audio answer recorded.");
+         }
+         break;
+
+      case VoiceAction.toggleReadContext:
+         setState(() => _playContext = !_playContext);
+         await widget.ttsService.speak("Context reading ${_playContext ? 'enabled' : 'disabled'}.");
+         break;
 
       case VoiceAction.readAnswer:
         widget.ttsService.speak(
@@ -1514,10 +1558,67 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         if (mounted) Navigator.pop(context);
         break;
 
+      case VoiceAction.nextPage:
+        if (widget.onNext != null) {
+          widget.onNext!();
+        } else {
+          widget.ttsService.speak("No next question.");
+        }
+        break;
+
+      case VoiceAction.previousPage:
+        // Treat as go back for now, or could link to previous if we passed a callback
+        await widget.ttsService.speak("Going back.");
+        if (mounted) Navigator.pop(context);
+        break;
+
       default:
         widget.voiceService.performGlobalNavigation(result);
         break;
     }
+  }
+
+  Future<void> _startReadingQuestion() async {
+    // 1. Reset State
+    await widget.ttsService.stop();
+    if (!mounted) return;
+    setState(() {
+      _isReading = true;
+      _isPaused = false;
+      _lastSpeechStartOffset = 0;
+    });
+
+    // 2. Prepare FULL Text (Atomic)
+    // Using periods and spaces to ensure natural pauses
+    final sb = StringBuffer();
+    sb.write("Reading question now... ");
+    // Replace newlines with period-space to prevent run-on sentences if newlines are squashed
+    sb.write(_fullText.replaceAll('\n', '. '));
+    sb.write(" ... End of question. Say ‘Start answering’ when ready.");
+
+    // 3. One Speak Call
+    await widget.ttsService.speakAndWait(sb.toString());
+
+    // 4. Cleanup
+    if (mounted) {
+      setState(() {
+        _isReading = false;
+      });
+    }
+  }
+
+  Future<void> _stopReadingQuestion() async {
+    await widget.ttsService.stop();
+    if (mounted) {
+      setState(() {
+        _isReading = false;
+        _isPaused = false;
+        _lastSpeechStartOffset = 0;
+      });
+    }
+    await widget.ttsService.speak(
+      "Reading stopped. Say ‘Read question’ to hear it again.",
+    );
   }
 
   Future<void> _stopAndInit() async {

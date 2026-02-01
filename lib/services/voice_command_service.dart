@@ -20,7 +20,9 @@ enum VoiceContext {
   pdfViewer,
   takeExam,
   scanQuestions,
-  confirmExamStart, // New context for kiosk confirmation
+  confirmExamStart,
+  paperDetail, // New context
+  question, // New context
 }
 
 enum VoiceAction {
@@ -63,6 +65,19 @@ enum VoiceAction {
   decreaseVolume,
   increaseSpeed,
   decreaseSpeed,
+  // New Actions
+  startApp,
+  clearAllPapers,
+  enterExamMode,
+  submitForm,
+  confirmAction,
+  cancelAction,
+  resetPreferences,
+  pauseReading,
+  resumeReading,
+  restartReading,
+  playAudioAnswer,
+  toggleReadContext,
   unknown,
 }
 
@@ -134,6 +149,52 @@ class VoiceCommandService {
       }
     }
 
+    // Paper Detail Context
+    if (context == VoiceContext.paperDetail) {
+       // "Add Page" / "Scan Page"
+       if (text.contains("add page") || text.contains("scan page") || text.contains("add photo")) {
+         return CommandResult(VoiceAction.scanQuestions);
+       }
+
+       // "Question X"
+       final RegExp selectionRegex = RegExp(r"(question|number)\s+([a-z0-9]+)");
+       final match = selectionRegex.firstMatch(text);
+       if (match != null) {
+          String rawNumber = match.group(2)!;
+          int? index = int.tryParse(rawNumber);
+          if (index == null) {
+             const numberMap = {
+            'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+            'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
+             };
+             index = numberMap[rawNumber];
+          }
+          if (index != null) {
+            return CommandResult(VoiceAction.goToQuestion, payload: index);
+          }
+       }
+    }
+
+    // Single Question Context
+    if (context == VoiceContext.question) {
+        if (text.contains("next") || text.contains("next question")) {
+            return CommandResult(VoiceAction.nextPage);
+        }
+        if (text.contains("previous") || text.contains("previous question") || text.contains("back")) {
+             // Let's map "back" here too if specific behavior needed, else fallback catches "go back"
+             return CommandResult(VoiceAction.previousPage);
+        }
+        if (text.contains("play audio") || text.contains("play answer") || text.contains("listen")) {
+            return CommandResult(VoiceAction.playAudioAnswer);
+        }
+        if (text.contains("context") || text.contains("read context")) {
+            return CommandResult(VoiceAction.toggleReadContext);
+        }
+        if (text.contains("stop") || text.contains("pause")) {
+            return CommandResult(VoiceAction.pauseReading);
+        }
+    }
+
     // OCR / Take Exam Context
     if (context == VoiceContext.ocr) {
       if (text.contains("camera") ||
@@ -149,11 +210,21 @@ class VoiceCommandService {
       if (text.contains("save") || text.contains("save result")) {
         return CommandResult(VoiceAction.saveResult);
       }
+      if (text.contains("enter exam mode") || text.contains("start exam")) {
+        return CommandResult(VoiceAction.enterExamMode);
+      }
     }
 
     // Saved Papers Context
     if (context == VoiceContext.savedPapers) {
       debugPrint("Saved Papers Context Parsing: '$text'");
+
+      if (text.contains("clear all") ||
+          text.contains("delete all") ||
+          text.contains("remove all")) {
+        return CommandResult(VoiceAction.clearAllPapers);
+      }
+
       // Parsing for DELETE commands (Check first!)
       final RegExp deleteRegex = RegExp(
         r"(delete|remove)\s+(paper|question|scan|number)\s+([a-z0-9]+)",
@@ -268,6 +339,9 @@ class VoiceCommandService {
           text.contains("back page")) {
         return CommandResult(VoiceAction.previousPage);
       }
+      if (text.contains("reset") || text.contains("default")) {
+          return CommandResult(VoiceAction.resetPreferences);
+      }
     }
 
     // PDF Viewer Context
@@ -280,6 +354,14 @@ class VoiceCommandService {
           text.contains("back page")) {
         return CommandResult(VoiceAction.previousPage);
       }
+      if (text.contains("pause")) return CommandResult(VoiceAction.pauseReading);
+      if (text.contains("resume") || text.contains("continue") || text.contains("play")) {
+          return CommandResult(VoiceAction.resumeReading);
+      }
+      if (text.contains("restart") || text.contains("replay")) {
+          return CommandResult(VoiceAction.restartReading);
+      }
+      if (text.contains("stop")) return CommandResult(VoiceAction.stopDictation);
     }
 
     // --- GLOBAL COMMANDS (Fallback) ---
@@ -356,6 +438,13 @@ class VoiceCommandService {
         text.contains("slower")) {
       return CommandResult(VoiceAction.changeSpeed);
     }
+    
+    if (text.contains("get started") || text.contains("start app")) {
+      return CommandResult(VoiceAction.startApp);
+    }
+
+    if (text.contains("confirm")) return CommandResult(VoiceAction.confirmAction);
+    if (text.contains("cancel")) return CommandResult(VoiceAction.cancelAction);
 
     return CommandResult(VoiceAction.unknown);
   }
