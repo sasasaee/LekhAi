@@ -484,7 +484,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
     }
   }
 
-  void _openNextQuestion(ParsedQuestion currentQuestion) {
+  void _openNextQuestion(ParsedQuestion currentQuestion, {bool replace = false}) {
     // Flatten list of all questions to find index
     List<ParsedQuestion> allQuestions = [];
     for (var section in _document.sections) {
@@ -503,47 +503,46 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
         }
       }
 
-      // Close current SingleScreen (handled by callback logic usually, but here we push replacement or handle it)
-      // Actually, since we are inside the callback from the *current* screen,
-      // we first pop the current screen, then push the new one.
-
-      // But _openQuestionByNumber/Logic usually pushes.
-      // So:
-      // Navigator.pop(context); (Done in callback wrapper)
-      // Push next.
-
-      // Let's reuse specific logic here.
       widget.ttsService.speak("Opening next question.");
 
       // Stop local listening before pushing new screen
       _sttService.stopListening();
 
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => SingleQuestionScreen(
-            question: nextQ,
-            contextText: contextText,
-            ttsService: widget.ttsService,
-            voiceService: widget.voiceService,
-            accessibilityService: widget.accessibilityService,
-            onNext: () {
-              Navigator.pop(context);
-              _openNextQuestion(nextQ);
-            },
-          ),
+      final route = MaterialPageRoute(
+        builder: (_) => SingleQuestionScreen(
+          question: nextQ,
+          contextText: contextText,
+          ttsService: widget.ttsService,
+          voiceService: widget.voiceService,
+          accessibilityService: widget.accessibilityService,
+          onNext: () {
+            // Replace current with next (recursive)
+            _openNextQuestion(nextQ, replace: true);
+          },
+          onJump: (n) {
+             // Replace current with jump target
+             _openQuestionByNumber(n, replace: true);
+          },
         ),
-      ).then((_) {
-        // Resume listening when returning
-        _initVoiceCommandListener();
-      });
+      );
+
+      if (replace) {
+        Navigator.pushReplacement(context, route).then((_) {
+            _initVoiceCommandListener();
+        });
+      } else {
+        Navigator.push(context, route).then((_) {
+          _initVoiceCommandListener();
+        });
+      }
+
     } else {
       widget.ttsService.speak("No more questions.");
     }
   }
 
   // Helper to open a question via voice
-  void _openQuestionByNumber(int number) {
+  void _openQuestionByNumber(int number, {bool replace = false}) {
     ParsedQuestion? target;
     String? contextText;
 
@@ -564,25 +563,32 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       // Stop local listening before pushing new screen
       _sttService.stopListening();
 
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => SingleQuestionScreen(
-            question: target!,
-            contextText: contextText,
-            ttsService: widget.ttsService,
-            voiceService: widget.voiceService,
-            accessibilityService: widget.accessibilityService,
-            onNext: () {
-              Navigator.pop(context);
-              _openNextQuestion(target!);
-            },
-          ),
+      final route = MaterialPageRoute(
+        builder: (_) => SingleQuestionScreen(
+          question: target!,
+          contextText: contextText,
+          ttsService: widget.ttsService,
+          voiceService: widget.voiceService,
+          accessibilityService: widget.accessibilityService,
+          onNext: () {
+            _openNextQuestion(target!, replace: true);
+          },
+          onJump: (n) {
+             _openQuestionByNumber(n, replace: true);
+          },
         ),
-      ).then((_) {
-        // Resume listening when returning
-        _initVoiceCommandListener();
-      });
+      );
+
+      if (replace) {
+        Navigator.pushReplacement(context, route).then((_) {
+             _initVoiceCommandListener();
+        });
+      } else {
+         Navigator.push(context, route).then((_) {
+           _initVoiceCommandListener();
+        });
+      }
+
     } else {
       widget.ttsService.speak("Question $number not found.");
     }
@@ -1376,15 +1382,17 @@ class SingleQuestionScreen extends StatefulWidget {
   final VoiceCommandService voiceService; // Added
   final AccessibilityService? accessibilityService;
   final VoidCallback? onNext; // Added
+  final Function(int)? onJump; // Added
 
   const SingleQuestionScreen({
     super.key,
     required this.question,
     this.contextText,
     required this.ttsService,
-    required this.voiceService, // Added
+    required this.voiceService,
     this.accessibilityService,
     this.onNext,
+    this.onJump,
   });
 
   @override
@@ -1468,10 +1476,28 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
   }
 
   void _executeVoiceCommand(CommandResult result) async {
+    // --- READING PHASE GUARD ---
+    // If we are currently reading, we ONLY accept:
+    // 1. Stop Reading (pauseReading / stopDictation)
+    // 2. Repeat Question (readQuestion)
+    if (_isReading) {
+      if (result.action == VoiceAction.pauseReading ||
+          result.action == VoiceAction.stopDictation) {
+        _stopReadingQuestion();
+        return;
+      }
+      if (result.action == VoiceAction.readQuestion) {
+        _startReadingQuestion(); // Restart/Repeat
+        return;
+      }
+      // Reject all other commands (silently or with log)
+      debugPrint("Ignored command '${result.action}' during reading phase.");
+      return;
+    }
+
     switch (result.action) {
       case VoiceAction.readQuestion:
-        await widget.ttsService.speak("Reading question.");
-        _onReadPressed();
+        _startReadingQuestion();
         break;
 
       case VoiceAction.startDictation:
@@ -1498,12 +1524,14 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         break;
 
       case VoiceAction.stopDictation:
-        await widget.ttsService.speak("Stopping dictation.");
-        _stopListening();
+        // If we are NOT reading (caught above), this might mean "Stop Dictation"
+        // But dictation captures its own "Stop" usually.
+        // If we are idle, "Stop" might just be feedback.
+        await widget.ttsService.speak("Dictation is not active.");
         break;
 
       case VoiceAction.pauseReading:
-        _onStopPressed();
+         // If idle, maybe just say nothing or "Already stopped".
         break;
 
       case VoiceAction.playAudioAnswer:
@@ -1552,10 +1580,60 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         if (mounted) Navigator.pop(context);
         break;
 
+      case VoiceAction.goToQuestion:
+        if (result.payload is int && widget.onJump != null) {
+          widget.onJump!(result.payload);
+        } else {
+             widget.ttsService.speak("Jump not available.");
+        }
+        break;
       default:
         widget.voiceService.performGlobalNavigation(result);
         break;
     }
+  }
+
+  Future<void> _startReadingQuestion() async {
+    // 1. Reset State
+    await widget.ttsService.stop();
+    if (!mounted) return;
+    setState(() {
+      _isReading = true;
+      _isPaused = false;
+      _lastSpeechStartOffset = 0;
+    });
+
+    // 2. Prepare FULL Text (Atomic)
+    // Using periods and spaces to ensure natural pauses
+    final sb = StringBuffer();
+    sb.write("Reading question now... ");
+    // Replace newlines with period-space to prevent run-on sentences if newlines are squashed
+    sb.write(_fullText.replaceAll('\n', '. '));
+    sb.write(" ... End of question. Say ‘Start answering’ when ready.");
+
+    // 3. One Speak Call
+    await widget.ttsService.speakAndWait(sb.toString());
+
+    // 4. Cleanup
+    if (mounted) {
+      setState(() {
+        _isReading = false;
+      });
+    }
+  }
+
+  Future<void> _stopReadingQuestion() async {
+    await widget.ttsService.stop();
+    if (mounted) {
+      setState(() {
+        _isReading = false;
+        _isPaused = false;
+        _lastSpeechStartOffset = 0;
+      });
+    }
+    await widget.ttsService.speak(
+      "Reading stopped. Say ‘Read question’ to hear it again.",
+    );
   }
 
   Future<void> _stopAndInit() async {

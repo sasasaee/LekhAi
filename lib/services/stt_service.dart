@@ -93,7 +93,7 @@ class SttService with WidgetsBindingObserver {
             _pausedByTts = false;
             // Only resume if we are supposed to be listening
             if (_intendedState == SttIntendedState.listening) {
-              _kickLoop(delay: 500);
+              _kickLoop(delay: 200);
             }
           }
         });

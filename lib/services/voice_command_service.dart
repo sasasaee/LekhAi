@@ -177,13 +177,15 @@ class VoiceCommandService {
 
     // Single Question Context
     if (context == VoiceContext.question) {
+        // ... Generic Navigation ...
         if (text.contains("next") || text.contains("next question")) {
             return CommandResult(VoiceAction.nextPage);
         }
         if (text.contains("previous") || text.contains("previous question") || text.contains("back")) {
-             // Let's map "back" here too if specific behavior needed, else fallback catches "go back"
              return CommandResult(VoiceAction.previousPage);
         }
+        
+        // ... Feature Toggle ...
         if (text.contains("play audio") || text.contains("play answer") || text.contains("listen")) {
             return CommandResult(VoiceAction.playAudioAnswer);
         }
@@ -192,6 +194,25 @@ class VoiceCommandService {
         }
         if (text.contains("stop") || text.contains("pause")) {
             return CommandResult(VoiceAction.pauseReading);
+        }
+
+        // ... Direct Jump (New) ...
+        // Logic reused from paperDetail - ideally refactor to helper, but copy-paste for safety now
+        final RegExp selectionRegex = RegExp(r"(question|number)\s+([a-z0-9]+)");
+        final match = selectionRegex.firstMatch(text);
+        if (match != null) {
+           String rawNumber = match.group(2)!;
+           int? index = int.tryParse(rawNumber);
+           if (index == null) {
+              const numberMap = {
+             'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+             'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
+              };
+              index = numberMap[rawNumber];
+           }
+           if (index != null) {
+             return CommandResult(VoiceAction.goToQuestion, payload: index);
+           }
         }
     }
 

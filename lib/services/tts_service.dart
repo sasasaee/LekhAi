@@ -94,6 +94,10 @@ class TtsService {
   Future<void> speakAndWait(String text) async {
     if (!_initialized) return;
 
+    // Signal START immediately to pause STT
+    _isSpeaking = true;
+    _speakingController.add(true);
+
     await _tts.stop();
 
     final processedText = _preprocessText(text);
@@ -109,21 +113,27 @@ class TtsService {
 
     _tts.setCancelHandler(() {
       if (!completer.isCompleted) completer.complete();
-      _isSpeaking = false;
     });
 
     try {
       await _tts.speak(processedText);
-      await completer.future;
-    } finally {
-      if (_defaultCompletionHandler != null) {
-        _tts.setCompletionHandler(_defaultCompletionHandler!);
-      }
-      _tts.setCancelHandler(() {
-        debugPrint("TTS → Speech Cancelled");
-        _isSpeaking = false;
-        _currentWordStart = 0;
+      // Timeout based on text length: ~1.5 sec per 10 chars + 3 sec buffer
+      // This prevents hanging forever if completion handler is missed
+      final timeoutDuration = Duration(
+        seconds: (processedText.length / 10).ceil() + 2,
+      );
+      await completer.future.timeout(timeoutDuration, onTimeout: () {
+        debugPrint(
+          "TTS: Completion timeout ($timeoutDuration) - Processing continuing...",
+        );
       });
+    } finally {
+      // Signal END
+      _isSpeaking = false;
+      _speakingController.add(false);
+
+      // Restore global handlers
+      _setupHandlers(); 
     }
   }
 
@@ -174,7 +184,7 @@ class TtsService {
     // This ensures STT resumes even if no follow-up speech occurs
     // Rough estimate: ~150ms per word (at default speed)
     final wordCount = processedText.split(' ').length;
-    final estimatedDurationMs = (wordCount * 150) + 500; // Add 500ms buffer
+    final estimatedDurationMs = (wordCount * 150) + 200; // Add 00ms buffer
 
     debugPrint("TTS → Setting fallback timer for ${estimatedDurationMs}ms");
     Future.delayed(Duration(milliseconds: estimatedDurationMs), () {
