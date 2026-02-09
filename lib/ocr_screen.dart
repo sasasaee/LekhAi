@@ -10,9 +10,10 @@ import 'services/question_segmentation_service.dart';
 import 'models/question_model.dart';
 import 'questions_screen.dart';
 import 'services/voice_command_service.dart';
-import 'services/stt_service.dart';
+// import 'services/stt_service.dart'; // Removed
 
 import 'services/accessibility_service.dart';
+import 'services/picovoice_service.dart';
 // import 'widgets/animated_button.dart';
 
 import 'package:google_fonts/google_fonts.dart';
@@ -32,12 +33,14 @@ class OcrScreen extends StatefulWidget {
   final TtsService ttsService;
   final VoiceCommandService voiceService;
   final AccessibilityService? accessibilityService;
+  final PicovoiceService picovoiceService;
 
   const OcrScreen({
     super.key,
     required this.ttsService,
     required this.voiceService,
     this.accessibilityService,
+    required this.picovoiceService,
   });
 
   @override
@@ -51,13 +54,15 @@ class _OcrScreenState extends State<OcrScreen> {
   final QuestionSegmentationService _segmenter = QuestionSegmentationService();
   final ImagePicker _picker = ImagePicker();
 
-  final SttService _sttService = SttService();
-  final bool _isListening = false;
+  // final SttService _sttService = SttService(); // Removed
+  // final bool _isListening = false; // Removed
 
   bool _isProcessing = false;
   File? _imageFile;
   ParsedDocument? _doc;
   List<OcrLine> _rawLines = [];
+  
+  StreamSubscription? _commandSubscription;
 
   // ... (maintain all existing methods: initState, _retrieveLostData, _pickImage, _processImage, _saveParsed, dispose)
 
@@ -68,49 +73,23 @@ class _OcrScreenState extends State<OcrScreen> {
       "Welcome to the OCR screen. You can scan from camera or select from gallery.",
     );
     _retrieveLostData();
-    _initVoiceCommandListener();
+    // _initVoiceCommandListener(); // Removed
+    _subscribeToVoiceCommands();
+  }
+  
+  void _subscribeToVoiceCommands() {
+    _commandSubscription = widget.voiceService.commandStream.listen((result) {
+      if (mounted) {
+        _handleVoiceCommand(result);
+      }
+    });
   }
 
   // --- VOICE COMMAND LOGIC ---
-  void _initVoiceCommandListener() async {
-    bool available = await _sttService.init(
-      tts: widget.ttsService,
-      onStatus: (status) {
-        if ((status == 'notListening' || status == 'done') && !_isListening) {
-          Future.delayed(const Duration(milliseconds: 500), () {
-            if (mounted && !_isListening) _startCommandStream();
-          });
-        }
-      },
-      onError: (error) => debugPrint("OCR Screen STT Error: $error"),
-    );
-
-    if (available) {
-      _startCommandStream();
-    }
-  }
-
-  void _startCommandStream() {
-    if (!_sttService.isAvailable || _isListening) return;
-
-    _sttService.startListening(
-      localeId: "en-US",
-      onResult: (text) {
-        // Parse with OCR context!
-        final result = widget.voiceService.parse(
-          text,
-          context: VoiceContext.ocr,
-        );
-
-        if (result.action != VoiceAction.unknown) {
-          _handleVoiceCommand(result);
-        }
-      },
-    );
-  }
+  // _initVoiceCommandListener and _startCommandStream Removed
 
   void _handleVoiceCommand(CommandResult result) {
-    if (!mounted) return;
+    if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? false)) return;
 
     // Stop listener momentarily if action takes over UI or TTS speaks
     // But since we have auto-pause, we generally just execute.
@@ -132,13 +111,8 @@ class _OcrScreenState extends State<OcrScreen> {
         Navigator.pop(context);
         break;
       // Fallback to global
-      case VoiceAction.goToHome:
-      case VoiceAction.goToSettings:
-      case VoiceAction.goToSavedPapers:
-      case VoiceAction.goToReadPDF:
-        widget.voiceService.performGlobalNavigation(result);
-        break;
       default:
+        widget.voiceService.performGlobalNavigation(result);
         break;
     }
   }
@@ -280,6 +254,7 @@ class _OcrScreenState extends State<OcrScreen> {
           builder: (_) => QuestionsScreen(
             ttsService: widget.ttsService,
             voiceService: widget.voiceService,
+            picovoiceService: widget.picovoiceService,
             accessibilityService: widget.accessibilityService,
           ),
         ),
@@ -293,17 +268,36 @@ class _OcrScreenState extends State<OcrScreen> {
   Future<void> _promptExamMode() async {
     // Ask if the student wants to enter exam mode
     widget.ttsService.speak(
-      "Do you want to enter Exam Mode? Please say yes or no.",
+      "Do you want to enter Exam Mode? Say Yes to confirm or No to cancel.",
     );
-
-    // Wrap listen in a completer so you can await it
-    final response = await _listenForResponse(5);
-
-    if (response.toLowerCase() != "yes") {
-      widget.ttsService.speak("Exam Mode cancelled.");
-      return;
+    
+    // We now wait for Voice Command via Stream (handled in _handleVoiceCommand)
+    // Optionally show a dialog
+    if (mounted) {
+        showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+                title: const Text("Enter Exam Mode?"),
+                content: const Text("Say 'Yes' or 'Confirm' to start."),
+                actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text("Cancel"),
+                    ),
+                    ElevatedButton(
+                        onPressed: () {
+                             Navigator.pop(ctx);
+                             _startExam();
+                        },
+                        child: const Text("Start Exam"),
+                    ),
+                ],
+            ),
+        );
     }
-
+  }
+  
+  void _startExam() {
     if (!mounted || _imageFile == null) {
       widget.ttsService.speak("Error: No document scanned.");
       return;
@@ -316,30 +310,20 @@ class _OcrScreenState extends State<OcrScreen> {
           document: _doc!,
           ttsService: widget.ttsService,
           voiceService: widget.voiceService,
+          picovoiceService: widget.picovoiceService,
           accessibilityService: widget.accessibilityService!,
-          sttService: _sttService, // pass the STT service
+          // sttService: _sttService, // Removed
         ),
       ),
     );
   }
 
-  // Helper to await voice input
-  Future<String> _listenForResponse(int seconds) {
-    final completer = Completer<String>();
-
-    _sttService.startListening(
-      localeId: 'en_US',
-      onResult: (text) {
-        if (!completer.isCompleted) completer.complete(text);
-      },
-    );
-
-    return completer.future;
-  }
+  // _listenForResponse Removed
 
   @override
   void dispose() {
-    _sttService.stopListening();
+    _commandSubscription?.cancel(); // Cancel stream
+    // _sttService.stopListening(); // Removed
     _ocrService.dispose();
     super.dispose();
   }

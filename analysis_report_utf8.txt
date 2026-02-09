@@ -1,0 +1,24 @@
+﻿Analyzing LekhAi...                                             
+
+warning - The value of the field '_shouldListen' isn't used - lib\exam_info_screen.dart:42:8 - unused_field
+warning - The declaration '_executeVoiceCommand' isn't referenced - lib\preferences_screen.dart:61:8 - unused_element
+warning - The declaration '_clearAllPapers' isn't referenced - lib\questions_screen.dart:108:16 - unused_element
+  error - The named parameter 'errorCallback' isn't defined - lib\services\picovoice_service.dart:113:9 - undefined_named_parameter
+  error - A nullable expression can't be used as a condition - lib\services\picovoice_service.dart:168:41 - unchecked_use_of_nullable_value
+  error - A nullable expression can't be used as a condition - lib\services\picovoice_service.dart:170:9 - unchecked_use_of_nullable_value
+  error - The argument type 'String?' can't be assigned to the parameter type 'String'.  - lib\services\picovoice_service.dart:178:47 - argument_type_not_assignable
+  error - The function 'debugPrint' isn't defined - lib\services\voice_command_snippet.dart:6:5 - undefined_function
+  error - Undefined class 'VoiceAction' - lib\services\voice_command_snippet.dart:9:5 - undefined_class
+  error - Undefined name 'VoiceAction' - lib\services\voice_command_snippet.dart:9:26 - undefined_identifier
+  error - Undefined name 'VoiceAction' - lib\services\voice_command_snippet.dart:15:20 - undefined_identifier
+  error - Undefined name 'VoiceAction' - lib\services\voice_command_snippet.dart:17:21 - undefined_identifier
+  error - Undefined name 'VoiceAction' - lib\services\voice_command_snippet.dart:21:54 - undefined_identifier
+  error - Undefined name 'VoiceAction' - lib\services\voice_command_snippet.dart:22:50 - undefined_identifier
+  error - Undefined name 'VoiceAction' - lib\services\voice_command_snippet.dart:23:52 - undefined_identifier
+  error - Undefined name 'VoiceAction' - lib\services\voice_command_snippet.dart:26:18 - undefined_identifier
+  error - Undefined name 'VoiceAction' - lib\services\voice_command_snippet.dart:29:18 - undefined_identifier
+  error - Undefined name 'VoiceAction' - lib\services\voice_command_snippet.dart:34:19 - undefined_identifier
+  error - The function 'performGlobalNavigation' isn't defined - lib\services\voice_command_snippet.dart:35:9 - undefined_function
+  error - The function 'CommandResult' isn't defined - lib\services\voice_command_snippet.dart:35:33 - undefined_function
+  error - Undefined name 'tts' - lib\services\voice_command_snippet.dart:37:9 - undefined_identifier
+

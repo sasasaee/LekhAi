@@ -11,16 +11,19 @@ import 'services/accessibility_service.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'dart:ui'; // Add this for ImageFilter
+import 'widgets/picovoice_mic_icon.dart';
 
 import 'exam_info_screen.dart';
+import 'services/picovoice_service.dart';
 import 'dart:async';
-import 'services/stt_service.dart';
+// import 'services/stt_service.dart'; // Removed
 
 // ... rest of imports
 
 class QuestionsScreen extends StatefulWidget {
   final TtsService ttsService;
   final VoiceCommandService voiceService;
+  final PicovoiceService picovoiceService;
   final AccessibilityService? accessibilityService;
   final ParsedDocument? document;
   final String? studentName;
@@ -32,6 +35,7 @@ class QuestionsScreen extends StatefulWidget {
     super.key,
     required this.ttsService,
     required this.voiceService,
+    required this.picovoiceService,
     this.accessibilityService,
     this.document,
     this.studentName,
@@ -46,16 +50,10 @@ class QuestionsScreen extends StatefulWidget {
 
 class _QuestionsScreenState extends State<QuestionsScreen> {
   final QuestionStorageService _storageService = QuestionStorageService();
-  // We store the raw JSON strings; parsing happens on demand or we could parse them all.
-  // Let's parse them to display metadata (like date).
   List<ParsedDocument> _papers = [];
   bool _isLoading = true;
-  final SttService _sttService = SttService();
-  final bool _isListening = false;
-  // bool _isSelectingForExam = false; // REMOVED
-  //int _examTimer = 0; // seconds
-  //bool _timerStarted = false;
-  // Unused fields removed: _currentQuestionIndex, _remainingSeconds, _isExamRunning, _allExamQuestions
+  StreamSubscription<CommandResult>? _commandSubscription;
+  final ScrollController _scrollController = ScrollController(); // Added
 
   @override
   void initState() {
@@ -64,92 +62,102 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
 
     if (widget.examMode) {
       // Exam sequence initiation handled by PaperDetailScreen logic now.
-      // _startExamSequence(); // Removed
     } else {
       widget.ttsService.speak("Welcome to saved papers.");
-      _initVoiceCommandListener();
+      widget.ttsService.speak("Welcome to saved papers.");
+    }
+    _initVoiceCommandListener();
+  }
+
+  void _initVoiceCommandListener() {
+    _commandSubscription = widget.voiceService.commandStream.listen((result) {
+      if (!mounted) return;
+      // Handle commands for Saved Papers context
+      _handleVoiceCommand(result);
+    });
+  }
+
+  void _handleVoiceCommand(CommandResult result) {
+    if (!(ModalRoute.of(context)?.isCurrent ?? false)) return;
+    debugPrint("QuestionsScreen received command: ${result.action}");
+    switch (result.action) {
+      case VoiceAction.scrollToTop:
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(0, duration: const Duration(milliseconds: 500), curve: Curves.easeOut);
+        }
+        break;
+      case VoiceAction.scrollToBottom:
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(_scrollController.position.maxScrollExtent, duration: const Duration(milliseconds: 500), curve: Curves.easeOut);
+        }
+        break;
+
+      case VoiceAction.deletePaper:
+        if (result.payload is int) {
+          int index = (result.payload as int) - 1; // 1-based to 0-based
+          if (index >= 0 && index < _papers.length) {
+             _deletePaper(index);
+          } else {
+             widget.ttsService.speak("Paper number ${result.payload} not found.");
+          }
+        }
+        break;
+      case VoiceAction.openPaper:
+        if (result.payload is int) {
+           int index = (result.payload as int) - 1;
+           if (index >= 0 && index < _papers.length) {
+              // Open it
+              _openPaper(_papers[index], index);
+           } else {
+              widget.ttsService.speak("Paper number ${result.payload} not found.");
+           }
+        }
+        break;
+      case VoiceAction.clearAllPapers:
+        _clearAllPapers();
+        break;
+      case VoiceAction.goBack:
+        Navigator.pop(context);
+        break;
+      case VoiceAction.scrollUp:
+        _scrollUp();
+        break;
+      case VoiceAction.scrollDown:
+        _scrollDown();
+        break;
+      default:
+        widget.voiceService.performGlobalNavigation(result);
+        break;
+    }
+  }
+
+  void _scrollUp() {
+    if (_scrollController.hasClients) {
+        final pos = _scrollController.offset - 300;
+        _scrollController.animateTo(pos.clamp(0.0, _scrollController.position.maxScrollExtent), duration: 300.ms, curve: Curves.easeOut);
+    }
+  }
+
+  void _scrollDown() {
+    if (_scrollController.hasClients) {
+        final pos = _scrollController.offset + 300;
+        _scrollController.animateTo(pos.clamp(0.0, _scrollController.position.maxScrollExtent), duration: 300.ms, curve: Curves.easeOut);
     }
   }
 
   @override
   void dispose() {
-    // _examTimer?.cancel(); // Field removed
-    _sttService.stopListening();
+    _commandSubscription?.cancel();
+    _scrollController.dispose();
     super.dispose();
   }
 
-  void _initVoiceCommandListener() async {
-    bool available = await _sttService.init(
-      tts: widget.ttsService, // Pass TTS to enable auto-pause
-      onStatus: (status) {
-        // Just log status, rely on SttService internal loop for restarts
-        // print("QuestionsScreen STT Status: $status");
-      },
-      onError: (error) => debugPrint("QuestionsScreen STT Error: $error"),
-    );
+  // Voice command listener methods removed. Global Picovoice handles navigation.
+  // Note: Open Paper X logic needs to be handled by VoiceCommandService globally now.
 
-    if (available) {
-      _startCommandStream();
-    }
-  }
+  // _handleVoiceCommand removed (logic should be in VoiceCommandService)
 
-  void _startCommandStream() {
-    if (!_sttService.isAvailable || _isListening) return;
-
-    _sttService.startListening(
-      localeId: "en-US",
-      onResult: (text) {
-        debugPrint("QuestionsScreen received: '$text'");
-        final result = widget.voiceService.parse(
-          text,
-          context: VoiceContext.savedPapers,
-        );
-        if (result.action != VoiceAction.unknown) {
-          _handleVoiceCommand(result);
-        }
-      },
-    );
-  }
-
-  void _handleVoiceCommand(CommandResult result) async {
-    // Handle local list selection
-    if (result.action == VoiceAction.openPaper) {
-      final int? targetIndex = result.payload;
-      // Payload is 1-based (user says "1"), convert to 0-based
-      if (targetIndex != null) {
-        final int actualIndex = targetIndex - 1;
-        if (actualIndex >= 0 && actualIndex < _papers.length) {
-          await widget.ttsService.speak("Opening paper $targetIndex.");
-          _openPaper(_papers[actualIndex], actualIndex);
-        } else {
-          await widget.ttsService.speak("Item $targetIndex not found.");
-        }
-      }
-      return;
-    }
-
-    if (result.action == VoiceAction.deletePaper) {
-      final int? targetIndex = result.payload;
-      if (targetIndex != null) {
-        final int actualIndex = targetIndex - 1;
-        if (actualIndex >= 0 && actualIndex < _papers.length) {
-          await widget.ttsService.speak("Deleting paper $targetIndex.");
-          _deletePaper(actualIndex);
-        } else {
-          await widget.ttsService.speak("Paper $targetIndex not found.");
-        }
-      }
-      return;
-    }
-
-    // Delegate other global commands
-    if (result.action == VoiceAction.clearAllPapers) {
-      _clearAllPapers();
-      return;
-    }
-    
-    widget.voiceService.performGlobalNavigation(result);
-  }
+  // ... (rest of methods)
 
   //   if (_timerStarted) return;
   //   _timerStarted = true;
@@ -227,7 +235,8 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
     // For now, pass a placeholder.
 
     // Stop local listener
-    _sttService.stopListening();
+    // _sttService.stopListening(); // Removed
+
 
     Navigator.push(
       context,
@@ -240,9 +249,11 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
           timestamp: DateTime.now()
               .toIso8601String(), // Temporary until model update
           examMode: widget.examMode, // Pass the mode
+          picovoiceService: widget.picovoiceService,
         ),
       ),
-    ).then((_) => _initVoiceCommandListener());
+    ); // .then listener restart removed
+
   }
 
   @override
@@ -273,6 +284,10 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
           ),
         ),
         actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8.0),
+            child: PicovoiceMicIcon(service: widget.picovoiceService),
+          ),
           Container(
             margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
             decoration: BoxDecoration(
@@ -333,6 +348,7 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
                   ),
                 )
               : ListView(
+                  controller: _scrollController,
                   padding: const EdgeInsets.all(20),
                   children: [
                     // Exam header removed as logic is now in PaperDetailScreen
@@ -505,7 +521,8 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
                                           accessibilityService:
                                               widget.accessibilityService ??
                                               AccessibilityService(),
-                                          sttService: _sttService,
+                                            picovoiceService: widget.picovoiceService,
+                                          // sttService: _sttService, // Removed (Also check ExamInfoScreen constructor!)
                                         ),
                                       ),
                                     );

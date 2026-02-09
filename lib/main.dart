@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'theme/app_theme.dart';
 import 'dart:async';
@@ -8,7 +9,8 @@ import 'package:flutter_animate/flutter_animate.dart';
 // Services
 import 'services/tts_service.dart';
 import 'services/voice_command_service.dart';
-import 'services/stt_service.dart';
+import 'services/picovoice_service.dart';
+import 'widgets/picovoice_mic_icon.dart'; // Changed
 import 'services/accessibility_service.dart';
 // Screens
 import 'take_exam_screen.dart'; // Extracted screen
@@ -16,6 +18,7 @@ import 'preferences_screen.dart';
 import 'questions_screen.dart';
 import 'pdf_viewer_screen.dart';
 import 'start_page.dart'; // Imported StartPage
+import 'widgets/picovoice_mic_icon.dart';
 
 // import 'dart:ui';
 // import 'package:shared_preferences/shared_preferences.dart';
@@ -37,10 +40,11 @@ class MyApp extends StatelessWidget {
   final TtsService ttsService = TtsService();
   final AccessibilityService accessibilityService = AccessibilityService();
   late final VoiceCommandService voiceCommandService;
+  final PicovoiceService picovoiceService = PicovoiceService(); // Added
 
   MyApp({super.key}) {
-    // Inject TTS into the Voice Command Service
-    voiceCommandService = VoiceCommandService(ttsService);
+    // Inject TTS and Picovoice into the Voice Command Service
+    voiceCommandService = VoiceCommandService(ttsService, picovoiceService);
   }
 
   @override
@@ -53,6 +57,7 @@ class MyApp extends StatelessWidget {
         ttsService: ttsService,
         voiceService: voiceCommandService,
         accessibilityService: accessibilityService,
+        picovoiceService: picovoiceService, // Passed
       ),
       debugShowCheckedModeBanner: false,
       routes: {
@@ -60,21 +65,25 @@ class MyApp extends StatelessWidget {
           ttsService: ttsService,
           voiceService: voiceCommandService,
           accessibilityService: accessibilityService,
+          picovoiceService: picovoiceService, // Passed
         ),
         '/saved_papers': (context) => QuestionsScreen(
           ttsService: ttsService,
           voiceService: voiceCommandService,
+          picovoiceService: picovoiceService,
           // accessibilityService: accessibilityService,
         ),
         '/settings': (context) => PreferencesScreen(
           ttsService: ttsService,
           voiceService: voiceCommandService,
+          picovoiceService: picovoiceService, // Passed for AccessKey update
         ),
-        '/take_exam': (context) {
-          throw UnimplementedError(
-            "Use named route with arguments or direct navigation",
-          );
-        },
+        '/take_exam': (context) => TakeExamScreen(
+          ttsService: ttsService,
+          voiceService: voiceCommandService,
+          accessibilityService: accessibilityService,
+          picovoiceService: picovoiceService,
+        ),
       },
     );
   }
@@ -86,12 +95,14 @@ class SplashScreen extends StatefulWidget {
   final TtsService ttsService;
   final VoiceCommandService voiceService;
   final AccessibilityService accessibilityService;
+  final PicovoiceService picovoiceService;
 
   const SplashScreen({
     super.key,
     required this.ttsService,
     required this.voiceService,
     required this.accessibilityService,
+    required this.picovoiceService,
   });
 
   @override
@@ -102,16 +113,21 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
+    
+    // Initialize Picovoice Service (Async)
+    widget.picovoiceService.init(widget.voiceService);
 
     Timer(const Duration(seconds: 3), () {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
+          settings: const RouteSettings(name: '/start'),
           builder: (_) => StartPage(
             // Navigate to StartPage first
             ttsService: widget.ttsService,
             voiceService: widget.voiceService,
             accessibilityService: widget.accessibilityService,
+            picovoiceService: widget.picovoiceService,
           ),
         ),
       );
@@ -164,12 +180,14 @@ class HomeScreen extends StatefulWidget {
   final TtsService ttsService;
   final VoiceCommandService voiceService;
   final AccessibilityService accessibilityService;
+  final PicovoiceService picovoiceService;
 
   const HomeScreen({
     super.key,
     required this.ttsService,
     required this.voiceService,
     required this.accessibilityService,
+    required this.picovoiceService,
   });
 
   @override
@@ -179,17 +197,11 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
-  // late Animation<double> _animation; // Unused
   late Timer _timeTimer;
   String _currentTimeStr = "";
 
-  // Added: Speech-to-text service for background command listening
-  final SttService _sttService = SttService();
-  // Flag to track if we are intentionally listening
-  bool _shouldListen = true;
-
-  // static const Color buttonColor = Color(0xFF1283B2);
-
+  // NO SttService here anymore
+  
   @override
   void initState() {
     super.initState();
@@ -198,14 +210,12 @@ class _HomeScreenState extends State<HomeScreen>
       vsync: this,
       duration: const Duration(milliseconds: 600),
     );
-    // _animation = CurvedAnimation(parent: _controller, curve: Curves.easeInOut);
     _controller.forward();
 
-    // 1. CRITICAL: Initialize voice command listener FIRST before any TTS
-    // This ensures STT subscribes to TTS events before speech starts
-    _initVoiceCommandListener();
+    // 1. Voice Command Listener is now managed by PicovoiceService globally (in Splash/Main)
+    // We can observe state if needed for UI feedback
 
-    // 2. Initial Greeting & Haptics (AFTER STT init)
+    // 2. Initial Greeting & Haptics
     widget.accessibilityService.trigger(AccessibilityEvent.navigation);
     widget.ttsService.speak("Welcome.");
 
@@ -225,89 +235,9 @@ class _HomeScreenState extends State<HomeScreen>
     });
   }
 
-  // --- VOICE COMMAND LOGIC ---
-  void _initVoiceCommandListener() async {
-    bool available = await _sttService.init(
-      tts: widget.ttsService, // Pass TTS to enable auto-pause
-      onStatus: (status) {
-        // print("Home STT Status: $status");
-        // Keep-Alive: Restart if the OS stops the microphone due to timeout
-        if (status == 'notListening' || status == 'done') {
-          Future.delayed(const Duration(milliseconds: 500), () {
-            if (mounted && _shouldListen) _startListeningLoop();
-          });
-        }
-      },
-      onError: (error) => debugPrint("Home STT Error: $error"),
-    );
-
-    if (available) {
-      _startListeningLoop();
-    }
-  }
-
-  void _startListeningLoop() {
-    if (!_sttService.isAvailable || !_shouldListen) return;
-
-    _sttService.startListening(
-      localeId: "en-US",
-      onResult: (text) {
-        // Parse the spoken text into a VoiceAction
-        final result = widget.voiceService.parse(text);
-
-        if (result.action != VoiceAction.unknown) {
-          if (_shouldListen) _handleHomeVoiceCommand(result);
-        }
-      },
-    );
-  }
-
-  void _handleHomeVoiceCommand(CommandResult result) async {
-    // If the action involves navigation away from Home, stop listening first.
-    bool willNavigate =
-        result.action == VoiceAction.goToSavedPapers ||
-        result.action == VoiceAction.goToTakeExam ||
-        result.action == VoiceAction.goToSettings ||
-        result.action == VoiceAction.goToReadPDF;
-
-    if (willNavigate) {
-      _shouldListen = false;
-      await _sttService.stopListening();
-    }
-
-    switch (result.action) {
-      case VoiceAction.goToSavedPapers:
-        await widget.ttsService.speak("Opening saved papers.");
-        await widget.voiceService.performGlobalNavigation(result);
-        break;
-
-      case VoiceAction.goToTakeExam:
-        await widget.ttsService.speak("Starting exam mode.");
-        // _openTakeExam handles its own navigation logic but we double check
-        // _openTakeExam actually calls push, so we can use performGlobalNavigation or custom method
-        // But the custom method _openTakeExam ALREADY handles stop/start!
-        // So we should delegate to it or use performGlobalNav if it does the same.
-        // NOTE: _openTakeExam passes the STT service which might be needed.
-        // Let's stick to _openTakeExam for consistency if it does special setup.
-        await _openTakeExam(); // This handles its own start/stop
-        return; // Return early as we handled resume in _openTakeExam
-
-      default:
-        // Handle other global navigation commands
-        await widget.voiceService.performGlobalNavigation(result);
-        break;
-    }
-
-    // Resume listening if we navigated away and came back (or if action didn't navigate)
-    if (willNavigate && mounted) {
-      _shouldListen = true;
-      _initVoiceCommandListener();
-    }
-  }
-
   @override
   void dispose() {
-    _sttService.stopListening(); // Stop microphone when leaving home
+    // Picovoice continues running in background/navigation, unlike SttService loop
     _controller.dispose();
     _timeTimer.cancel();
     super.dispose();
@@ -329,11 +259,9 @@ class _HomeScreenState extends State<HomeScreen>
     String path = result.files.single.path!;
     if (!mounted) return;
 
-    // Stop home listener before entering PDF viewer to avoid mic conflicts
-    _shouldListen = false;
-    await _sttService.stopListening();
-
-    if (!mounted) return;
+    // No need to stop listening manually, Picovoice handles lifecycle via service
+    // But if we wanted to pause it during PDF reading specifically we could.
+    // For now, let it run (it pauses on TTS anyway).
 
     Navigator.push(
       context,
@@ -342,20 +270,25 @@ class _HomeScreenState extends State<HomeScreen>
           path: path,
           ttsService: widget.ttsService,
           voiceService: widget.voiceService,
+          picovoiceService: widget.picovoiceService,
         ),
       ),
-    ).then((_) {
-      _shouldListen = true;
-      _initVoiceCommandListener();
-    }); // Restart when coming back
+    );
   }
 
   Future<void> _openTakeExam() async {
-    _shouldListen = false;
-    await _sttService.stopListening(); // Stop home listener (await is CRITICAL)
-
-    if (!mounted) return;
-
+    // Note: TakeExamScreen still expects SttService if not updated.
+    // We should refactor TakeExamScreen to use PicovoiceService or remove Stt dependency.
+    // For this step, we assume TakeExamScreen needs update or we pass null/dummy?
+    // Based on prompt, we are only integrating into main.dart now.
+    // BUT TakeExamScreen constructor will fail if we don't pass SttService?
+    // Let's create a dummy or fix TakeExamScreen later. 
+    // Actually, we must pass something. 
+    // Ideally we should have refactored TakeExamScreen too.
+    // For now, let's just NOT pass it and see (it is named argument usually?)
+    // Checking previous file view... used `sttService: _sttService`. Make it optional there?
+    // Or just create a local instance here if needed for legacy support until refactored.
+    
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -363,13 +296,10 @@ class _HomeScreenState extends State<HomeScreen>
           ttsService: widget.ttsService,
           voiceService: widget.voiceService,
           accessibilityService: widget.accessibilityService,
-          sttService: _sttService,
+          picovoiceService: widget.picovoiceService,
         ),
       ),
-    ).then((_) {
-      _shouldListen = true;
-      _initVoiceCommandListener();
-    }); // Restart when coming back
+    );
   }
 
   void _showAboutDialog() {
@@ -404,10 +334,6 @@ class _HomeScreenState extends State<HomeScreen>
 
   @override
   Widget build(BuildContext context) {
-    // Current date for the dashboard header
-    final now = DateTime.now();
-    final dateStr = "${now.day}/${now.month}/${now.year}";
-
     return Scaffold(
       body: Container(
         decoration: BoxDecoration(
@@ -461,6 +387,11 @@ class _HomeScreenState extends State<HomeScreen>
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
+                                PicovoiceMicIcon(
+                                  service: widget.picovoiceService,
+                                  size: 16,
+                                ),
+                                const SizedBox(width: 8),
                                 Icon(
                                   Icons.access_time_rounded,
                                   size: 14,
@@ -468,7 +399,7 @@ class _HomeScreenState extends State<HomeScreen>
                                 ),
                                 const SizedBox(width: 8),
                                 Text(
-                                  "$dateStr  •  $_currentTimeStr",
+                                  "${DateFormat('EEE, d MMM').format(DateTime.now())}  •  $_currentTimeStr",
                                   style: GoogleFonts.outfit(
                                     color: Colors.white70,
                                     fontWeight: FontWeight.w500,
@@ -547,8 +478,6 @@ class _HomeScreenState extends State<HomeScreen>
                           delay: 800,
                           onTap: () async {
                             widget.ttsService.speak("Opening saved papers.");
-                            _shouldListen = false;
-                            await _sttService.stopListening();
                             if (!context.mounted) return;
                             Navigator.push(
                               context,
@@ -556,12 +485,10 @@ class _HomeScreenState extends State<HomeScreen>
                                 builder: (_) => QuestionsScreen(
                                   ttsService: widget.ttsService,
                                   voiceService: widget.voiceService,
+                                  picovoiceService: widget.picovoiceService,
                                 ),
                               ),
-                            ).then((_) {
-                              _shouldListen = true;
-                              _initVoiceCommandListener();
-                            });
+                            );
                           },
                         ),
                         const SizedBox(height: 20),
@@ -573,21 +500,18 @@ class _HomeScreenState extends State<HomeScreen>
                           delay: 900,
                           onTap: () async {
                             widget.ttsService.speak("Opening preferences.");
-                            _shouldListen = false;
-                            await _sttService.stopListening();
                             if (!context.mounted) return;
                             Navigator.push(
                               context,
                               MaterialPageRoute(
+                                settings: const RouteSettings(name: '/settings'),
                                 builder: (_) => PreferencesScreen(
                                   ttsService: widget.ttsService,
                                   voiceService: widget.voiceService,
+                                  picovoiceService: widget.picovoiceService, // Passed
                                 ),
                               ),
-                            ).then((_) {
-                              _shouldListen = true;
-                              _initVoiceCommandListener();
-                            });
+                            );
                           },
                         ),
                       ],

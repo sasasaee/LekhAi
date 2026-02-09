@@ -1,3 +1,4 @@
+import 'dart:async'; // Added
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
@@ -11,6 +12,8 @@ import '../ocr_screen.dart';
 import '../paper_detail_screen.dart';
 import '../widgets/accessible_widgets.dart';
 import 'kiosk_service.dart'; // Added
+import 'picovoice_service.dart';
+import 'accessibility_service.dart'; // Added fix for missing class
 
 enum VoiceContext {
   global,
@@ -78,25 +81,86 @@ enum VoiceAction {
   restartReading,
   playAudioAnswer,
   toggleReadContext,
+  // PDF Actions
+  zoomIn,
+  zoomOut,
+  resetZoom,
+  goToPage,
+  // Feature Control
+  enableFeature,
+  disableFeature,
+  // Form Control
+  // Form Control
+  setStudentName,
+  setStudentID,
+  setExamTime,
+  renameFile,
+  
+  // Scroll Control
+  scrollUp,
+  scrollDown,
+  scrollToTop,
+  scrollToBottom,
+  
+  // File Actions
+  saveFile,
+  convertFile,
+  
   unknown,
 }
 
 class CommandResult {
   final VoiceAction action;
   final dynamic payload;
-  CommandResult(this.action, {this.payload});
+  final dynamic payload2; // Added for extra params (e.g. feature name + state, or just use a Map payload)
+  CommandResult(this.action, {this.payload, this.payload2});
 }
 
 // ... existing enum ...
 
 class VoiceCommandService {
   final TtsService tts;
+  final PicovoiceService picovoiceService;
   final GeminiQuestionService _geminiService = GeminiQuestionService();
   final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
   final QuestionStorageService _storageService = QuestionStorageService();
   bool _isScanDialogOpen = false;
 
-  VoiceCommandService(this.tts);
+  final StreamController<CommandResult> _commandStream = StreamController.broadcast();
+  Stream<CommandResult> get commandStream => _commandStream.stream;
+
+  void broadcastCommand(CommandResult result) {
+    _commandStream.add(result);
+  }
+
+  VoiceCommandService(this.tts, this.picovoiceService) {
+    _initSettings();
+  }
+
+  final ValueNotifier<double> volumeNotifier = ValueNotifier(0.7);
+  final ValueNotifier<double> speedNotifier = ValueNotifier(1.0);
+
+  Future<void> _initSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    volumeNotifier.value = prefs.getDouble('volume') ?? 0.7;
+    speedNotifier.value = prefs.getDouble('speed') ?? 1.0;
+  }
+
+  Future<void> _changeVolume(bool increase) async {
+    volumeNotifier.value = (volumeNotifier.value + (increase ? 0.1 : -0.1)).clamp(0.0, 1.0);
+    await tts.setVolume(volumeNotifier.value);
+    final sp = await SharedPreferences.getInstance();
+    await sp.setDouble('volume', volumeNotifier.value);
+    tts.speak("Volume ${increase ? 'increased' : 'decreased'} to ${(volumeNotifier.value * 100).toInt()} percent.");
+  }
+
+  Future<void> _changeSpeed(bool increase) async {
+    speedNotifier.value = (speedNotifier.value + (increase ? 0.25 : -0.25)).clamp(0.5, 2.0);
+    await tts.setSpeed(speedNotifier.value * 0.5);
+    final sp = await SharedPreferences.getInstance();
+    await sp.setDouble('speed', speedNotifier.value);
+    tts.speak("Speed ${increase ? 'increased' : 'decreased'} to ${speedNotifier.value.toStringAsFixed(2)}.");
+  }
 
   CommandResult parse(
     String text, {
@@ -445,7 +509,11 @@ class VoiceCommandService {
     if (text.contains("start dictation") || text.contains("start writing")) {
       return CommandResult(VoiceAction.startDictation);
     }
-    if (text.contains("stop dictation") || text.contains("pause writing")) {
+    if (text.contains("stop dictation") ||
+        text.contains("stop answering") ||
+        text.contains("stop writing") ||
+        text.contains("pause writing") ||
+        text.contains("pause dictation")) {
       return CommandResult(VoiceAction.stopDictation);
     }
     if (text.contains("read question") || text.contains("repeat question")) {
@@ -467,10 +535,34 @@ class VoiceCommandService {
     if (text.contains("confirm")) return CommandResult(VoiceAction.confirmAction);
     if (text.contains("cancel")) return CommandResult(VoiceAction.cancelAction);
 
+    if (text.contains("student name") || text.contains("my name")) return CommandResult(VoiceAction.setStudentName);
+    if (text.contains("student id") || text.contains("my id")) return CommandResult(VoiceAction.setStudentID);
+    if (text.contains("exam time") || text.contains("set time")) return CommandResult(VoiceAction.setExamTime);
+    if (text.contains("rename") || text.contains("change filename")) return CommandResult(VoiceAction.renameFile);
+
+    if (text.contains("zoom in")) return CommandResult(VoiceAction.zoomIn);
+    if (text.contains("zoom out")) return CommandResult(VoiceAction.zoomOut);
+    if (text.contains("reset zoom")) return CommandResult(VoiceAction.resetZoom);
+
+    // Settings
+    if (text.contains("haptic")) {
+         if (text.contains("on") || text.contains("enable")) return CommandResult(VoiceAction.enableFeature, payload: 'haptics');
+         if (text.contains("off") || text.contains("disable")) return CommandResult(VoiceAction.disableFeature, payload: 'haptics');
+    }
+    if (text.contains("voice command")) {
+         if (text.contains("on") || text.contains("enable")) return CommandResult(VoiceAction.enableFeature, payload: 'voice commands');
+         if (text.contains("off") || text.contains("disable")) return CommandResult(VoiceAction.disableFeature, payload: 'voice commands');
+    }
+
     return CommandResult(VoiceAction.unknown);
   }
 
   Future<void> performGlobalNavigation(CommandResult result) async {
+    // NOTE: Do NOT add to _commandStream here. It causes an infinite loop 
+    // if screens call this method from their stream listener.
+    
+    final context = navigatorKey.currentContext;
+
     // Kiosk Mode Security Check
     if (KioskService().isKioskActive) {
       // Allowed actions in Kiosk Mode (if any) could be checked here.
@@ -491,9 +583,29 @@ class VoiceCommandService {
     debugPrint("VoiceCommandService - Global Navigation: ${result.action}");
     switch (result.action) {
       case VoiceAction.goBack:
+        final context = navigatorKey.currentContext;
+        if (context != null && KioskService().isKioskActive) {
+            final routeName = ModalRoute.of(context)?.settings.name;
+            if (routeName == '/paper_detail' || routeName == '/question_detail') {
+                 tts.speak("Navigation is locked during exam.");
+                 return;
+            }
+        }
+
         final canPop = await navigatorKey.currentState?.maybePop() ?? false;
         if (!canPop) {
           tts.speak("You are already on the home screen.");
+        }
+        break;
+      case VoiceAction.submitExam:
+        // BroadCast submit to listeners (PaperDetailScreen etc)
+        broadcastCommand(CommandResult(VoiceAction.submitExam));
+        break;
+      case VoiceAction.previousPage:
+        // Generic fallback for previous page
+        final canPop = await navigatorKey.currentState?.maybePop() ?? false;
+        if (!canPop) {
+          tts.speak("No previous page found.");
         }
         break;
       case VoiceAction.goToSavedPapers:
@@ -503,18 +615,43 @@ class VoiceCommandService {
         await navigatorKey.currentState?.pushNamed('/take_exam');
         break;
       case VoiceAction.goToHome:
-        // Use popUntil to return to the existing HomeScreen instance.
-        // This triggers the .then() callback in HomeScreen, which resumes STT.
-        // Using pushNamedAndRemoveUntil was destroying the STT controller.
-        navigatorKey.currentState?.popUntil((route) {
-          return route.settings.name == '/home' || route.isFirst;
-        });
+      case VoiceAction.startApp:
+        // Try to get current route name
+        final context = navigatorKey.currentContext;
+        String? currentRoute;
+        if (context != null) {
+          try {
+            currentRoute = ModalRoute.of(context)?.settings.name;
+          } catch (_) {}
+        }
+
+        // If we are likely on an intro screen or we can't determine route, try to push replacement
+        if (currentRoute == null || currentRoute == '/' || currentRoute == '/start') {
+           navigatorKey.currentState?.pushReplacementNamed('/home');
+        } else {
+          // If already deep, pop until home
+          navigatorKey.currentState?.popUntil((route) {
+            return route.settings.name == '/home' || route.isFirst;
+          });
+        }
         break;
       case VoiceAction.goToSettings:
         await navigatorKey.currentState?.pushNamed('/settings');
         break;
       case VoiceAction.goToReadPDF:
         await _pickAndOpenPdf();
+        break;
+      case VoiceAction.scrollToTop:
+        // Handled by screens
+        break;
+      case VoiceAction.scrollToBottom:
+        // Handled by screens
+        break;
+      case VoiceAction.saveFile:
+        tts.speak("Saving file.");
+        break;
+      case VoiceAction.convertFile:
+        tts.speak("Converting file.");
         break;
       case VoiceAction.scanQuestions:
         await _handleScan();
@@ -530,8 +667,354 @@ class VoiceCommandService {
           _handleOpenPaper(result.payload);
         }
         break;
-      default:
+      case VoiceAction.increaseVolume:
+        await _changeVolume(true);
+        if (context != null && context.mounted) {
+             ScaffoldMessenger.of(context).removeCurrentSnackBar();
+             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Volume Increased"), duration: const Duration(milliseconds: 1000)));
+        }
         break;
+      case VoiceAction.decreaseVolume:
+        await _changeVolume(false);
+         if (context != null && context.mounted) {
+             ScaffoldMessenger.of(context).removeCurrentSnackBar();
+             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Volume Decreased"), duration: const Duration(milliseconds: 1000)));
+        }
+        break;
+      case VoiceAction.increaseSpeed:
+        await _changeSpeed(true);
+         if (context != null && context.mounted) {
+             ScaffoldMessenger.of(context).removeCurrentSnackBar();
+             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Speed Increased"), duration: const Duration(milliseconds: 1000)));
+        }
+        break;
+      case VoiceAction.decreaseSpeed:
+        await _changeSpeed(false);
+         if (context != null && context.mounted) {
+             ScaffoldMessenger.of(context).removeCurrentSnackBar();
+             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Speed Decreased"), duration: const Duration(milliseconds: 1000)));
+        }
+        break;
+      case VoiceAction.enableFeature:
+        final feat = result.payload.toString().toLowerCase();
+        if (feat.contains('haptic')) {
+           AccessibilityService().setEnabled(true);
+           AccessibilityService().trigger(AccessibilityEvent.action);
+           tts.speak("Haptic feedback enabled.");
+        } else if (feat.contains('single tap')) {
+           AccessibilityService().setOneTapAnnounce(true);
+           tts.speak("Single tap to announce enabled.");
+        } else if (feat.contains('voice command')) {
+            final sp = await SharedPreferences.getInstance();
+            await sp.setBool('voice_commands_enabled', true);
+            await picovoiceService.setEnabled(true);
+            tts.speak("Voice commands enabled.");
+        }
+        break;
+      case VoiceAction.disableFeature:
+        final featOff = result.payload.toString().toLowerCase();
+        if (featOff.contains('haptic')) {
+           AccessibilityService().setEnabled(false);
+           tts.speak("Haptic feedback disabled.");
+        } else if (featOff.contains('single tap')) {
+           AccessibilityService().setOneTapAnnounce(false);
+           tts.speak("Single tap to announce disabled.");
+        } else if (featOff.contains('voice command')) {
+            final sp = await SharedPreferences.getInstance();
+            await sp.setBool('voice_commands_enabled', false);
+            await picovoiceService.setEnabled(false);
+            tts.speak("Voice commands disabled.");
+        }
+        break;
+      default:
+        // Unknown global action
+        break;
+    }
+  }
+
+  int? _parseNumber(String raw) {
+    int? val = int.tryParse(raw);
+    if (val != null) return val;
+    final map = {
+      'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+      'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10
+    };
+    return map[raw.toLowerCase().trim()];
+  }
+  
+  bool intentStringContains(String intent, List<String> substrs) {
+    for (var s in substrs) {
+      if (intent.toLowerCase().contains(s.toLowerCase())) return true;
+    }
+    return false;
+  }
+
+  void executeIntent(String intent, Map<String, String>? slots) {
+    VoiceAction action = VoiceAction.unknown;
+    dynamic payload;
+    dynamic payload2;
+
+    debugPrint("VoiceCommandService: Received Intent: '$intent', Slots: $slots");
+
+    // Helper to get normalized slot value
+    String? getVal(List<String> keys) {
+      if (slots == null) return null;
+      for (var k in keys) {
+        if (slots.containsKey(k)) return slots[k]?.toLowerCase().trim();
+      }
+      // Fallback: Check if any key contains the slot name (fuzzy match for Rhino slot keys)
+      for (var k in keys) {
+         for (var slotKey in slots.keys) {
+             if (slotKey.toLowerCase().contains(k.toLowerCase())) return slots[slotKey]?.toLowerCase().trim();
+         }
+      }
+      return null;
+    }
+
+    switch (intent) {
+      // --- USER YAML INTENTS ---
+      case 'navigation':
+        final dest = getVal(['destination']);
+        final numVal = getVal(['number']);
+        
+        // If the intent is navigation and we have "start" in destination or no destination at all,
+        // we assume it's a "Start App" or "Get Started" command.
+        if (dest != null) {
+          if (dest.contains('home') || dest.contains('start') || dest.contains('get started')) {
+            action = VoiceAction.startApp;
+          } else if (dest.contains('setting') || dest.contains('preference') || dest.contains('option')) {
+            action = VoiceAction.goToSettings;
+          } else if (dest.contains('exam') || dest.contains('take exam')) {
+            action = VoiceAction.goToTakeExam;
+          } else if (dest.contains('paper') || dest.contains('saved')) {
+            action = VoiceAction.goToSavedPapers;
+          } else if (dest.contains('read document') || dest.contains('pdf') || dest.contains('viewer') || dest.contains('read p d f')) {
+            action = VoiceAction.goToReadPDF;
+          } else if (dest.contains('scan questions')) {
+            action = VoiceAction.scanQuestions;
+          } else if (dest.contains('back') || dest.contains('previous')) {
+            action = VoiceAction.goBack;
+          } else {
+             // If destination is unrecognized, check if we have a number
+             if (numVal != null) {
+                // Fallthrough to number parsing below
+             } else {
+                action = VoiceAction.goToHome; // Fallback
+             }
+          }
+        } else if (numVal != null) {
+          // No destination string (e.g. "Question 1"), but we have a number.
+          // This should NOT fallback to startApp.
+          // We will let the number logic below handle it.
+        } else {
+          // No slots AND no destination: Typical for simple "Get Started" or "Go Back"
+          // We'll let it fall through to fuzzy logic at the bottom which checks for common words in any slot.
+          // IF there are really no slots at all, we might decide based on intent name.
+          if (intent == 'navigation' && (slots == null || slots.isEmpty)) {
+             action = VoiceAction.goBack; // Heuristic: "Go Back" often has no slots if "Back" isn't a slot value.
+          }
+        }
+
+        if (numVal != null) {
+             int? n = _parseNumber(numVal);
+             if (n != null) {
+                  if (intentStringContains(intent, ['Select paper', 'Open paper']) || (dest?.contains('paper') ?? false)) {
+                      action = VoiceAction.openPaper;
+                  }
+                  if (intentStringContains(intent, ['question', 'navigation']) || (dest?.contains('question') ?? false) || dest == null) {
+                      action = VoiceAction.goToQuestion;
+                      payload = n;
+                  }
+              }
+         }
+         break; 
+
+      // --- NEW INTENTS ---
+      case 'pdfControl':
+        final pdfAct = getVal(['pdf_action']);
+        if (pdfAct == 'zoom in') action = VoiceAction.zoomIn;
+        if (pdfAct == 'zoom out') action = VoiceAction.zoomOut;
+        if (pdfAct == 'reset zoom') action = VoiceAction.resetZoom;
+        
+        final pageNumStr = getVal(['number']);
+        if (pageNumStr != null) {
+          int? p = _parseNumber(pageNumStr);
+          if (p != null) {
+             action = VoiceAction.goToPage;
+             payload = p;
+          }
+        }
+        break;
+
+      case 'settingsControl':
+        final feat = getVal(['feature']);
+        final state = getVal(['state', 'status', 'action', 'turn']);
+        
+        if (feat != null) {
+           if (state == 'off' || state == 'disable' || state == 'stop') {
+             action = VoiceAction.disableFeature;
+           } else {
+             action = VoiceAction.enableFeature;
+           }
+           payload = feat;
+        }
+        break;
+
+      case 'formControl':
+        // These have no slots in YAML. Indistinguishable via Rhino.
+        // We broadcast the intent and let the current screen's regex `parse` (if any) handle it? 
+        // No, Rhino doesn't send the text.
+        // We'll just trigger a general form action or notify the user.
+        action = VoiceAction.unknown;
+        tts.speak("Please use manual input for form fields.");
+        break;
+
+      case 'AppControl':
+        final actionSlot = getVal(['action']);
+        final scrollDir = getVal(['scroll_direction']);
+        
+        if (actionSlot != null) {
+          if (actionSlot == 'start') action = VoiceAction.appendAnswer; // Mapping 'start' to 'appendAnswer' (dictation)
+          else if (actionSlot == 'stop') action = VoiceAction.stopDictation;
+          else if (actionSlot == 'pause') action = VoiceAction.pauseReading;
+          else if (actionSlot == 'resume') action = VoiceAction.resumeReading;
+          else if (actionSlot == 'clear answer') action = VoiceAction.clearAnswer;
+          else if (actionSlot == 'read answer') action = VoiceAction.readAnswer;
+          else if (actionSlot == 'edit answer') action = VoiceAction.appendAnswer;
+          else if (actionSlot == 'open question') action = VoiceAction.goToQuestion;
+          else if (actionSlot == 'exit' || actionSlot == 'close' || actionSlot == 'stop app') action = VoiceAction.goBack;
+          else if (actionSlot == 'start app') action = VoiceAction.startApp;
+        } else if (scrollDir != null) {
+          if (scrollDir == 'up') action = VoiceAction.scrollUp;
+          else if (scrollDir == 'down') action = VoiceAction.scrollDown;
+          else if (scrollDir == 'top') action = VoiceAction.scrollToTop;
+          else if (scrollDir == 'bottom') action = VoiceAction.scrollToBottom;
+        }
+        break;
+
+      case 'ChangePages':
+        final dir = getVal(['direction']);
+        if (dir == 'next' || dir == 'forward') action = VoiceAction.nextPage;
+        if (dir == 'previous' || dir == 'back') action = VoiceAction.previousPage;
+        break;
+
+      case 'readContent':
+        final ra = getVal(['readAction']);
+        if (ra == 'stop' || ra == 'pause') {
+           // If we are in 'question' context, 'stop' usually means stop dictation
+           // Global navigation will handle the fallback if no screen captures it.
+           action = VoiceAction.stopDictation; 
+        }
+        else if (ra == 'resume') action = VoiceAction.resumeReading;
+        else if (ra == 'start') action = VoiceAction.appendAnswer; // Map 'start answering' etc to dictation
+        else if (ra == 'restart') action = VoiceAction.restartReading;
+        else {
+           // Case for "Read question", "Read this page", "Repeat question"
+           action = VoiceAction.readQuestion;
+        }
+        break;
+
+      case 'examControl':
+        final e = getVal(['exam']);
+        if (e == 'start exam' || e == 'start') action = VoiceAction.goToTakeExam;
+        else if (e == 'finish exam' || e == 'submit exam' || e == 'finish' || e == 'end' || e == 'end exam' || e == 'stop exam') action = VoiceAction.submitExam;
+        else if (e == 'cancel exam' || e == 'stop') action = VoiceAction.goBack;
+        else if (e == 'confirm') action = VoiceAction.confirmExamStart;
+        break;
+
+      case 'capture':
+        final src = getVal(['source']);
+        final choice = getVal(['scan_choice']);
+        if (src == 'camera' || src == 'photo') action = VoiceAction.scanCamera;
+        else if (src == 'gallery' || src == 'image') action = VoiceAction.scanGallery;
+        else if (choice == 'gemini') action = VoiceAction.useGemini;
+        else if (choice == 'local') action = VoiceAction.useLocalOcr;
+        else action = VoiceAction.scanQuestions;
+        break;
+
+      case 'process':
+        final act = getVal(['processAction']);
+        if (act != null) {
+          if (act.contains('increase volume') || act.contains('turn up')) action = VoiceAction.increaseVolume;
+          else if (act.contains('decrease volume') || act.contains('turn down')) action = VoiceAction.decreaseVolume;
+          else if (act.contains('increase speed')) action = VoiceAction.increaseSpeed;
+          else if (act.contains('decrease speed')) action = VoiceAction.decreaseSpeed;
+          else if (act.contains('enter exam mode')) action = VoiceAction.enterExamMode;
+          else if (act == 'convert') action = VoiceAction.convertFile;
+          else if (act == 'save') action = VoiceAction.saveFile;
+          else if (act == 'reset') action = VoiceAction.resetPreferences;
+        }
+        break;
+
+      // --- GLOBAL FALLBACKS ---
+      case 'stop':
+        // If no context caught it, default to pause reading
+        action = VoiceAction.stopDictation; 
+        break;
+
+      default:
+        // Try fuzzy matching all slots if no specific intent matched above
+        if (slots != null && action == VoiceAction.unknown) {
+           for (var val in slots.values) {
+              final v = val.toLowerCase();
+              if (v.contains('home')) action = VoiceAction.goToHome;
+              if (v.contains('setting')) action = VoiceAction.goToSettings;
+              if (v.contains('exam')) action = VoiceAction.goToTakeExam;
+              if (v.contains('back') || v.contains('exit') || v.contains('close')) action = VoiceAction.goBack;
+              if (v.contains('finish') || v.contains('submit') || v.contains('end')) action = VoiceAction.submitExam;
+           }
+        }
+        break;
+    }
+    
+    // --- Parse Enhancements for Specific Text Commands if Intents are Broad ---
+    if (intent == 'formControl') {
+       // Heuristic fallback using fuzzy matching on the intent name or potentially slots key
+       // This is limited because we don't have the full phrase if Rhino doesn't send it.
+       // However, if we assume the user spoke valid grammar, we can try to guess action
+       // But wait, the YAML `formControl` has "Change filename", "Set student ID", etc.
+       // These are distinct phrases. 
+       // If we can't distinguish, we default to 'setStudentName' (first one?) or log error.
+       // Ideally we need slots in YAML.
+       // Since we updated `parse()` (string based) below, that works for `sttService` (Apple/Google).
+       // But `executeIntent` (Rhino) needs slots or distinct intents.
+       // Check if `action` is still unknown.
+       if (action == VoiceAction.unknown) {
+          // Attempt to scan slots for keys like 'name', 'id', 'time' if user added them? 
+          // (User YAML has NO slots for formControl in `slots:` section? 
+          // actually `formControl` expressions in YAML use:
+          // - Enter student name
+          // - Set student ID
+          // NO SLOTS defined for these expressions in YAML provided:
+          //      - Enter student name
+          //      - Set student ID
+          // Just raw text.
+          // Rhino will match the intent 'formControl'.
+          // Slots will be EMPTY.
+          // Therefore, we CANNOT distinguish "Enter name" from "Enter ID" via `executeIntent` if only intent is passed.
+          // Unless `PicovoiceService` passes the *phrase* too.
+          // Checking `PicovoiceService`: usually `inference.slots` is the map. `inference.intent` is string.
+          // Does it pass the transcript? 
+          // If not, we have a problem with the user's YAML design for Rhino.
+          // But `sttService` uses `parse(text)` which does regex. 
+          // We must ensure `PicovoiceService` isn't solely relied upon for distinct actions sharing an intent without slots.
+          // Recommendation: We'll have to ask user to fix YAML or we can't support formControl via Rhino.
+          // BUT, for now, let's implement the regex in `parse()` which is robust.
+       }
+    }
+
+    if (action != VoiceAction.unknown) {
+      final result = CommandResult(action, payload: payload, payload2: payload2);
+      // Broadcast to UI. Screens will handle or delegate back to performGlobalNavigation.
+      _commandStream.add(result);
+      
+      // Fallback: If no screen is listening (e.g. transition state), execute global logic directly.
+      if (!_commandStream.hasListener) {
+          debugPrint("VoiceCommandService: No listeners found. Executing global fallback immediately.");
+          performGlobalNavigation(result);
+      }
+    } else {
+      tts.speak("I didn't understand that command.");
     }
   }
 
@@ -567,6 +1050,7 @@ class VoiceCommandService {
               document: doc,
               ttsService: tts,
               voiceService: this,
+              picovoiceService: picovoiceService,
               // accessibilityService is not available here, passed as null or we could inject it
               timestamp: DateTime.now().toString(),
             ),
@@ -765,6 +1249,7 @@ class VoiceCommandService {
             document: doc,
             ttsService: tts,
             voiceService: this,
+            picovoiceService: picovoiceService,
             timestamp: DateTime.now().toString(),
           ),
         ),
@@ -789,7 +1274,11 @@ class VoiceCommandService {
 
     navigatorKey.currentState?.push(
       MaterialPageRoute(
-        builder: (_) => OcrScreen(ttsService: tts, voiceService: this),
+        builder: (_) => OcrScreen(
+          ttsService: tts,
+          voiceService: this,
+          picovoiceService: picovoiceService,
+        ),
       ),
     );
   }
@@ -810,6 +1299,7 @@ class VoiceCommandService {
               path: path,
               ttsService: tts,
               voiceService: this,
+              picovoiceService: picovoiceService,
             ),
           ),
         );
