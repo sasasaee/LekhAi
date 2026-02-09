@@ -108,7 +108,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       // Don't start immediately. Ask for confirmation first.
       // Small delay to let the screen build and previous TTS finish.
       Future.delayed(const Duration(milliseconds: 1000), () {
-        if (mounted) _confirmAndStartKiosk();
+        if (mounted) _showExamConfirmationDialog();
       });
     }
   }
@@ -121,7 +121,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
     });
   }
 
-  void _confirmAndStartKiosk() {
+  void _showExamConfirmationDialog() {
     if (!mounted) return;
     setState(() {
       _isWaitingForConfirmation = true;
@@ -154,7 +154,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
             AccessibleElevatedButton(
               onPressed: () {
                 Navigator.pop(ctx); // Close dialog
-                _handleConfirmExamStart();
+                _confirmAndStartKiosk(startReading: true);
               },
               child: const Text("Start Exam"),
             ),
@@ -164,7 +164,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
     );
   }
 
-  void _handleConfirmExamStart() async {
+  void _confirmAndStartKiosk({bool startReading = false}) async {
     setState(() {
       _isWaitingForConfirmation = false;
       _kioskEnabled = true;
@@ -174,7 +174,15 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
     await KioskService().enableKioskMode();
 
     // 2. Start Countdown
-    _startCountdownSequence();
+    _startCountdownSequence(onDone: () {
+      if (startReading) {
+        widget.ttsService.speak("Exam started. Reading question 1.");
+        // Short delay to ensure TTS message starts before screen switch
+        Future.delayed(const Duration(milliseconds: 2000), () {
+           if (mounted) _openQuestionByNumber(1);
+        });
+      }
+    });
   }
 
   void _handleCancelConfirmation() {
@@ -184,7 +192,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
     Navigator.pop(context); // Go back to scan/list screen
   }
 
-  void _startCountdownSequence() {
+  void _startCountdownSequence({VoidCallback? onDone}) {
     setState(() {
       _showCountdown = true;
       _countdownValue = 3;
@@ -206,6 +214,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
           timer.cancel();
           _showCountdown = false;
           _initExamSession(); // Initialize Timer & Persistence
+          if (onDone != null) onDone();
         }
       });
     });
@@ -397,6 +406,53 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
     return "${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}";
   }
 
+  String _getFormattedTimeLeft() {
+    int minutes = _remainingSeconds ~/ 60;
+    int seconds = _remainingSeconds % 60;
+    String message;
+    if (minutes > 0 && seconds > 0) {
+      message = "$minutes minutes and $seconds seconds remaining.";
+    } else if (minutes > 0) {
+      message = "$minutes minutes remaining.";
+    } else {
+      message = "$seconds seconds remaining.";
+    }
+    return message;
+  }
+
+  String _getFormattedQuestionCount(String? currentQuestionNumber) {
+    int totalQuestions = 0;
+    int answeredQuestions = 0;
+    ParsedQuestion? currentQuestion;
+
+    for (var section in _document.sections) {
+      for (var q in section.questions) {
+        totalQuestions++;
+        if (q.number == currentQuestionNumber) {
+          currentQuestion = q;
+        }
+        if (q.answer.isNotEmpty || (q.audioPath != null && q.audioPath!.isNotEmpty)) {
+          answeredQuestions++;
+        }
+      }
+    }
+
+    String message = "";
+    if (currentQuestionNumber != null && currentQuestion != null) {
+      message += "You are on question $currentQuestionNumber. ";
+    }
+    message += "You have answered $answeredQuestions out of $totalQuestions questions.";
+    return message;
+  }
+
+  void _announceTimeLeft() {
+    widget.ttsService.speak(_getFormattedTimeLeft());
+  }
+
+  void _announceQuestionCount() {
+    widget.ttsService.speak(_getFormattedQuestionCount(null));
+  }
+
   // --- VOICE COMMAND LOGIC FOR LIST SCREEN ---
   // Voice listener methods removed. Using global VoiceCommandService stream.
 
@@ -418,15 +474,24 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
         if (_isWaitingForConfirmation) {
           // If dialog is open, pop it first (we know it's top of stack)
           if (Navigator.canPop(context)) Navigator.pop(context);
-          _handleConfirmExamStart();
+          _confirmAndStartKiosk(startReading: true);
         }
         break;
 
       case VoiceAction.cancelExamStart:
         if (_isWaitingForConfirmation) {
-          if (Navigator.canPop(context)) Navigator.pop(context);
+          Navigator.pop(context);
           _handleCancelConfirmation();
         }
+        break;
+
+      case VoiceAction.checkTime:
+        _announceTimeLeft();
+        break;
+
+      case VoiceAction.checkRemainingQuestions:
+      case VoiceAction.checkTotalQuestions:
+        _announceQuestionCount();
         break;
 
       case VoiceAction.goToQuestion:
@@ -459,7 +524,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
 
       case VoiceAction.submitExam: // Use this as "Save" for this screen
         if (_kioskEnabled) {
-          _confirmEndExam(); 
+          _confirmEndExam();
         } else {
           await widget.ttsService.speak("Saving paper progress.");
           if (mounted) _savePaper(context);
@@ -587,12 +652,15 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
             _openNextQuestion(nextQ, replace: true);
           },
           onPrevious: () {
-            _openPreviousQuestion(nextQ, replace: true);
+             // Replace current with previous
+             _openPreviousQuestion(nextQ, replace: true);
           },
           onJump: (n) {
              // Replace current with jump target
              _openQuestionByNumber(n, replace: true);
           },
+          onTimeCheck: _getFormattedTimeLeft,
+          onCountCheck: () => _getFormattedQuestionCount(nextQ.number),
         ),
       );
 
@@ -606,6 +674,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       widget.ttsService.speak("No more questions.");
     }
   }
+
 
   // Helper to open a question via voice
   void _openQuestionByNumber(int number, {bool replace = false}) {
@@ -647,6 +716,8 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
           onJump: (n) {
              _openQuestionByNumber(n, replace: true);
           },
+          onTimeCheck: _getFormattedTimeLeft,
+          onCountCheck: () => _getFormattedQuestionCount(target!.number),
         ),
       );
 
@@ -781,9 +852,9 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
           leading: Container(
             margin: const EdgeInsets.only(left: 16, top: 8, bottom: 8),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.1),
+              color: Colors.white.withOpacity(0.1),
               shape: BoxShape.circle,
-              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+              border: Border.all(color: Colors.white.withOpacity(0.1)),
             ),
             child: IconButton(
               icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
@@ -811,10 +882,10 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
               Container(
                 margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.1),
+                  color: Colors.white.withOpacity(0.1),
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.1),
+                    color: Colors.white.withOpacity(0.1),
                   ),
                 ),
                 child: AccessibleIconButton(
@@ -831,7 +902,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                Theme.of(context).cardTheme.color!.withValues(alpha: 0.8),
+                Theme.of(context).cardTheme.color!.withOpacity(0.8),
                 Theme.of(context).scaffoldBackgroundColor,
                 Colors.black,
               ],
@@ -851,7 +922,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
                       borderRadius: BorderRadius.circular(20),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.deepPurple.withValues(alpha: 0.5),
+                          color: Colors.deepPurple.withOpacity(0.5),
                           blurRadius: 10,
                           offset: const Offset(0, 4),
                         ),
@@ -932,10 +1003,10 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
                           child: Container(
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.05),
+                              color: Colors.white.withOpacity(0.05),
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.1),
+                                color: Colors.white.withOpacity(0.1),
                               ),
                             ),
                             child: Text(
@@ -968,10 +1039,10 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
                                   margin: const EdgeInsets.only(top: 8),
                                   padding: const EdgeInsets.all(16),
                                   decoration: BoxDecoration(
-                                    color: Colors.amber.withValues(alpha: 0.1),
+                                    color: Colors.amber.withOpacity(0.1),
                                     border: Border.all(
-                                      color: Colors.amber.withValues(
-                                        alpha: 0.3,
+                                      color: Colors.amber.withOpacity(
+                                        0.3,
                                       ),
                                     ),
                                     borderRadius: BorderRadius.circular(12),
@@ -1004,12 +1075,12 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
                             borderRadius: BorderRadius.circular(16),
                             gradient: LinearGradient(
                               colors: [
-                                Colors.white.withValues(alpha: 0.08),
-                                Colors.white.withValues(alpha: 0.03),
+                                Colors.white.withOpacity(0.08),
+                                Colors.white.withOpacity(0.03),
                               ],
                             ),
                             border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.1),
+                              color: Colors.white.withOpacity(0.1),
                             ),
                             boxShadow: [
                               BoxShadow(
@@ -1033,7 +1104,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
                                   decoration: BoxDecoration(
                                     color: Theme.of(
                                       context,
-                                    ).primaryColor.withValues(alpha: 0.2),
+                                    ).primaryColor.withOpacity(0.2),
                                     shape: BoxShape.circle,
                                   ),
                                   child: Text(
@@ -1083,6 +1154,16 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
                                           Navigator.pop(context);
                                           _openNextQuestion(q);
                                         },
+                                        onPrevious: () {
+                                          Navigator.pop(context);
+                                          _openPreviousQuestion(q);
+                                        },
+                                        onJump: (n) {
+                                          Navigator.pop(context);
+                                          _openQuestionByNumber(n);
+                                        },
+                                        onTimeCheck: _getFormattedTimeLeft,
+                                        onCountCheck: () => _getFormattedQuestionCount(q.number),
                                       ),
                                     ),
                                   );
@@ -1113,7 +1194,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
             ),
             boxShadow: [
               BoxShadow(
-                color: Theme.of(context).primaryColor.withValues(alpha: 0.4),
+                color: Theme.of(context).primaryColor.withOpacity(0.4),
                 blurRadius: 12,
                 offset: const Offset(0, 6),
               ),
@@ -1458,6 +1539,8 @@ class SingleQuestionScreen extends StatefulWidget {
   final VoidCallback? onNext; // Added
   final VoidCallback? onPrevious; // Added
   final Function(int)? onJump; // Added
+  final String Function()? onTimeCheck; // Added
+  final String Function()? onCountCheck; // Added
 
   const SingleQuestionScreen({
     super.key,
@@ -1470,6 +1553,8 @@ class SingleQuestionScreen extends StatefulWidget {
     this.onNext,
     this.onPrevious,
     this.onJump,
+    this.onTimeCheck,
+    this.onCountCheck,
   });
 
   @override
@@ -1533,8 +1618,6 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
       }
     }
   }
-  
-  // Removed _initVoiceCommandListener and _startCommandStream
 
   void _executeVoiceCommand(CommandResult result) async {
     if (!(ModalRoute.of(context)?.isCurrent ?? false)) return;
@@ -1559,14 +1642,18 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         _onReadPressed();
         break;
 
-      case VoiceAction.startDictation:
       case VoiceAction.appendAnswer:
+      case VoiceAction.startDictation:
         _startListening(append: true);
         break;
       
       case VoiceAction.overwriteAnswer:
-        _startListening(append: false);
-        break;
+         _startListening(append: false);
+         break;
+
+      case VoiceAction.stopDictation:
+         _stopListening();
+         break;
 
       case VoiceAction.clearAnswer:
         _clearAnswer();
@@ -1574,10 +1661,6 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
 
       case VoiceAction.readLastSentence:
         _readLastSentence();
-        break;
-
-      case VoiceAction.stopDictation:
-        _stopListening();
         break;
 
       case VoiceAction.pauseReading:
@@ -1603,9 +1686,16 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
          break;
 
       case VoiceAction.readAnswer:
-        widget.ttsService.speak(
-          "Your current answer is: ${_answerController.text}",
-        );
+        String textToRead = _answerController.text;
+        if (textToRead.isEmpty && widget.question.audioPath != null) {
+             // Fallback to audio if text is empty but audio exists
+             await widget.ttsService.speak("Playing answer.");
+             await _audioPlayer.play(DeviceFileSource(widget.question.audioPath!));
+        } else {
+             widget.ttsService.speak(
+              "Your current answer is: $textToRead",
+            );
+        }
         break;
 
       case VoiceAction.changeSpeed:
@@ -1632,7 +1722,9 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         if (widget.onPrevious != null) {
           widget.onPrevious!();
         } else {
-          widget.ttsService.speak("No previous question.");
+          // Fallback to pop if no previous provided (e.g. first question)
+          await widget.ttsService.speak("Going back.");
+          if (mounted) Navigator.pop(context);
         }
         break;
 
@@ -1645,6 +1737,10 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         });
         break;
 
+      case VoiceAction.goToSavedPapers:
+        // Not applicable in exam question screen
+        break;
+
       case VoiceAction.goToQuestion:
         if (result.payload is int && widget.onJump != null) {
           widget.onJump!(result.payload);
@@ -1652,8 +1748,26 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
              widget.ttsService.speak("Jump not available.");
         }
         break;
+
+      case VoiceAction.checkTime:
+        if (widget.onTimeCheck != null) {
+           String msg = widget.onTimeCheck!();
+           widget.ttsService.speak(msg);
+        }
+        break;
+
+      case VoiceAction.checkTotalQuestions:
+      case VoiceAction.checkRemainingQuestions:
+         // Both use the same callback but we format differently if we want
+         // For now using the generic count check which likely says "X questions remaining out of Y"
+         if (widget.onCountCheck != null) {
+            String msg = widget.onCountCheck!();
+            widget.ttsService.speak(msg);
+         }
+         break;
+
       default:
-        widget.voiceService.performGlobalNavigation(result);
+        // No global navigation inside exam question for safety, except home if needed
         break;
     }
   }
@@ -1864,12 +1978,14 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
       setState(() {
         _isListening = true;
         _isProcessingAudio = false;
+        // _isVoiceDictationActive remains false here (Manual Mode)
       });
     } catch (e) {
       widget.ttsService.speak("Failed to start recording.");
       // _initVoiceCommandListener(); // Resume listener on fail - Removed
     }
   }
+
 
   void _stopListening() async {
     if (_isListening) {

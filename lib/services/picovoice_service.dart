@@ -41,7 +41,7 @@ class PicovoiceService {
   final ValueNotifier<String?> errorNotifier = ValueNotifier(null); // Added for detailed errors
   
   // Configuration
-  String? _accessKey ="ACCESS KEY HERE";
+  String? _accessKey ="Access key Here";
   
   // Default models placeholders
   final String _keywordPath = "assets/picovoice/Lekhai_android.ppn"; 
