@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'services/tts_service.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import 'package:flutter_pdf_text/flutter_pdf_text.dart';
 import 'dart:io';
 import 'services/voice_command_service.dart';
-import 'services/stt_service.dart';
+// import 'services/stt_service.dart'; // Removed
 import 'package:google_fonts/google_fonts.dart'; // Added
+import 'widgets/picovoice_mic_icon.dart';
+import 'services/picovoice_service.dart';
 
 // import 'dart:ui'; // Added
 // import 'widgets/accessible_widgets.dart'; // Added
@@ -14,11 +17,13 @@ class PdfViewerScreen extends StatefulWidget {
   final String path;
   final TtsService ttsService;
   final VoiceCommandService voiceService;
+  final PicovoiceService picovoiceService;
   const PdfViewerScreen({
     super.key,
     required this.path,
     required this.ttsService,
     required this.voiceService,
+    required this.picovoiceService,
   });
 
   @override
@@ -27,65 +32,46 @@ class PdfViewerScreen extends StatefulWidget {
 
 class _PdfViewerScreenState extends State<PdfViewerScreen> {
   final PdfViewerController _pdfController = PdfViewerController();
-  final SttService _sttService = SttService();
-  final bool _isListening = false;
+  // final SttService _sttService = SttService(); // Removed
+  // final bool _isListening = false; // Removed
 
   PDFDoc? _doc;
   List<String> _sentences = [];
   int _currentIndex = 0;
   bool _isReading = false;
+  
+  StreamSubscription? _commandSubscription;
 
   @override
   void initState() {
     super.initState();
     _loadPdf();
-    _initVoiceCommandListener();
+    // _initVoiceCommandListener(); // Removed local STT
+    _subscribeToVoiceCommands();
+  }
+
+  void _subscribeToVoiceCommands() {
+    _commandSubscription = widget.voiceService.commandStream.listen((result) {
+      if (mounted) {
+         _handleVoiceCommand(result);
+      }
+    });
   }
 
   @override
   void dispose() {
-    _sttService.stopListening();
+    // _sttService.stopListening(); // Removed
+    _commandSubscription?.cancel();
     widget.ttsService.stop(); // Stop audio when leaving screen
     super.dispose();
   }
 
-  void _initVoiceCommandListener() async {
-    bool available = await _sttService.init(
-      tts: widget.ttsService,
-      onStatus: (status) {
-        if ((status == 'notListening' || status == 'done') && !_isListening) {
-          Future.delayed(const Duration(milliseconds: 500), () {
-            if (mounted && !_isListening) _startCommandStream();
-          });
-        }
-      },
-      onError: (error) => debugPrint("PDF Viewer STT Error: $error"),
-    );
+  // Voice Init and Start methods removed
 
-    if (available) {
-      _startCommandStream();
-    }
-  }
-
-  void _startCommandStream() {
-    if (!_sttService.isAvailable || _isListening) return;
-
-    _sttService.startListening(
-      localeId: "en-US",
-      onResult: (text) {
-        final result = widget.voiceService.parse(
-          text,
-          context: VoiceContext.pdfViewer,
-        );
-        if (result.action != VoiceAction.unknown) {
-          _handleVoiceCommand(result);
-        }
-      },
-    );
-  }
+  // void _startCommandStream() { ... } // Removed
 
   void _handleVoiceCommand(CommandResult result) {
-    if (!mounted) return;
+    if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? false)) return;
     switch (result.action) {
       case VoiceAction.nextPage:
         _pdfController.nextPage();
@@ -110,15 +96,30 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
       case VoiceAction.goBack:
         Navigator.pop(context);
         break;
-      // Fallback
-      case VoiceAction.goToHome:
-      case VoiceAction.goToSettings:
-      case VoiceAction.goToSavedPapers:
-      case VoiceAction.goToReadPDF:
-      case VoiceAction.goToTakeExam:
-        widget.voiceService.performGlobalNavigation(result);
+      // New PDF Actions
+      case VoiceAction.zoomIn:
+        final newZoom = (_pdfController.zoomLevel + 0.5).clamp(1.0, 4.0);
+        _pdfController.zoomLevel = newZoom;
+        widget.ttsService.speak("Zooming in.");
         break;
+      case VoiceAction.zoomOut:
+        final newZoom = (_pdfController.zoomLevel - 0.5).clamp(1.0, 4.0);
+        _pdfController.zoomLevel = newZoom;
+        widget.ttsService.speak("Zooming out.");
+        break;
+      case VoiceAction.resetZoom:
+        _pdfController.zoomLevel = 1.0;
+        widget.ttsService.speak("Zoom reset.");
+        break;
+      case VoiceAction.goToPage:
+        if (result.payload is int) {
+           _pdfController.jumpToPage(result.payload);
+           widget.ttsService.speak("Going to page ${result.payload}.");
+        }
+        break;
+      // Fallback
       default:
+        widget.voiceService.performGlobalNavigation(result);
         break;
     }
   }
@@ -192,6 +193,12 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
         ),
         backgroundColor: Colors.transparent,
         elevation: 0,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 16.0),
+            child: PicovoiceMicIcon(service: widget.picovoiceService),
+          ),
+        ],
         leading: Container(
           margin: const EdgeInsets.only(left: 16, top: 8, bottom: 8),
           decoration: BoxDecoration(

@@ -5,7 +5,7 @@ import 'services/gemini_question_service.dart';
 import 'services/question_storage_service.dart';
 import 'models/question_model.dart';
 import 'services/tts_service.dart';
-import 'services/stt_service.dart';
+// import 'services/stt_service.dart'; // Removed
 import 'services/audio_recorder_service.dart';
 import 'services/voice_command_service.dart'; // Added
 import 'package:path_provider/path_provider.dart';
@@ -24,6 +24,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'dart:ui';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'dart:async';
+import 'services/picovoice_service.dart';
+import 'widgets/picovoice_mic_icon.dart';
 // import 'package:permission_handler/permission_handler.dart'; // Added for Save PDF permissions
 // import 'package:path_provider/path_provider.dart'; // Added for downloads path
 // import 'exam_info_screen.dart';
@@ -39,6 +41,7 @@ class PaperDetailScreen extends StatefulWidget {
   final String? studentName;
   final String? studentId;
   final int? examDurationSeconds;
+  final PicovoiceService picovoiceService;
 
   const PaperDetailScreen({
     super.key,
@@ -52,6 +55,7 @@ class PaperDetailScreen extends StatefulWidget {
     this.studentName,
     this.studentId,
     this.examDurationSeconds,
+    required this.picovoiceService,
   });
 
   @override
@@ -62,9 +66,8 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
   late ParsedDocument _document;
   final GeminiQuestionService _geminiService = GeminiQuestionService();
   final QuestionStorageService _storageService = QuestionStorageService();
-  final SttService _sttService = SttService();
-  final bool _isListening =
-      false; // Effectively constant in this screen's logic
+  // final SttService _sttService = SttService(); // Removed
+  // final bool _isListening = false; // Removed
 
   Timer? _examTimer;
   late int _remainingSeconds;
@@ -83,6 +86,9 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
   bool _alert1MinTriggered = false;
 
   int? _examStartTimestamp; // Cache for performance
+  
+  StreamSubscription? _commandSubscription;
+  final ScrollController _scrollController = ScrollController(); // Added
 
   @override
   void initState() {
@@ -95,7 +101,8 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
     KioskService().init();
 
     AccessibilityService().trigger(AccessibilityEvent.navigation);
-    _initVoiceCommandListener();
+    // _initVoiceCommandListener(); // Removed
+    _subscribeToVoiceCommands();
 
     if (widget.examMode) {
       // Don't start immediately. Ask for confirmation first.
@@ -104,6 +111,14 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
         if (mounted) _showExamConfirmationDialog();
       });
     }
+  }
+  
+  void _subscribeToVoiceCommands() {
+    _commandSubscription = widget.voiceService.commandStream.listen((result) {
+        if (mounted) {
+           _executeVoiceCommand(result);
+        }
+    });
   }
 
   void _showExamConfirmationDialog() {
@@ -229,11 +244,13 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
   @override
   void dispose() {
     _examTimer?.cancel();
-    _sttService.stopListening();
+    // _sttService.stopListening(); // Removed
+    _commandSubscription?.cancel();
     // if (_kioskEnabled) {
     KioskService().disableKioskMode();
     // }
     KioskService().dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -437,46 +454,22 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
   }
 
   // --- VOICE COMMAND LOGIC FOR LIST SCREEN ---
-  void _initVoiceCommandListener() async {
-    bool available = await _sttService.init(
-      onStatus: (status) {
-        debugPrint("Paper List STT Status: $status");
-        // Keep-alive loop for the listener
-        if ((status == 'notListening' || status == 'done') && !_isListening) {
-          Future.delayed(const Duration(milliseconds: 500), () {
-            if (mounted && !_isListening) _startCommandStream();
-          });
-        }
-      },
-      onError: (error) => debugPrint("Paper List STT Error: $error"),
-    );
-
-    if (available) {
-      _startCommandStream();
-    }
-  }
-
-  void _startCommandStream() {
-    if (!_sttService.isAvailable || _isListening) return;
-
-    _sttService.startListening(
-      localeId: "en-US",
-      onResult: (text) {
-        final result = widget.voiceService.parse(
-          text,
-          context: _isWaitingForConfirmation
-              ? VoiceContext.confirmExamStart
-              : VoiceContext.paperDetail,
-        );
-        if (result.action != VoiceAction.unknown) {
-          _executeVoiceCommand(result);
-        }
-      },
-    );
-  }
+  // Voice listener methods removed. Using global VoiceCommandService stream.
 
   void _executeVoiceCommand(CommandResult result) async {
+    if (!(ModalRoute.of(context)?.isCurrent ?? false)) return;
     switch (result.action) {
+      case VoiceAction.scrollToTop:
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(0, duration: const Duration(milliseconds: 500), curve: Curves.easeOut);
+        }
+        break;
+      case VoiceAction.scrollToBottom:
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(_scrollController.position.maxScrollExtent, duration: const Duration(milliseconds: 500), curve: Curves.easeOut);
+        }
+        break;
+
       case VoiceAction.confirmExamStart:
         if (_isWaitingForConfirmation) {
           // If dialog is open, pop it first (we know it's top of stack)
@@ -543,9 +536,81 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
         _onAddPage(context);
         break;
 
+      case VoiceAction.scrollUp:
+        _scrollUp();
+        break;
+
+      case VoiceAction.scrollDown:
+        _scrollDown();
+        break;
+
       default:
         widget.voiceService.performGlobalNavigation(result);
         break;
+    }
+  }
+
+  void _scrollUp() {
+    if (_scrollController.hasClients) {
+        final pos = _scrollController.offset - 300;
+        _scrollController.animateTo(pos.clamp(0.0, _scrollController.position.maxScrollExtent), duration: 300.ms, curve: Curves.easeOut);
+    }
+  }
+
+  void _scrollDown() {
+    if (_scrollController.hasClients) {
+        final pos = _scrollController.offset + 300;
+        _scrollController.animateTo(pos.clamp(0.0, _scrollController.position.maxScrollExtent), duration: 300.ms, curve: Curves.easeOut);
+    }
+  }
+
+  void _openPreviousQuestion(ParsedQuestion currentQuestion, {bool replace = false}) {
+    List<ParsedQuestion> allQuestions = [];
+    for (var section in _document.sections) {
+      allQuestions.addAll(section.questions);
+    }
+
+    int index = allQuestions.indexOf(currentQuestion);
+    if (index > 0) {
+      final prevQ = allQuestions[index - 1];
+      String? contextText;
+      for (var section in _document.sections) {
+        if (section.questions.contains(prevQ)) {
+          contextText = section.context;
+          break;
+        }
+      }
+
+      widget.ttsService.speak("Opening previous question.");
+
+      final route = MaterialPageRoute(
+        settings: const RouteSettings(name: '/question_detail'),
+        builder: (_) => SingleQuestionScreen(
+          question: prevQ,
+          contextText: contextText,
+          ttsService: widget.ttsService,
+          voiceService: widget.voiceService,
+          accessibilityService: widget.accessibilityService,
+          picovoiceService: widget.picovoiceService,
+          onNext: () {
+            _openNextQuestion(prevQ, replace: true);
+          },
+          onPrevious: () {
+            _openPreviousQuestion(prevQ, replace: true);
+          },
+          onJump: (n) {
+             _openQuestionByNumber(n, replace: true);
+          },
+        ),
+      );
+
+      if (replace) {
+        Navigator.pushReplacement(context, route);
+      } else {
+        Navigator.push(context, route);
+      }
+    } else {
+      widget.ttsService.speak("No previous question.");
     }
   }
 
@@ -571,15 +636,17 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       widget.ttsService.speak("Opening next question.");
 
       // Stop local listening before pushing new screen
-      _sttService.stopListening();
+      // _sttService.stopListening(); // Removed
 
       final route = MaterialPageRoute(
+        settings: const RouteSettings(name: '/question_detail'),
         builder: (_) => SingleQuestionScreen(
           question: nextQ,
           contextText: contextText,
           ttsService: widget.ttsService,
           voiceService: widget.voiceService,
           accessibilityService: widget.accessibilityService,
+          picovoiceService: widget.picovoiceService,
           onNext: () {
             // Replace current with next (recursive)
             _openNextQuestion(nextQ, replace: true);
@@ -598,13 +665,9 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       );
 
       if (replace) {
-        Navigator.pushReplacement(context, route).then((_) {
-            _initVoiceCommandListener();
-        });
+        Navigator.pushReplacement(context, route); // Listener restart removed
       } else {
-        Navigator.push(context, route).then((_) {
-          _initVoiceCommandListener();
-        });
+        Navigator.push(context, route); // Listener restart removed
       }
 
     } else {
@@ -612,71 +675,6 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
     }
   }
 
-  void _openPreviousQuestion(ParsedQuestion currentQuestion, {bool replace = false}) {
-    // Flatten list of all questions to find index
-    List<ParsedQuestion> allQuestions = [];
-    for (var section in _document.sections) {
-      allQuestions.addAll(section.questions);
-    }
-
-    // Find index by exact match or ID/number match if object ref differs
-    int index = -1;
-    for (int i = 0; i < allQuestions.length; i++) {
-        if (allQuestions[i] == currentQuestion || allQuestions[i].number == currentQuestion.number) {
-            index = i;
-            break;
-        }
-    }
-
-    if (index > 0) {
-      final prevQ = allQuestions[index - 1];
-      // Find context for prevQ
-      String? contextText;
-      for (var section in _document.sections) {
-        if (section.questions.contains(prevQ)) {
-          contextText = section.context;
-          break;
-        }
-      }
-
-      widget.ttsService.speak("Opening previous question.");
-      _sttService.stopListening();
-
-      final route = MaterialPageRoute(
-        builder: (_) => SingleQuestionScreen(
-          question: prevQ,
-          contextText: contextText,
-          ttsService: widget.ttsService,
-          voiceService: widget.voiceService,
-          accessibilityService: widget.accessibilityService,
-          onNext: () {
-            _openNextQuestion(prevQ, replace: true);
-          },
-          onPrevious: () {
-            _openPreviousQuestion(prevQ, replace: true);
-          },
-          onJump: (n) {
-             _openQuestionByNumber(n, replace: true);
-          },
-          onTimeCheck: _getFormattedTimeLeft,
-          onCountCheck: () => _getFormattedQuestionCount(prevQ.number),
-        ),
-      );
-
-      if (replace) {
-        Navigator.pushReplacement(context, route).then((_) {
-             _initVoiceCommandListener();
-        });
-      } else {
-         Navigator.push(context, route).then((_) {
-           _initVoiceCommandListener();
-        });
-      }
-
-    } else {
-      widget.ttsService.speak("This is the first question.");
-    }
-  }
 
   // Helper to open a question via voice
   void _openQuestionByNumber(int number, {bool replace = false}) {
@@ -698,15 +696,17 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       widget.ttsService.speak("Opening question $number.");
 
       // Stop local listening before pushing new screen
-      _sttService.stopListening();
+      // _sttService.stopListening(); // Removed
 
       final route = MaterialPageRoute(
+        settings: const RouteSettings(name: '/question_detail'),
         builder: (_) => SingleQuestionScreen(
           question: target!,
           contextText: contextText,
           ttsService: widget.ttsService,
           voiceService: widget.voiceService,
           accessibilityService: widget.accessibilityService,
+          picovoiceService: widget.picovoiceService,
           onNext: () {
             _openNextQuestion(target!, replace: true);
           },
@@ -722,13 +722,9 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       );
 
       if (replace) {
-        Navigator.pushReplacement(context, route).then((_) {
-             _initVoiceCommandListener();
-        });
+        Navigator.pushReplacement(context, route); // Listener restart removed
       } else {
-         Navigator.push(context, route).then((_) {
-           _initVoiceCommandListener();
-        });
+         Navigator.push(context, route); // Listener restart removed
       }
 
     } else {
@@ -878,6 +874,10 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
             ),
           ),
           actions: [
+            Padding(
+              padding: const EdgeInsets.only(right: 8.0),
+              child: PicovoiceMicIcon(service: widget.picovoiceService),
+            ),
             if (!widget.examMode)
               Container(
                 margin: const EdgeInsets.only(right: 16, top: 8, bottom: 8),
@@ -962,6 +962,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
                 // --- 2. YOUR EXISTING LIST GOES HERE ---
                 Expanded(
                   child: ListView.builder(
+                    controller: _scrollController,
                     itemCount: items.length + (widget.examMode ? 1 : 0),
                     itemBuilder: (context, index) {
                       if (widget.examMode && index == items.length) {
@@ -1148,6 +1149,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
                                         voiceService: widget.voiceService,
                                         accessibilityService:
                                             widget.accessibilityService,
+                                        picovoiceService: widget.picovoiceService,
                                         onNext: () {
                                           Navigator.pop(context);
                                           _openNextQuestion(q);
@@ -1533,6 +1535,7 @@ class SingleQuestionScreen extends StatefulWidget {
   final TtsService ttsService;
   final VoiceCommandService voiceService; // Added
   final AccessibilityService? accessibilityService;
+  final PicovoiceService picovoiceService; // Added
   final VoidCallback? onNext; // Added
   final VoidCallback? onPrevious; // Added
   final Function(int)? onJump; // Added
@@ -1546,8 +1549,9 @@ class SingleQuestionScreen extends StatefulWidget {
     required this.ttsService,
     required this.voiceService,
     this.accessibilityService,
+    required this.picovoiceService, // Added
     this.onNext,
-    this.onPrevious, // Added
+    this.onPrevious,
     this.onJump,
     this.onTimeCheck,
     this.onCountCheck,
@@ -1565,8 +1569,8 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
   double _currentVolume = 1.0;
   bool _playContext = false;
 
-  final SttService _sttService = SttService();
-  bool _isListening = false;
+  // final SttService _sttService = SttService(); // Removed
+  bool _isListening = false; // Re-added for Audio Recording state
   final TextEditingController _answerController = TextEditingController();
 
   final AudioRecorderService _audioRecorderService = AudioRecorderService();
@@ -1576,8 +1580,8 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
 
   // Hands-Free State
   bool _isAppending = true;
-  bool _isVoiceDictationActive = false; // New flag for voice command dictation loop
-
+  
+  StreamSubscription? _commandSubscription;
 
   @override
   void initState() {
@@ -1587,100 +1591,68 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     _answerController.text = widget.question.answer;
 
     // Start Command Listener
-    _initVoiceCommandListener();
+    // _initVoiceCommandListener(); // Removed
+    _subscribeToVoiceCommands();
 
     _answerController.addListener(() {
       widget.question.answer = _answerController.text;
     });
   }
+  
+  void _subscribeToVoiceCommands() {
+    _commandSubscription = widget.voiceService.commandStream.listen((result) {
+      if (mounted) {
+         _executeVoiceCommand(result);
+      }
+    });
 
-  // --- VOICE COMMAND LOGIC ---
-  void _initVoiceCommandListener() async {
-    bool available = await _sttService.init(
-      onStatus: (status) {
-        debugPrint("STT Status: $status");
-        // FIX: If the engine stops (status 'done' or 'notListening') and
-        // the student isn't currently dictating an answer, restart it.
-        if ((status == 'notListening' || status == 'done') && !_isListening) {
-          // A 500ms delay ensures the OS has fully released the mic before we re-acquire it
-          Future.delayed(const Duration(milliseconds: 500), () {
-            if (mounted && !_isListening) {
-               if (_isVoiceDictationActive) {
-                 _startAnswerDictation(speakPrompt: false);
-               } else {
-                 _startCommandStream();
-               }
-            }
-          });
-        }
-      },
-      onError: (error) => debugPrint("STT Error: $error"),
-    );
+    // Listen to Picovoice state to stop recording as soon as wake word is heard
+    widget.picovoiceService.stateNotifier.addListener(_onPicovoiceStateChanged);
+  }
 
-    if (available) {
-      _startCommandStream();
+  void _onPicovoiceStateChanged() {
+    if (widget.picovoiceService.stateNotifier.value == PicovoiceState.wakeDetected) {
+      if (_isListening) {
+        debugPrint("SingleQuestionScreen: Wake word detected during dictation. Stopping recording.");
+        _stopListening();
+      }
     }
   }
 
-  // NEW: Helper method to handle the actual listening call
-  void _startCommandStream() {
-    // Ensure the service is ready and we aren't recording an answer (Gemini mode)
-    if (!_sttService.isAvailable || _isListening) return;
-
-    _sttService.startListening(
-      localeId: "en-US",
-      onResult: (text) {
-        // Block command execution if the student is currently dictating an answer
-        if (_isListening) return;
-
-        final result = widget.voiceService.parse(text, context: VoiceContext.question);
-        if (result.action != VoiceAction.unknown) {
-          _executeVoiceCommand(result);
-        }
-      },
-    );
-  }
-
   void _executeVoiceCommand(CommandResult result) async {
+    if (!(ModalRoute.of(context)?.isCurrent ?? false)) return;
+
     // --- READING PHASE GUARD ---
-    // If we are currently reading, we ONLY accept:
-    // 1. Stop Reading (pauseReading / stopDictation)
-    // 2. Repeat Question (readQuestion)
     if (_isReading) {
       if (result.action == VoiceAction.pauseReading ||
           result.action == VoiceAction.stopDictation) {
-        _stopReadingQuestion();
+        _onStopPressed(); // Use existing toggle logic
         return;
       }
-      if (result.action == VoiceAction.readQuestion) {
-        _startReadingQuestion(); // Restart/Repeat
+      if (result.action == VoiceAction.readQuestion || result.action == VoiceAction.resumeReading) {
+        _onReadPressed(); // Restart/Resume
         return;
       }
-      // Reject all other commands (silently or with log)
-      debugPrint("Ignored command '${result.action}' during reading phase.");
+      // Reject others
       return;
     }
 
     switch (result.action) {
       case VoiceAction.readQuestion:
-        _startReadingQuestion();
+        _onReadPressed();
         break;
-
-      // REMOVED manual mappings to _startListening in favor of new flow
-      // case VoiceAction.startDictation: ...
-      // case VoiceAction.appendAnswer: ...
-      // case VoiceAction.overwriteAnswer: ...
-      // Handled now by generic startDictation or specific below
 
       case VoiceAction.appendAnswer:
-        _startAnswerDictation(speakPrompt: true);
+      case VoiceAction.startDictation:
+        _startListening(append: true);
         break;
-
+      
       case VoiceAction.overwriteAnswer:
-         // For voice command overwrite, we might need a flag, but simple 'start' defaults to append.
-         // Let's clear first for overwrite.
-         _clearAnswer();
-         _startAnswerDictation(speakPrompt: true);
+         _startListening(append: false);
+         break;
+
+      case VoiceAction.stopDictation:
+         _stopListening();
          break;
 
       case VoiceAction.clearAnswer:
@@ -1691,21 +1663,12 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         _readLastSentence();
         break;
 
-      case VoiceAction.startDictation:
-        // Use the new Voice Command Dictation Mode
-        _startAnswerDictation(speakPrompt: true);
-        break;
-
-      case VoiceAction.stopDictation:
-        if (_isVoiceDictationActive) {
-           _stopAnswerDictation();
-        } else {
-           await widget.ttsService.speak("Dictation is not active.");
-        }
-        break;
-
       case VoiceAction.pauseReading:
-         // If idle, maybe just say nothing or "Already stopped".
+        if (_isReading) _onStopPressed();
+        break;
+
+      case VoiceAction.resumeReading:
+        if (!_isReading || _isPaused) _onReadPressed();
         break;
 
       case VoiceAction.playAudioAnswer:
@@ -1763,6 +1726,19 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
           await widget.ttsService.speak("Going back.");
           if (mounted) Navigator.pop(context);
         }
+        break;
+
+      case VoiceAction.submitExam:
+        // Pop back to PaperDetailScreen first
+        if (mounted) Navigator.pop(context);
+        // Delay slightly for transition before broadcasting so parent is "Current"
+        Future.delayed(const Duration(milliseconds: 300), () {
+           widget.voiceService.broadcastCommand(CommandResult(VoiceAction.submitExam));
+        });
+        break;
+
+      case VoiceAction.goToSavedPapers:
+        // Not applicable in exam question screen
         break;
 
       case VoiceAction.goToQuestion:
@@ -1858,7 +1834,8 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
 
   @override
   void dispose() {
-    _sttService.stopListening(); // Stop command listener
+    _commandSubscription?.cancel(); // Stop command listener
+    widget.picovoiceService.stateNotifier.removeListener(_onPicovoiceStateChanged);
     _answerController.dispose();
     widget.ttsService.stop();
     _audioPlayer.dispose();
@@ -1989,7 +1966,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
       return;
     }
     // Briefly stop command listener to free mic for recording
-    await _sttService.stopListening();
+    // _sttService.stopListening(); // Removed
 
     await widget.ttsService.speak("Listening.");
     await Future.delayed(const Duration(milliseconds: 600));
@@ -2005,84 +1982,10 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
       });
     } catch (e) {
       widget.ttsService.speak("Failed to start recording.");
-      _initVoiceCommandListener(); // Resume listener on fail
+      // _initVoiceCommandListener(); // Resume listener on fail - Removed
     }
   }
 
-  // --- NEW VOICE COMMAND DICTATION ---
-  void _startAnswerDictation({bool speakPrompt = false}) async {
-     // 1. Set State
-     setState(() {
-       _isVoiceDictationActive = true;
-       _isListening = true; 
-     });
-
-     // 2. prompt
-     if (speakPrompt) {
-       await widget.ttsService.speak("Start answering.");
-       // Wait for speech to finish roughly
-       await Future.delayed(const Duration(milliseconds: 1000)); 
-     }
-
-     // 3. Start STT
-     _sttService.startListening(
-       localeId: "en-US",
-       onResult: (text) {
-         if (!_isVoiceDictationActive) return;
-
-         String lower = text.toLowerCase();
-         // Check for STOP keywords
-         if (lower.contains("stop answer") || lower.contains("stop") || lower.contains("finish answer")) {
-            // detected stop
-            // Try to extract text BEFORE the stop word
-            // Note: simple split might lose context if "stop" appears earlier validly. 
-            // Assuming "Stop Answer" is the command.
-            
-            // Removing the command phrase
-            String finalText = text;
-            final stopPhrases = ["stop answer", "stop", "finish answer"];
-            for (var phrase in stopPhrases) {
-               final index = finalText.toLowerCase().lastIndexOf(phrase);
-               if (index != -1) {
-                  finalText = finalText.substring(0, index);
-                  break; // found one
-               }
-            }
-            
-            _appendDictatedText(finalText);
-            _stopAnswerDictation();
-         } else {
-            // Append and Keep Listening (relying on Loop Restart in _initVoiceCommandListener)
-            _appendDictatedText(text);
-         }
-       }
-     );
-  }
-
-  void _stopAnswerDictation() {
-     setState(() {
-       _isVoiceDictationActive = false;
-       _isListening = false;
-     });
-     _sttService.stopListening();
-     widget.ttsService.speak("Answer taken.");
-     // _initVoiceCommandListener will restart command stream automatically
-  }
-
-  void _appendDictatedText(String text) {
-      if (text.trim().isEmpty) return;
-      
-      String current = _answerController.text;
-      String separator = current.isEmpty || current.endsWith(" ") ? "" : " ";
-      // Basic check to avoid double-appending if STT sends partials repeatedly (partialResults: false usually safe)
-      // But we are in a loop where we restart. 
-      // Ideally we shouldn't append duplicate text. 
-      // For now, assuming One-Shot phrases.
-      
-      setState(() {
-        _answerController.text = current + separator + text.trim();
-      });
-  }
 
   void _stopListening() async {
     if (_isListening) {
@@ -2094,15 +1997,12 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
       if (path == null) {
         widget.ttsService.speak("Recording failed.");
         setState(() => _isProcessingAudio = false);
-        _initVoiceCommandListener();
+        // _initVoiceCommandListener(); // Removed
         return;
       }
       await _processAudioAnswer(path);
       // Resume Command Listener
-      _initVoiceCommandListener();
-    } else if (_isVoiceDictationActive) {
-       // Should not happen via this method usually, but if button pressed while in voice mode:
-       _stopAnswerDictation();
+      // _initVoiceCommandListener(); // Removed
     }
   }
 
@@ -2127,6 +2027,30 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
       );
     }
     if (!mounted) return;
+
+    // --- POST-PROCESSING: Strip Wake Word and Stop Command ---
+    String processed = transcribedText.trim();
+    
+    // 1. Strip Wake Word (Case Insensitive)
+    final wakeWord = "hey lekhai";
+    if (processed.toLowerCase().startsWith(wakeWord)) {
+      processed = processed.substring(wakeWord.length).trim();
+    }
+    
+    // 2. Strip Stop Command (Case Insensitive, at the end)
+    final stopWords = ["stop answering", "stop writing", "stop dictation", "pause writing", "pause dictation"];
+    for (var word in stopWords) {
+      if (processed.toLowerCase().endsWith(word)) {
+        processed = processed.substring(0, processed.length - word.length).trim();
+        break; 
+      }
+    }
+    
+    // Remove trailing punctuation that might remain after stripping
+    if (processed.endsWith(',') || processed.endsWith('.')) {
+       processed = processed.substring(0, processed.length - 1).trim();
+    }
+
     setState(() {
       _isProcessingAudio = false;
       if (_isAppending && _answerController.text.isNotEmpty) {
@@ -2134,10 +2058,10 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         String separator = _answerController.text.endsWith('.') ? " " : ". ";
         if (_answerController.text.trim().isEmpty) separator = "";
         _answerController.text =
-            _answerController.text + separator + transcribedText;
+            _answerController.text + separator + processed;
       } else {
         // Replace Mode (Overwrite)
-        _answerController.text = transcribedText;
+        _answerController.text = processed;
       }
     });
     await Future.delayed(const Duration(milliseconds: 100));
@@ -2270,6 +2194,12 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         ),
         backgroundColor: Colors.transparent,
         elevation: 0,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 16.0),
+            child: PicovoiceMicIcon(service: widget.picovoiceService),
+          ),
+        ],
         leading: Container(
           margin: const EdgeInsets.only(left: 16, top: 8, bottom: 8),
           decoration: BoxDecoration(

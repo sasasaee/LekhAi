@@ -1,21 +1,25 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lekhai/paper_detail_screen.dart';
 // import 'dart:io';
 // import 'questions_screen.dart';
 // import 'package:lekhai/services/ocr_service.dart';
 import 'package:lekhai/services/tts_service.dart';
-import 'package:lekhai/services/stt_service.dart';
+// import 'package:lekhai/services/stt_service.dart'; // Removed
 import 'package:lekhai/services/voice_command_service.dart';
 import 'package:lekhai/services/accessibility_service.dart';
 import 'package:lekhai/models/question_model.dart';
+import 'package:lekhai/services/picovoice_service.dart';
+import 'package:lekhai/widgets/picovoice_mic_icon.dart';
 
 class ExamInfoScreen extends StatefulWidget {
   final ParsedDocument document;
   final TtsService ttsService;
   final VoiceCommandService voiceService;
   final AccessibilityService accessibilityService;
-  final SttService sttService;
+  final PicovoiceService picovoiceService;
+  // final SttService sttService; // Removed
 
   const ExamInfoScreen({
     super.key,
@@ -23,7 +27,8 @@ class ExamInfoScreen extends StatefulWidget {
     required this.ttsService,
     required this.voiceService,
     required this.accessibilityService,
-    required this.sttService,
+    required this.picovoiceService,
+    // required this.sttService, // Removed
   });
 
   @override
@@ -35,8 +40,13 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
   String _name = '';
   String _studentId = '';
   String _timerText = '60'; // Default 60 minutes
-  // bool _isListeningName = false;
-  // bool _isListeningId = false;
+  
+  // Focus Nodes for Voice Navigation
+  final FocusNode _nameFocus = FocusNode();
+  final FocusNode _idFocus = FocusNode();
+  final FocusNode _timeFocus = FocusNode();
+  
+  StreamSubscription? _commandSubscription;
 
   bool _shouldListen = true;
 
@@ -46,46 +56,44 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
     widget.ttsService.speak(
       "Exam Setup. Please review rules and enter details. Say Start Exam to begin.",
     );
-    _initVoiceListener();
+    // _initVoiceListener(); // Removed
+    _subscribeToVoiceCommands();
+    
+    // Add focus listeners for Handoff Resume
+    void focusListener() {
+      if (!_nameFocus.hasFocus && !_idFocus.hasFocus && !_timeFocus.hasFocus) {
+          // If all lost focus, assume dictation/editing done
+          widget.picovoiceService.resumeListening();
+      }
+    }
+    _nameFocus.addListener(focusListener);
+    _idFocus.addListener(focusListener);
+    _timeFocus.addListener(focusListener);
+  }
+  
+  void _subscribeToVoiceCommands() {
+    _commandSubscription = widget.voiceService.commandStream.listen((result) {
+      if (mounted) {
+         _executeVoiceCommand(result);
+      }
+    });
   }
 
   @override
   void dispose() {
     _shouldListen = false;
-    widget.sttService.stopListening();
+    _commandSubscription?.cancel();
+    _nameFocus.dispose();
+    _idFocus.dispose();
+    _timeFocus.dispose();
+    // widget.sttService.stopListening(); // Removed
     super.dispose();
   }
 
-  void _initVoiceListener() async {
-    // We can use the passed sttService or create a new one. 
-    // The widget receives `sttService`. Let's use it.
-    // Ensure it's not listening elsewhere? SttService manages its own state.
-    
-    // Actually SttService might need init if it was stopped/disposed previously?
-    // The passed service is likely initialized in main or home, but let's re-init/check availability.
-    bool available = await widget.sttService.init(
-      tts: widget.ttsService,
-      onStatus: (status) {
-        if ((status == 'notListening' || status == 'done') && _shouldListen) {
-           Future.delayed(const Duration(milliseconds: 500), () {
-            if (mounted && _shouldListen) _startListening();
-          });
-        }
-      },
-    );
-
-    if (available) {
-      _startListening();
-    }
-  }
-
-  void _startListening() {
-    if (!_shouldListen) return;
-    widget.sttService.startListening(
-      localeId: 'en-US',
-      onResult: (text) {
-        final result = widget.voiceService.parse(text, context: VoiceContext.confirmExamStart);
-        
+  // _initVoiceListener and _startListening Removed
+  
+  void _executeVoiceCommand(CommandResult result) {
+        if (!(ModalRoute.of(context)?.isCurrent ?? false)) return;
         if (result.action == VoiceAction.confirmExamStart || 
             result.action == VoiceAction.enterExamMode ||
             result.action == VoiceAction.submitForm) {
@@ -95,8 +103,46 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
         } else if (result.action == VoiceAction.goToHome) {
            widget.voiceService.performGlobalNavigation(result);
         }
-      },
-    );
+        
+        // Form Navigation
+        if (result.action == VoiceAction.setStudentName) {
+            if (result.payload != null && result.payload.toString().isNotEmpty) {
+               setState(() => _name = result.payload.toString());
+               widget.ttsService.speak("Name set to $_name");
+               widget.picovoiceService.resumeListening(); // Direct set -> resume
+            } else {
+               FocusScope.of(context).requestFocus(_nameFocus);
+               widget.ttsService.speak("Please say or type your name.");
+               // Don't resume -> wait for focus loss
+            }
+        }
+        if (result.action == VoiceAction.setStudentID) {
+            if (result.payload != null && result.payload.toString().isNotEmpty) {
+               setState(() => _studentId = result.payload.toString());
+               widget.ttsService.speak("ID set to $_studentId");
+               widget.picovoiceService.resumeListening();
+            } else {
+               FocusScope.of(context).requestFocus(_idFocus);
+               widget.ttsService.speak("Please say or type your ID.");
+            }
+        }
+        if (result.action == VoiceAction.setExamTime) {
+            if (result.payload != null && result.payload.toString().isNotEmpty) {
+               // extract just digits if needed, though payload should be clean
+               String p = result.payload.toString().replaceAll(RegExp(r'[^0-9]'), '');
+               if (p.isNotEmpty) {
+                  setState(() => _timerText = p);
+                  widget.ttsService.speak("Duration set to $_timerText minutes");
+                  widget.picovoiceService.resumeListening();
+               } else {
+                   widget.ttsService.speak("Invalid time format.");
+                   widget.picovoiceService.resumeListening(); // Resume anyway on error
+               }
+            } else {
+               FocusScope.of(context).requestFocus(_timeFocus);
+               widget.ttsService.speak("Please set the exam duration.");
+            }
+        }
   }
 
   void _confirmAndStartExam() {
@@ -134,6 +180,7 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
           examMode: true,
           examDurationSeconds: durationSeconds,
           timestamp: DateTime.now().toIso8601String(),
+          picovoiceService: widget.picovoiceService,
         ),
       ),
     );
@@ -150,6 +197,12 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
         centerTitle: true,
         backgroundColor: Colors.transparent,
         elevation: 0,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 16.0),
+            child: PicovoiceMicIcon(service: widget.picovoiceService),
+          ),
+        ],
         leading: Container(
           margin: const EdgeInsets.only(left: 16, top: 8, bottom: 8),
           decoration: BoxDecoration(
@@ -242,6 +295,7 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
 
                   // Name input
                   TextFormField(
+                    focusNode: _nameFocus,
                     initialValue: _name,
                     style: GoogleFonts.outfit(color: Colors.white),
                     decoration: _inputDecoration("Full Name", Icons.person),
@@ -253,6 +307,7 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
 
                   // Student ID input
                   TextFormField(
+                    focusNode: _idFocus,
                     initialValue: _studentId,
                     style: GoogleFonts.outfit(color: Colors.white),
                     decoration: _inputDecoration("Student ID", Icons.badge),
@@ -274,6 +329,7 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
 
                   // Timer Input
                   TextFormField(
+                    focusNode: _timeFocus,
                     initialValue: _timerText,
                     style: GoogleFonts.outfit(color: Colors.white),
                     keyboardType: TextInputType.number,

@@ -2,22 +2,26 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import 'services/stt_service.dart';
+// import 'services/stt_service.dart'; // Removed
 import 'services/tts_service.dart';
 import 'services/voice_command_service.dart';
+import 'services/picovoice_service.dart';
 import 'services/accessibility_service.dart';
-import 'main.dart'; // Import main to access HomeScreen if needed or just use named routes if setup
+import 'main.dart'; 
+import 'widgets/picovoice_mic_icon.dart'; 
 
 class StartPage extends StatefulWidget {
   final TtsService ttsService;
   final VoiceCommandService voiceService;
   final AccessibilityService accessibilityService;
+  final PicovoiceService picovoiceService;
 
   const StartPage({
     super.key,
     required this.ttsService,
     required this.voiceService,
     required this.accessibilityService,
+    required this.picovoiceService,
   });
 
   @override
@@ -25,59 +29,30 @@ class StartPage extends StatefulWidget {
 }
 
 class _StartPageState extends State<StartPage> {
-  final SttService _sttService = SttService();
-  bool _shouldListen = true;
+  // final SttService _sttService = SttService(); // Removed
+  // bool _shouldListen = true; // Removed
 
   @override
   void initState() {
     super.initState();
     widget.ttsService.speak(
-      "Welcome to LekhAi. Your intelligent study companion. Say Get Started to begin.",
+      "Welcome to LekhAi. Your intelligent study companion. Say Start App to begin.",
     );
-    _initVoiceListener();
+    // _initVoiceListener(); // Removed
   }
 
   @override
   void dispose() {
-    _shouldListen = false;
-    _sttService.stopListening();
+    // _shouldListen = false;
+    // _sttService.stopListening();
     super.dispose();
   }
 
-  void _initVoiceListener() async {
-    bool available = await _sttService.init(
-      tts: widget.ttsService,
-      onStatus: (status) {
-        if ((status == 'notListening' || status == 'done') && _shouldListen) {
-           Future.delayed(const Duration(milliseconds: 500), () {
-            if (mounted && _shouldListen) _startListening();
-          });
-        }
-      },
-    );
-
-    if (available) {
-      _startListening();
-    }
-  }
-
-  void _startListening() {
-    if (!_shouldListen) return;
-    _sttService.startListening(
-      localeId: 'en-US',
-      onResult: (text) {
-        final result = widget.voiceService.parse(text);
-        if (result.action == VoiceAction.startApp || 
-            text.toLowerCase().contains('get started')) {
-          _navigateToHome();
-        }
-      },
-    );
-  }
+  // Voice Listener methods removed
 
   void _navigateToHome() {
-    _shouldListen = false;
-    _sttService.stopListening();
+    // _shouldListen = false;
+    // _sttService.stopListening();
     widget.accessibilityService.trigger(AccessibilityEvent.action);
     Navigator.pushReplacement(
       context,
@@ -86,6 +61,7 @@ class _StartPageState extends State<StartPage> {
           ttsService: widget.ttsService,
           voiceService: widget.voiceService,
           accessibilityService: widget.accessibilityService,
+          picovoiceService: widget.picovoiceService, 
         ),
       ),
     );
@@ -94,6 +70,10 @@ class _StartPageState extends State<StartPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: PicovoiceMicIcon(service: widget.picovoiceService, size: 32),
+      ),
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -117,7 +97,7 @@ class _StartPageState extends State<StartPage> {
                       tag: 'app_logo',
                       child: Image.asset(
                         'assets/images/logo.png',
-                        width: 320, // Increased size
+                        width: 320, 
                         height: 320,
                       ),
                     )
@@ -132,9 +112,9 @@ class _StartPageState extends State<StartPage> {
                   "Your ability defines you, not your limitations.",
                   textAlign: TextAlign.center,
                   style: GoogleFonts.outfit(
-                    fontSize: 22, // Increased font size
-                    color: Colors.white, // Brighter color
-                    fontWeight: FontWeight.w600, // Bolder
+                    fontSize: 22, 
+                    color: Colors.white, 
+                    fontWeight: FontWeight.w600, 
                     height: 1.4,
                   ),
                 ).animate().fadeIn(delay: 500.ms).slideY(begin: 0.2, end: 0),
@@ -144,7 +124,7 @@ class _StartPageState extends State<StartPage> {
                 // Start Button
                 SizedBox(
                       width: double.infinity,
-                      height: 68, // Slightly taller
+                      height: 68, 
                       child: ElevatedButton(
                         onPressed: _navigateToHome,
                         style: ElevatedButton.styleFrom(
@@ -164,8 +144,8 @@ class _StartPageState extends State<StartPage> {
                             const Text(
                               "Get Started",
                               style: TextStyle(
-                                fontSize: 24, // Bigger font
-                                fontWeight: FontWeight.w800, // Bolder
+                                fontSize: 24, 
+                                fontWeight: FontWeight.w800, 
                                 letterSpacing: 0.5,
                               ),
                             ),

@@ -7,10 +7,12 @@ import 'dart:async'; // For Timer/Future
 import 'services/tts_service.dart';
 import 'services/voice_command_service.dart';
 import 'services/accessibility_service.dart';
-import 'services/stt_service.dart';
+// import 'services/stt_service.dart'; // Removed
 // Screens
 import 'questions_screen.dart';
 import 'preferences_screen.dart';
+import 'services/picovoice_service.dart';
+import 'widgets/picovoice_mic_icon.dart';
 
 // import 'dart:ui'; // For standard imports if needed
 // import 'widgets/accessible_widgets.dart';
@@ -20,14 +22,16 @@ class TakeExamScreen extends StatefulWidget {
   final TtsService ttsService;
   final VoiceCommandService voiceService;
   final AccessibilityService accessibilityService;
-  final SttService sttService;
+  final PicovoiceService picovoiceService;
+  // final SttService sttService; // Removed
 
   const TakeExamScreen({
     super.key,
     required this.ttsService,
     required this.voiceService,
     required this.accessibilityService,
-    required this.sttService,
+    required this.picovoiceService,
+    // required this.sttService, // Removed
   });
 
   @override
@@ -35,78 +39,49 @@ class TakeExamScreen extends StatefulWidget {
 }
 
 class _TakeExamScreenState extends State<TakeExamScreen> {
-  bool _shouldListen = true;
+  // bool _shouldListen = true; // Removed
+
+  StreamSubscription<CommandResult>? _commandSubscription;
 
   @override
   void initState() {
     super.initState();
     widget.accessibilityService.trigger(AccessibilityEvent.navigation);
     widget.ttsService.speak("Take Exam.");
-
-    // Slight delay to allow previous screen's STT to fully release
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (mounted) _initVoiceCommandListener();
-    });
+    _subscribeToVoiceCommands();
   }
 
   @override
   void dispose() {
-    _shouldListen = false;
-    widget.sttService.stopListening();
+    _commandSubscription?.cancel();
     super.dispose();
   }
 
-  void _initVoiceCommandListener() async {
-    bool available = await widget.sttService.init(
-      tts: widget.ttsService,
-      onStatus: (status) {
-        if ((status == 'notListening' || status == 'done') && _shouldListen) {
-          Future.delayed(const Duration(milliseconds: 500), () {
-            if (mounted && _shouldListen) _startCommandStream();
-          });
-        }
-      },
-      onError: (error) => debugPrint("TakeExam Screen STT Error: $error"),
-    );
-
-    if (available && mounted && _shouldListen) {
-      _startCommandStream();
-    }
+  void _subscribeToVoiceCommands() {
+    _commandSubscription = widget.voiceService.commandStream.listen((result) {
+      _handleVoiceCommand(result);
+    });
   }
 
-  void _startCommandStream() {
-    if (!widget.sttService.isAvailable || !_shouldListen) return;
-
-    widget.sttService.startListening(
-      localeId: "en-US",
-      onResult: (text) {
-        final result = widget.voiceService.parse(
-          text,
-          context: VoiceContext.takeExam,
-        );
-        if (result.action != VoiceAction.unknown) {
-          if (_shouldListen) _handleVoiceCommand(result);
-        }
-      },
-    );
-  }
-
-  void _handleVoiceCommand(CommandResult result) async {
+  void _handleVoiceCommand(CommandResult result) {
     if (!mounted) return;
     switch (result.action) {
       case VoiceAction.scanQuestions:
-      case VoiceAction.useGemini:
-      case VoiceAction.useLocalOcr:
-      case VoiceAction.goToHome:
-      case VoiceAction.goToSettings:
-      case VoiceAction.goToSavedPapers:
-      case VoiceAction.goToReadPDF:
-        widget.voiceService.performGlobalNavigation(result);
+        _handleScan();
+        break;
+      case VoiceAction.scanCamera:
+        // Force camera logic if possible, or just call _handleScan which shows dialog
+        _handleScan();
+        break;
+      case VoiceAction.scanGallery:
+        // Force gallery logic if possible
+        _handleScan();
         break;
       case VoiceAction.goBack:
         Navigator.pop(context);
         break;
       default:
+        widget.voiceService.performGlobalNavigation(result);
         break;
     }
   }
@@ -126,6 +101,12 @@ class _TakeExamScreenState extends State<TakeExamScreen> {
         elevation: 0,
         title: Image.asset('assets/images/logo.png', width: 140, height: 80),
         centerTitle: true,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 16.0),
+            child: PicovoiceMicIcon(service: widget.picovoiceService),
+          ),
+        ],
         leading: Container(
           margin: const EdgeInsets.only(left: 16, top: 8, bottom: 8),
           decoration: BoxDecoration(
@@ -207,6 +188,7 @@ class _TakeExamScreenState extends State<TakeExamScreen> {
                           builder: (_) => QuestionsScreen(
                             ttsService: widget.ttsService,
                             voiceService: widget.voiceService,
+                            picovoiceService: widget.picovoiceService,
                             isSelectionMode: true, // Exam FLow
                           ),
                         ),
@@ -227,6 +209,7 @@ class _TakeExamScreenState extends State<TakeExamScreen> {
                           builder: (_) => PreferencesScreen(
                             ttsService: widget.ttsService,
                             voiceService: widget.voiceService,
+                            picovoiceService: widget.picovoiceService,
                           ),
                         ),
                       );
@@ -350,8 +333,8 @@ class _ExamActionTileState extends State<_ExamActionTile>
                               style: GoogleFonts.outfit(
                                 fontSize: 14,
                                 color: Colors.white54,
+                                ),
                               ),
-                            ),
                           ],
                         ),
                       ),
