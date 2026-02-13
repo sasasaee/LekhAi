@@ -1,6 +1,6 @@
 import 'package:porcupine_flutter/porcupine_manager.dart';
 import 'package:porcupine_flutter/porcupine_error.dart';
-import 'package:porcupine_flutter/porcupine.dart';
+// import 'package:porcupine_flutter/porcupine.dart';
 import 'package:rhino_flutter/rhino_manager.dart';
 import 'package:rhino_flutter/rhino_error.dart';
 import 'package:rhino_flutter/rhino.dart'; // Added for RhinoInference type

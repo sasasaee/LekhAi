@@ -2,10 +2,10 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:http/http.dart' as http;
-import '../models/question_model.dart';
+import '../models/paper_model.dart';
 import 'package:flutter/foundation.dart';
 
-class GeminiQuestionService {
+class GeminiPaperService {
   Future<ParsedDocument> processImage(String imagePath, String apiKey) async {
     // 1. Find a valid model name dynamically
     final modelName = await _findValidModel(apiKey) ?? 'gemini-1.5-flash';
@@ -126,6 +126,7 @@ class GeminiQuestionService {
     
     Output JSON Schema:
     {
+      "name": "A short, descriptive title for the document (e.g., 'Class 10 History Term 1', 'Physics Quiz - Chapter 3')",
       "sections": [
         {
           "title": "Section Title",
@@ -156,6 +157,7 @@ class GeminiQuestionService {
 
     final Map<String, dynamic> data = jsonDecode(cleanJson);
     final sectionsList = data['sections'] as List;
+    final String? docName = data['name']; // Extract auto-generated name
 
     List<ParsedSection> parsedSections = [];
 
@@ -182,7 +184,11 @@ class GeminiQuestionService {
         ParsedSection(title: title, context: context, questions: questions),
       );
     }
-    return ParsedDocument(header: [], sections: parsedSections);
+    return ParsedDocument(
+      header: [],
+      sections: parsedSections,
+      name: docName, // Pass to constructor
+    );
   }
 
   Future<String> transcribeAudio(String audioPath, String apiKey) async {

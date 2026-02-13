@@ -4,15 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'services/ocr_service.dart';
-import 'services/question_storage_service.dart';
+import 'services/paper_storage_service.dart';
 import 'services/tts_service.dart';
 import 'services/question_segmentation_service.dart';
-import 'models/question_model.dart';
-import 'questions_screen.dart';
+import 'models/paper_model.dart';
+import 'saved_papers_screen.dart';
 import 'services/voice_command_service.dart';
 // import 'services/stt_service.dart'; // Removed
 
 import 'services/accessibility_service.dart';
+import 'widgets/voice_alert_dialog.dart';
 import 'services/picovoice_service.dart';
 // import 'widgets/animated_button.dart';
 
@@ -50,7 +51,7 @@ class OcrScreen extends StatefulWidget {
 class _OcrScreenState extends State<OcrScreen> {
   // ... (unchanged state variables and methods)
   final OcrService _ocrService = OcrService();
-  final QuestionStorageService _storageService = QuestionStorageService();
+  final PaperStorageService _storageService = PaperStorageService();
   final QuestionSegmentationService _segmenter = QuestionSegmentationService();
   final ImagePicker _picker = ImagePicker();
 
@@ -61,7 +62,7 @@ class _OcrScreenState extends State<OcrScreen> {
   File? _imageFile;
   ParsedDocument? _doc;
   List<OcrLine> _rawLines = [];
-  
+
   StreamSubscription? _commandSubscription;
 
   // ... (maintain all existing methods: initState, _retrieveLostData, _pickImage, _processImage, _saveParsed, dispose)
@@ -76,7 +77,7 @@ class _OcrScreenState extends State<OcrScreen> {
     // _initVoiceCommandListener(); // Removed
     _subscribeToVoiceCommands();
   }
-  
+
   void _subscribeToVoiceCommands() {
     _commandSubscription = widget.voiceService.commandStream.listen((result) {
       if (mounted) {
@@ -193,6 +194,8 @@ class _OcrScreenState extends State<OcrScreen> {
     }
 
     // Prompt for Name
+    // Prompt for Name.
+    // Using VoiceAlertDialog to allow voice interaction.
     String? paperName = await showDialog<String>(
       context: context,
       barrierDismissible: false,
@@ -203,8 +206,9 @@ class _OcrScreenState extends State<OcrScreen> {
           // nameController.text = doc.header.first;
         }
 
-        return AlertDialog(
+        return VoiceAlertDialog(
           title: const Text("Name this Paper"),
+          voiceService: widget.voiceService,
           content: TextField(
             controller: nameController,
             autofocus: true,
@@ -213,6 +217,18 @@ class _OcrScreenState extends State<OcrScreen> {
               labelText: "Paper Name",
             ),
           ),
+          onConfirm: () {
+            // Confirm/Save action
+            if (nameController.text.trim().isNotEmpty) {
+              Navigator.pop(ctx, nameController.text.trim());
+            } else {
+              // If empty, maybe treat as default/skip?
+              // Or just pop with null which defaults later
+              Navigator.pop(ctx, null);
+            }
+          },
+          onSkip: () => Navigator.pop(ctx, null), // Skip action
+          onCancel: () => Navigator.pop(ctx, null), // Cancel/Back
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, null), // Skip/Default
@@ -251,7 +267,7 @@ class _OcrScreenState extends State<OcrScreen> {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (_) => QuestionsScreen(
+          builder: (_) => SavedPapersScreen(
             ttsService: widget.ttsService,
             voiceService: widget.voiceService,
             picovoiceService: widget.picovoiceService,
@@ -270,33 +286,39 @@ class _OcrScreenState extends State<OcrScreen> {
     widget.ttsService.speak(
       "Do you want to enter Exam Mode? Say Yes to confirm or No to cancel.",
     );
-    
+
     // We now wait for Voice Command via Stream (handled in _handleVoiceCommand)
     // Optionally show a dialog
     if (mounted) {
-        showDialog(
-            context: context,
-            builder: (ctx) => AlertDialog(
-                title: const Text("Enter Exam Mode?"),
-                content: const Text("Say 'Yes' or 'Confirm' to start."),
-                actions: [
-                    TextButton(
-                        onPressed: () => Navigator.pop(ctx),
-                        child: const Text("Cancel"),
-                    ),
-                    ElevatedButton(
-                        onPressed: () {
-                             Navigator.pop(ctx);
-                             _startExam();
-                        },
-                        child: const Text("Start Exam"),
-                    ),
-                ],
+      showDialog(
+        context: context,
+        builder: (ctx) => VoiceAlertDialog(
+          title: const Text("Enter Exam Mode?"),
+          voiceService: widget.voiceService,
+          content: const Text("Say 'Yes' or 'Confirm' to start."),
+          onConfirm: () {
+            Navigator.pop(ctx);
+            _startExam();
+          },
+          onCancel: () => Navigator.pop(ctx),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text("Cancel"),
             ),
-        );
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                _startExam();
+              },
+              child: const Text("Start Exam"),
+            ),
+          ],
+        ),
+      );
     }
   }
-  
+
   void _startExam() {
     if (!mounted || _imageFile == null) {
       widget.ttsService.speak("Error: No document scanned.");

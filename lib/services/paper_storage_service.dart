@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../models/question_model.dart';
+import '../models/paper_model.dart';
 
-class QuestionStorageService {
+class PaperStorageService {
   static const String _keyDocs = 'parsed_documents';
 
   // Save or Update a full segmented document locally

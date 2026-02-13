@@ -15,10 +15,9 @@ import 'services/accessibility_service.dart';
 // Screens
 import 'take_exam_screen.dart'; // Extracted screen
 import 'preferences_screen.dart';
-import 'questions_screen.dart';
+import 'saved_papers_screen.dart';
 import 'pdf_viewer_screen.dart';
 import 'start_page.dart'; // Imported StartPage
-import 'widgets/picovoice_mic_icon.dart';
 
 // import 'dart:ui';
 // import 'package:shared_preferences/shared_preferences.dart';
@@ -67,7 +66,7 @@ class MyApp extends StatelessWidget {
           accessibilityService: accessibilityService,
           picovoiceService: picovoiceService, // Passed
         ),
-        '/saved_papers': (context) => QuestionsScreen(
+        '/saved_papers': (context) => SavedPapersScreen(
           ttsService: ttsService,
           voiceService: voiceCommandService,
           picovoiceService: picovoiceService,
@@ -113,7 +112,7 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    
+
     // Initialize Picovoice Service (Async)
     widget.picovoiceService.init(widget.voiceService);
 
@@ -201,7 +200,7 @@ class _HomeScreenState extends State<HomeScreen>
   String _currentTimeStr = "";
 
   // NO SttService here anymore
-  
+
   @override
   void initState() {
     super.initState();
@@ -282,13 +281,13 @@ class _HomeScreenState extends State<HomeScreen>
     // For this step, we assume TakeExamScreen needs update or we pass null/dummy?
     // Based on prompt, we are only integrating into main.dart now.
     // BUT TakeExamScreen constructor will fail if we don't pass SttService?
-    // Let's create a dummy or fix TakeExamScreen later. 
-    // Actually, we must pass something. 
+    // Let's create a dummy or fix TakeExamScreen later.
+    // Actually, we must pass something.
     // Ideally we should have refactored TakeExamScreen too.
     // For now, let's just NOT pass it and see (it is named argument usually?)
     // Checking previous file view... used `sttService: _sttService`. Make it optional there?
     // Or just create a local instance here if needed for legacy support until refactored.
-    
+
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -482,11 +481,14 @@ class _HomeScreenState extends State<HomeScreen>
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                settings: const RouteSettings(name: '/settings'),
+                                settings: const RouteSettings(
+                                  name: '/settings',
+                                ),
                                 builder: (_) => PreferencesScreen(
                                   ttsService: widget.ttsService,
                                   voiceService: widget.voiceService,
-                                  picovoiceService: widget.picovoiceService, // Passed
+                                  picovoiceService:
+                                      widget.picovoiceService, // Passed
                                 ),
                               ),
                             );

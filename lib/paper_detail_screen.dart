@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
-import 'services/gemini_question_service.dart';
-import 'services/question_storage_service.dart';
-import 'models/question_model.dart';
+import 'services/gemini_paper_service.dart';
+import 'services/paper_storage_service.dart';
+import 'models/paper_model.dart';
 import 'services/tts_service.dart';
 // import 'services/stt_service.dart'; // Removed
 import 'services/audio_recorder_service.dart';
@@ -15,6 +15,7 @@ import 'services/kiosk_service.dart'; // Added KioskService
 import 'services/pdf_service.dart'; // Added PdfService
 import 'package:open_filex/open_filex.dart'; // Added for View PDF
 import 'package:share_plus/share_plus.dart'; // Added for Share PDF
+import 'widgets/voice_alert_dialog.dart'; // Added
 
 // --- PAPER DETAIL SCREEN ---
 
@@ -26,6 +27,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'dart:async';
 import 'services/picovoice_service.dart';
 import 'widgets/picovoice_mic_icon.dart';
+import 'dart:convert';
 // import 'package:permission_handler/permission_handler.dart'; // Added for Save PDF permissions
 // import 'package:path_provider/path_provider.dart'; // Added for downloads path
 // import 'exam_info_screen.dart';
@@ -64,8 +66,8 @@ class PaperDetailScreen extends StatefulWidget {
 
 class _PaperDetailScreenState extends State<PaperDetailScreen> {
   late ParsedDocument _document;
-  final GeminiQuestionService _geminiService = GeminiQuestionService();
-  final QuestionStorageService _storageService = QuestionStorageService();
+  final GeminiPaperService _geminiService = GeminiPaperService();
+  final PaperStorageService _storageService = PaperStorageService();
   // final SttService _sttService = SttService(); // Removed
   // final bool _isListening = false; // Removed
 
@@ -77,6 +79,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
 
   bool _isWaitingForConfirmation = false;
   bool _kioskEnabled = false;
+  bool _isExamFinished = false;
   int _totalExamSeconds = 3600;
 
   // Alert Flags
@@ -86,7 +89,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
   bool _alert1MinTriggered = false;
 
   int? _examStartTimestamp; // Cache for performance
-  
+
   StreamSubscription? _commandSubscription;
   final ScrollController _scrollController = ScrollController(); // Added
 
@@ -112,12 +115,12 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       });
     }
   }
-  
+
   void _subscribeToVoiceCommands() {
     _commandSubscription = widget.voiceService.commandStream.listen((result) {
-        if (mounted) {
-           _executeVoiceCommand(result);
-        }
+      if (mounted) {
+        _executeVoiceCommand(result);
+      }
     });
   }
 
@@ -174,15 +177,17 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
     await KioskService().enableKioskMode();
 
     // 2. Start Countdown
-    _startCountdownSequence(onDone: () {
-      if (startReading) {
-        widget.ttsService.speak("Exam started. Reading question 1.");
-        // Short delay to ensure TTS message starts before screen switch
-        Future.delayed(const Duration(milliseconds: 2000), () {
-           if (mounted) _openQuestionByNumber(1);
-        });
-      }
-    });
+    _startCountdownSequence(
+      onDone: () {
+        if (startReading) {
+          widget.ttsService.speak("Exam started. Reading question 1.");
+          // Short delay to ensure TTS message starts before screen switch
+          Future.delayed(const Duration(milliseconds: 2000), () {
+            if (mounted) _openQuestionByNumber(1);
+          });
+        }
+      },
+    );
   }
 
   void _handleCancelConfirmation() {
@@ -431,7 +436,8 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
         if (q.number == currentQuestionNumber) {
           currentQuestion = q;
         }
-        if (q.answer.isNotEmpty || (q.audioPath != null && q.audioPath!.isNotEmpty)) {
+        if (q.answer.isNotEmpty ||
+            (q.audioPath != null && q.audioPath!.isNotEmpty)) {
           answeredQuestions++;
         }
       }
@@ -441,7 +447,8 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
     if (currentQuestionNumber != null && currentQuestion != null) {
       message += "You are on question $currentQuestionNumber. ";
     }
-    message += "You have answered $answeredQuestions out of $totalQuestions questions.";
+    message +=
+        "You have answered $answeredQuestions out of $totalQuestions questions.";
     return message;
   }
 
@@ -461,12 +468,20 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
     switch (result.action) {
       case VoiceAction.scrollToTop:
         if (_scrollController.hasClients) {
-          _scrollController.animateTo(0, duration: const Duration(milliseconds: 500), curve: Curves.easeOut);
+          _scrollController.animateTo(
+            0,
+            duration: const Duration(milliseconds: 500),
+            curve: Curves.easeOut,
+          );
         }
         break;
       case VoiceAction.scrollToBottom:
         if (_scrollController.hasClients) {
-          _scrollController.animateTo(_scrollController.position.maxScrollExtent, duration: const Duration(milliseconds: 500), curve: Curves.easeOut);
+          _scrollController.animateTo(
+            _scrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 500),
+            curve: Curves.easeOut,
+          );
         }
         break;
 
@@ -514,13 +529,13 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
         break;
 
       case VoiceAction.saveResult:
-         if (!_kioskEnabled) {
-             await widget.ttsService.speak("Saving paper.");
-             if (mounted) _savePaper(context);
-         } else {
-             widget.ttsService.speak("In exam mode, please submit exam to save.");
-         }
-         break;
+        if (!_kioskEnabled) {
+          await widget.ttsService.speak("Saving paper.");
+          if (mounted) _savePaper(context);
+        } else {
+          widget.ttsService.speak("In exam mode, please submit exam to save.");
+        }
+        break;
 
       case VoiceAction.submitExam: // Use this as "Save" for this screen
         if (_kioskEnabled) {
@@ -531,9 +546,29 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
         }
         break;
 
+      case VoiceAction.exitExam:
+        if (_isExamFinished) {
+          // Close dialog + exit screen
+          if (Navigator.canPop(context)) Navigator.pop(context); // pop dialog
+          if (mounted && Navigator.canPop(context))
+            Navigator.pop(context); // pop screen
+        } else if (!_kioskEnabled) {
+          await widget.ttsService.speak("Exiting paper.");
+          if (mounted) Navigator.pop(context);
+        } else {
+          widget.ttsService.speak(
+            "Exam is locked. Say finish exam to submit first.",
+          );
+        }
+        break;
+
       case VoiceAction.scanQuestions:
         widget.ttsService.speak("Scanning new page.");
         _onAddPage(context);
+        break;
+
+      case VoiceAction.shareFile:
+        _shareFile();
         break;
 
       case VoiceAction.scrollUp:
@@ -544,27 +579,118 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
         _scrollDown();
         break;
 
+      case VoiceAction.setExamTime:
+        if (!_kioskEnabled && !_showCountdown) {
+          final int? mins = result.payload;
+          if (mins != null) {
+            setState(() {
+              _totalExamSeconds = mins * 60;
+              _remainingSeconds = _totalExamSeconds;
+            });
+            widget.ttsService.speak("Exam time set to $mins minutes.");
+          }
+        } else {
+          widget.ttsService.speak("Cannot change time during exam.");
+        }
+        break;
+
+      case VoiceAction.renameFile:
+        if (!_kioskEnabled) {
+          _showRenameDialog();
+        } else {
+          widget.ttsService.speak("Cannot rename file during exam.");
+        }
+        break;
+
       default:
         widget.voiceService.performGlobalNavigation(result);
         break;
     }
   }
 
+  Future<void> _showRenameDialog() async {
+    final TextEditingController nameController = TextEditingController(
+      text: _document.name,
+    );
+
+    // Announce
+    widget.ttsService.speak("Rename this file. Say the new name or type it.");
+
+    String? newName = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return VoiceAlertDialog(
+          title: const Text("Rename File"),
+          voiceService: widget.voiceService,
+          content: TextField(
+            controller: nameController,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: "New Filename",
+              hintText: "Enter name",
+            ),
+          ),
+          onConfirm: () {
+            if (nameController.text.trim().isNotEmpty) {
+              Navigator.pop(ctx, nameController.text.trim());
+            }
+          },
+          onCancel: () => Navigator.pop(ctx),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text("Cancel"),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (nameController.text.trim().isNotEmpty) {
+                  Navigator.pop(ctx, nameController.text.trim());
+                }
+              },
+              child: const Text("Save"),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (newName != null && newName.isNotEmpty) {
+      setState(() {
+        _document.name = newName;
+      });
+      // Save changes
+      await _savePaper(context); // This saves the doc with new name
+      widget.ttsService.speak("File renamed successfully.");
+    }
+  }
+
   void _scrollUp() {
     if (_scrollController.hasClients) {
-        final pos = _scrollController.offset - 300;
-        _scrollController.animateTo(pos.clamp(0.0, _scrollController.position.maxScrollExtent), duration: 300.ms, curve: Curves.easeOut);
+      final pos = _scrollController.offset - 300;
+      _scrollController.animateTo(
+        pos.clamp(0.0, _scrollController.position.maxScrollExtent),
+        duration: 300.ms,
+        curve: Curves.easeOut,
+      );
     }
   }
 
   void _scrollDown() {
     if (_scrollController.hasClients) {
-        final pos = _scrollController.offset + 300;
-        _scrollController.animateTo(pos.clamp(0.0, _scrollController.position.maxScrollExtent), duration: 300.ms, curve: Curves.easeOut);
+      final pos = _scrollController.offset + 300;
+      _scrollController.animateTo(
+        pos.clamp(0.0, _scrollController.position.maxScrollExtent),
+        duration: 300.ms,
+        curve: Curves.easeOut,
+      );
     }
   }
 
-  void _openPreviousQuestion(ParsedQuestion currentQuestion, {bool replace = false}) {
+  void _openPreviousQuestion(
+    ParsedQuestion currentQuestion, {
+    bool replace = false,
+  }) {
     List<ParsedQuestion> allQuestions = [];
     for (var section in _document.sections) {
       allQuestions.addAll(section.questions);
@@ -599,7 +725,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
             _openPreviousQuestion(prevQ, replace: true);
           },
           onJump: (n) {
-             _openQuestionByNumber(n, replace: true);
+            _openQuestionByNumber(n, replace: true);
           },
         ),
       );
@@ -614,7 +740,10 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
     }
   }
 
-  void _openNextQuestion(ParsedQuestion currentQuestion, {bool replace = false}) {
+  void _openNextQuestion(
+    ParsedQuestion currentQuestion, {
+    bool replace = false,
+  }) {
     // Flatten list of all questions to find index
     List<ParsedQuestion> allQuestions = [];
     for (var section in _document.sections) {
@@ -652,12 +781,12 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
             _openNextQuestion(nextQ, replace: true);
           },
           onPrevious: () {
-             // Replace current with previous
-             _openPreviousQuestion(nextQ, replace: true);
+            // Replace current with previous
+            _openPreviousQuestion(nextQ, replace: true);
           },
           onJump: (n) {
-             // Replace current with jump target
-             _openQuestionByNumber(n, replace: true);
+            // Replace current with jump target
+            _openQuestionByNumber(n, replace: true);
           },
           onTimeCheck: _getFormattedTimeLeft,
           onCountCheck: () => _getFormattedQuestionCount(nextQ.number),
@@ -669,12 +798,10 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       } else {
         Navigator.push(context, route); // Listener restart removed
       }
-
     } else {
       widget.ttsService.speak("No more questions.");
     }
   }
-
 
   // Helper to open a question via voice
   void _openQuestionByNumber(int number, {bool replace = false}) {
@@ -714,7 +841,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
             _openPreviousQuestion(target!, replace: true);
           },
           onJump: (n) {
-             _openQuestionByNumber(n, replace: true);
+            _openQuestionByNumber(n, replace: true);
           },
           onTimeCheck: _getFormattedTimeLeft,
           onCountCheck: () => _getFormattedQuestionCount(target!.number),
@@ -724,9 +851,8 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       if (replace) {
         Navigator.pushReplacement(context, route); // Listener restart removed
       } else {
-         Navigator.push(context, route); // Listener restart removed
+        Navigator.push(context, route); // Listener restart removed
       }
-
     } else {
       widget.ttsService.speak("Question $number not found.");
     }
@@ -884,9 +1010,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.1),
                   shape: BoxShape.circle,
-                  border: Border.all(
-                    color: Colors.white.withOpacity(0.1),
-                  ),
+                  border: Border.all(color: Colors.white.withOpacity(0.1)),
                 ),
                 child: AccessibleIconButton(
                   icon: const Icon(Icons.save_rounded, color: Colors.white),
@@ -1041,9 +1165,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
                                   decoration: BoxDecoration(
                                     color: Colors.amber.withOpacity(0.1),
                                     border: Border.all(
-                                      color: Colors.amber.withOpacity(
-                                        0.3,
-                                      ),
+                                      color: Colors.amber.withOpacity(0.3),
                                     ),
                                     borderRadius: BorderRadius.circular(12),
                                   ),
@@ -1149,7 +1271,8 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
                                         voiceService: widget.voiceService,
                                         accessibilityService:
                                             widget.accessibilityService,
-                                        picovoiceService: widget.picovoiceService,
+                                        picovoiceService:
+                                            widget.picovoiceService,
                                         onNext: () {
                                           Navigator.pop(context);
                                           _openNextQuestion(q);
@@ -1163,7 +1286,10 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
                                           _openQuestionByNumber(n);
                                         },
                                         onTimeCheck: _getFormattedTimeLeft,
-                                        onCountCheck: () => _getFormattedQuestionCount(q.number),
+                                        onCountCheck: () =>
+                                            _getFormattedQuestionCount(
+                                              q.number,
+                                            ),
                                       ),
                                     ),
                                   );
@@ -1333,12 +1459,25 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       );
 
       if (mounted) {
+        setState(() {
+          _isExamFinished = true;
+        });
+
+        widget.ttsService.speak(
+          "Exam complete. You can share, download, or say exit to leave.",
+        );
+
         // Show specific dialog with View, Share, Save options
         showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (ctx) => AlertDialog(
+          builder: (ctx) => VoiceAlertDialog(
+            voiceService: widget.voiceService,
             title: const Text("Exam Completed"),
+            onCancel: () {
+              Navigator.pop(ctx);
+              Navigator.pop(context); // Exit PaperDetailScreen
+            },
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -1504,6 +1643,28 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       ),
     );
   }
+
+  Future<void> _shareFile() async {
+    try {
+      widget.ttsService.speak("Preparing to share.");
+      final directory = await getTemporaryDirectory();
+      final safeName = (widget.document.name ?? "paper").replaceAll(
+        RegExp(r'[^\w\s\.-]'),
+        '_',
+      );
+      final file = File('${directory.path}/$safeName.json');
+
+      // Save structured data
+      await file.writeAsString(jsonEncode(widget.document.toJson()));
+
+      await Share.shareXFiles([
+        XFile(file.path),
+      ], text: 'Sharing paper: ${widget.document.name}');
+    } catch (e) {
+      debugPrint("Error sharing: $e");
+      widget.ttsService.speak("Sorry, I could not share the file.");
+    }
+  }
 }
 
 // --- HELPER CLASSES ---
@@ -1580,7 +1741,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
 
   // Hands-Free State
   bool _isAppending = true;
-  
+
   StreamSubscription? _commandSubscription;
 
   @override
@@ -1598,11 +1759,11 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
       widget.question.answer = _answerController.text;
     });
   }
-  
+
   void _subscribeToVoiceCommands() {
     _commandSubscription = widget.voiceService.commandStream.listen((result) {
       if (mounted) {
-         _executeVoiceCommand(result);
+        _executeVoiceCommand(result);
       }
     });
 
@@ -1611,9 +1772,12 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
   }
 
   void _onPicovoiceStateChanged() {
-    if (widget.picovoiceService.stateNotifier.value == PicovoiceState.wakeDetected) {
+    if (widget.picovoiceService.stateNotifier.value ==
+        PicovoiceState.wakeDetected) {
       if (_isListening) {
-        debugPrint("SingleQuestionScreen: Wake word detected during dictation. Stopping recording.");
+        debugPrint(
+          "SingleQuestionScreen: Wake word detected during dictation. Stopping recording.",
+        );
         _stopListening();
       }
     }
@@ -1629,7 +1793,8 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         _onStopPressed(); // Use existing toggle logic
         return;
       }
-      if (result.action == VoiceAction.readQuestion || result.action == VoiceAction.resumeReading) {
+      if (result.action == VoiceAction.readQuestion ||
+          result.action == VoiceAction.resumeReading) {
         _onReadPressed(); // Restart/Resume
         return;
       }
@@ -1646,14 +1811,14 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
       case VoiceAction.startDictation:
         _startListening(append: true);
         break;
-      
+
       case VoiceAction.overwriteAnswer:
-         _startListening(append: false);
-         break;
+        _startListening(append: false);
+        break;
 
       case VoiceAction.stopDictation:
-         _stopListening();
-         break;
+        _stopListening();
+        break;
 
       case VoiceAction.clearAnswer:
         _clearAnswer();
@@ -1672,29 +1837,29 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         break;
 
       case VoiceAction.playAudioAnswer:
-         if (widget.question.audioPath != null) {
-            await widget.ttsService.speak("Playing answer.");
-            await _audioPlayer.play(DeviceFileSource(widget.question.audioPath!));
-         } else {
-            await widget.ttsService.speak("No audio answer recorded.");
-         }
-         break;
+        if (widget.question.audioPath != null) {
+          await widget.ttsService.speak("Playing answer.");
+          await _audioPlayer.play(DeviceFileSource(widget.question.audioPath!));
+        } else {
+          await widget.ttsService.speak("No audio answer recorded.");
+        }
+        break;
 
       case VoiceAction.toggleReadContext:
-         setState(() => _playContext = !_playContext);
-         await widget.ttsService.speak("Context reading ${_playContext ? 'enabled' : 'disabled'}.");
-         break;
+        setState(() => _playContext = !_playContext);
+        await widget.ttsService.speak(
+          "Context reading ${_playContext ? 'enabled' : 'disabled'}.",
+        );
+        break;
 
       case VoiceAction.readAnswer:
         String textToRead = _answerController.text;
         if (textToRead.isEmpty && widget.question.audioPath != null) {
-             // Fallback to audio if text is empty but audio exists
-             await widget.ttsService.speak("Playing answer.");
-             await _audioPlayer.play(DeviceFileSource(widget.question.audioPath!));
+          // Fallback to audio if text is empty but audio exists
+          await widget.ttsService.speak("Playing answer.");
+          await _audioPlayer.play(DeviceFileSource(widget.question.audioPath!));
         } else {
-             widget.ttsService.speak(
-              "Your current answer is: $textToRead",
-            );
+          widget.ttsService.speak("Your current answer is: $textToRead");
         }
         break;
 
@@ -1733,7 +1898,9 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         if (mounted) Navigator.pop(context);
         // Delay slightly for transition before broadcasting so parent is "Current"
         Future.delayed(const Duration(milliseconds: 300), () {
-           widget.voiceService.broadcastCommand(CommandResult(VoiceAction.submitExam));
+          widget.voiceService.broadcastCommand(
+            CommandResult(VoiceAction.submitExam),
+          );
         });
         break;
 
@@ -1745,26 +1912,26 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         if (result.payload is int && widget.onJump != null) {
           widget.onJump!(result.payload);
         } else {
-             widget.ttsService.speak("Jump not available.");
+          widget.ttsService.speak("Jump not available.");
         }
         break;
 
       case VoiceAction.checkTime:
         if (widget.onTimeCheck != null) {
-           String msg = widget.onTimeCheck!();
-           widget.ttsService.speak(msg);
+          String msg = widget.onTimeCheck!();
+          widget.ttsService.speak(msg);
         }
         break;
 
       case VoiceAction.checkTotalQuestions:
       case VoiceAction.checkRemainingQuestions:
-         // Both use the same callback but we format differently if we want
-         // For now using the generic count check which likely says "X questions remaining out of Y"
-         if (widget.onCountCheck != null) {
-            String msg = widget.onCountCheck!();
-            widget.ttsService.speak(msg);
-         }
-         break;
+        // Both use the same callback but we format differently if we want
+        // For now using the generic count check which likely says "X questions remaining out of Y"
+        if (widget.onCountCheck != null) {
+          String msg = widget.onCountCheck!();
+          widget.ttsService.speak(msg);
+        }
+        break;
 
       default:
         // No global navigation inside exam question for safety, except home if needed
@@ -1835,7 +2002,9 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
   @override
   void dispose() {
     _commandSubscription?.cancel(); // Stop command listener
-    widget.picovoiceService.stateNotifier.removeListener(_onPicovoiceStateChanged);
+    widget.picovoiceService.stateNotifier.removeListener(
+      _onPicovoiceStateChanged,
+    );
     _answerController.dispose();
     widget.ttsService.stop();
     _audioPlayer.dispose();
@@ -1986,7 +2155,6 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     }
   }
 
-
   void _stopListening() async {
     if (_isListening) {
       final path = await _audioRecorderService.stopRecording();
@@ -2012,7 +2180,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     String transcribedText = "";
     if (apiKey != null && apiKey.isNotEmpty) {
       try {
-        final geminiService = GeminiQuestionService();
+        final geminiService = GeminiPaperService();
         transcribedText = await geminiService.transcribeAudio(
           audioPath,
           apiKey,
@@ -2030,25 +2198,33 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
 
     // --- POST-PROCESSING: Strip Wake Word and Stop Command ---
     String processed = transcribedText.trim();
-    
+
     // 1. Strip Wake Word (Case Insensitive)
     final wakeWord = "hey lekhai";
     if (processed.toLowerCase().startsWith(wakeWord)) {
       processed = processed.substring(wakeWord.length).trim();
     }
-    
+
     // 2. Strip Stop Command (Case Insensitive, at the end)
-    final stopWords = ["stop answering", "stop writing", "stop dictation", "pause writing", "pause dictation"];
+    final stopWords = [
+      "stop answering",
+      "stop writing",
+      "stop dictation",
+      "pause writing",
+      "pause dictation",
+    ];
     for (var word in stopWords) {
       if (processed.toLowerCase().endsWith(word)) {
-        processed = processed.substring(0, processed.length - word.length).trim();
-        break; 
+        processed = processed
+            .substring(0, processed.length - word.length)
+            .trim();
+        break;
       }
     }
-    
+
     // Remove trailing punctuation that might remain after stripping
     if (processed.endsWith(',') || processed.endsWith('.')) {
-       processed = processed.substring(0, processed.length - 1).trim();
+      processed = processed.substring(0, processed.length - 1).trim();
     }
 
     setState(() {
@@ -2057,8 +2233,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         // Append Mode
         String separator = _answerController.text.endsWith('.') ? " " : ". ";
         if (_answerController.text.trim().isEmpty) separator = "";
-        _answerController.text =
-            _answerController.text + separator + processed;
+        _answerController.text = _answerController.text + separator + processed;
       } else {
         // Replace Mode (Overwrite)
         _answerController.text = processed;

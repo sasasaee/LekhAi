@@ -9,7 +9,7 @@ import 'package:lekhai/services/tts_service.dart';
 // import 'package:lekhai/services/stt_service.dart'; // Removed
 import 'package:lekhai/services/voice_command_service.dart';
 import 'package:lekhai/services/accessibility_service.dart';
-import 'package:lekhai/models/question_model.dart';
+import 'package:lekhai/models/paper_model.dart';
 import 'package:lekhai/services/picovoice_service.dart';
 import 'package:lekhai/widgets/picovoice_mic_icon.dart';
 
@@ -40,12 +40,12 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
   String _name = '';
   String _studentId = '';
   String _timerText = '60'; // Default 60 minutes
-  
+
   // Focus Nodes for Voice Navigation
   final FocusNode _nameFocus = FocusNode();
   final FocusNode _idFocus = FocusNode();
   final FocusNode _timeFocus = FocusNode();
-  
+
   StreamSubscription? _commandSubscription;
 
   bool _shouldListen = true;
@@ -58,23 +58,24 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
     );
     // _initVoiceListener(); // Removed
     _subscribeToVoiceCommands();
-    
+
     // Add focus listeners for Handoff Resume
     void focusListener() {
       if (!_nameFocus.hasFocus && !_idFocus.hasFocus && !_timeFocus.hasFocus) {
-          // If all lost focus, assume dictation/editing done
-          widget.picovoiceService.resumeListening();
+        // If all lost focus, assume dictation/editing done
+        widget.picovoiceService.resumeListening();
       }
     }
+
     _nameFocus.addListener(focusListener);
     _idFocus.addListener(focusListener);
     _timeFocus.addListener(focusListener);
   }
-  
+
   void _subscribeToVoiceCommands() {
     _commandSubscription = widget.voiceService.commandStream.listen((result) {
       if (mounted) {
-         _executeVoiceCommand(result);
+        _executeVoiceCommand(result);
       }
     });
   }
@@ -91,58 +92,59 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
   }
 
   // _initVoiceListener and _startListening Removed
-  
+
   void _executeVoiceCommand(CommandResult result) {
-        if (!(ModalRoute.of(context)?.isCurrent ?? false)) return;
-        if (result.action == VoiceAction.confirmExamStart || 
-            result.action == VoiceAction.enterExamMode ||
-            result.action == VoiceAction.submitForm) {
-          _confirmAndStartExam();
-        } else if (result.action == VoiceAction.goBack || result.action == VoiceAction.cancelExamStart) {
-          Navigator.pop(context);
-        } else if (result.action == VoiceAction.goToHome) {
-           widget.voiceService.performGlobalNavigation(result);
+    if (!(ModalRoute.of(context)?.isCurrent ?? false)) return;
+    if (result.action == VoiceAction.confirmExamStart ||
+        result.action == VoiceAction.enterExamMode ||
+        result.action == VoiceAction.submitForm) {
+      _confirmAndStartExam();
+    } else if (result.action == VoiceAction.goBack ||
+        result.action == VoiceAction.cancelExamStart) {
+      Navigator.pop(context);
+    } else if (result.action == VoiceAction.goToHome) {
+      widget.voiceService.performGlobalNavigation(result);
+    }
+
+    // Form Navigation
+    if (result.action == VoiceAction.setStudentName) {
+      if (result.payload != null && result.payload.toString().isNotEmpty) {
+        setState(() => _name = result.payload.toString());
+        widget.ttsService.speak("Name set to $_name");
+        widget.picovoiceService.resumeListening(); // Direct set -> resume
+      } else {
+        FocusScope.of(context).requestFocus(_nameFocus);
+        widget.ttsService.speak("Please say or type your name.");
+        // Don't resume -> wait for focus loss
+      }
+    }
+    if (result.action == VoiceAction.setStudentID) {
+      if (result.payload != null && result.payload.toString().isNotEmpty) {
+        setState(() => _studentId = result.payload.toString());
+        widget.ttsService.speak("ID set to $_studentId");
+        widget.picovoiceService.resumeListening();
+      } else {
+        FocusScope.of(context).requestFocus(_idFocus);
+        widget.ttsService.speak("Please say or type your ID.");
+      }
+    }
+    if (result.action == VoiceAction.setExamTime) {
+      if (result.payload != null && result.payload.toString().isNotEmpty) {
+        // extract just digits if needed, though payload should be clean
+        String p = result.payload.toString().replaceAll(RegExp(r'[^0-9]'), '');
+        if (p.isNotEmpty) {
+          setState(() => _timerText = p);
+          widget.ttsService.speak("Duration set to $_timerText minutes");
+          widget.picovoiceService.resumeListening();
+        } else {
+          widget.ttsService.speak("Invalid time format.");
+          widget.picovoiceService.resumeListening(); // Resume anyway on error
         }
-        
-        // Form Navigation
-        if (result.action == VoiceAction.setStudentName) {
-            if (result.payload != null && result.payload.toString().isNotEmpty) {
-               setState(() => _name = result.payload.toString());
-               widget.ttsService.speak("Name set to $_name");
-               widget.picovoiceService.resumeListening(); // Direct set -> resume
-            } else {
-               FocusScope.of(context).requestFocus(_nameFocus);
-               widget.ttsService.speak("Please say or type your name.");
-               // Don't resume -> wait for focus loss
-            }
-        }
-        if (result.action == VoiceAction.setStudentID) {
-            if (result.payload != null && result.payload.toString().isNotEmpty) {
-               setState(() => _studentId = result.payload.toString());
-               widget.ttsService.speak("ID set to $_studentId");
-               widget.picovoiceService.resumeListening();
-            } else {
-               FocusScope.of(context).requestFocus(_idFocus);
-               widget.ttsService.speak("Please say or type your ID.");
-            }
-        }
-        if (result.action == VoiceAction.setExamTime) {
-            if (result.payload != null && result.payload.toString().isNotEmpty) {
-               // extract just digits if needed, though payload should be clean
-               String p = result.payload.toString().replaceAll(RegExp(r'[^0-9]'), '');
-               if (p.isNotEmpty) {
-                  setState(() => _timerText = p);
-                  widget.ttsService.speak("Duration set to $_timerText minutes");
-                  widget.picovoiceService.resumeListening();
-               } else {
-                   widget.ttsService.speak("Invalid time format.");
-                   widget.picovoiceService.resumeListening(); // Resume anyway on error
-               }
-            } else {
-               FocusScope.of(context).requestFocus(_timeFocus);
-               widget.ttsService.speak("Please set the exam duration.");
-            }
-        }
+      } else {
+        FocusScope.of(context).requestFocus(_timeFocus);
+        widget.ttsService.speak("Please set the exam duration.");
+      }
+    }
   }
 
   void _confirmAndStartExam() {

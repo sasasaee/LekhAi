@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 // import 'package:flutter/services.dart'; // Unused
 // import 'dart:convert'; // Unused
-import 'services/question_storage_service.dart';
+import 'services/paper_storage_service.dart';
 import 'services/tts_service.dart';
 import 'paper_detail_screen.dart';
-import 'models/question_model.dart'; // Import models
+import 'models/paper_model.dart'; // Import models
 import 'services/voice_command_service.dart';
 import 'services/accessibility_service.dart';
 // import 'widgets/accessible_widgets.dart'; // Unused
@@ -12,6 +12,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'dart:ui'; // Add this for ImageFilter
 import 'widgets/picovoice_mic_icon.dart';
+import 'widgets/voice_alert_dialog.dart';
 
 import 'exam_info_screen.dart';
 import 'services/picovoice_service.dart';
@@ -20,7 +21,7 @@ import 'dart:async';
 
 // ... rest of imports
 
-class QuestionsScreen extends StatefulWidget {
+class SavedPapersScreen extends StatefulWidget {
   final TtsService ttsService;
   final VoiceCommandService voiceService;
   final PicovoiceService picovoiceService;
@@ -31,7 +32,7 @@ class QuestionsScreen extends StatefulWidget {
   final bool examMode;
   final bool isSelectionMode; // New flag
 
-  const QuestionsScreen({
+  const SavedPapersScreen({
     super.key,
     required this.ttsService,
     required this.voiceService,
@@ -45,11 +46,11 @@ class QuestionsScreen extends StatefulWidget {
   });
 
   @override
-  State<QuestionsScreen> createState() => _QuestionsScreenState();
+  State<SavedPapersScreen> createState() => _SavedPapersScreenState();
 }
 
-class _QuestionsScreenState extends State<QuestionsScreen> {
-  final QuestionStorageService _storageService = QuestionStorageService();
+class _SavedPapersScreenState extends State<SavedPapersScreen> {
+  final PaperStorageService _storageService = PaperStorageService();
   List<ParsedDocument> _papers = [];
   bool _isLoading = true;
   StreamSubscription<CommandResult>? _commandSubscription;
@@ -58,7 +59,7 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
   @override
   void initState() {
     super.initState();
-    _loadQuestions();
+    _loadPapers();
 
     if (widget.examMode) {
       // Exam sequence initiation handled by PaperDetailScreen logic now.
@@ -79,16 +80,24 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
 
   void _handleVoiceCommand(CommandResult result) {
     if (!(ModalRoute.of(context)?.isCurrent ?? false)) return;
-    debugPrint("QuestionsScreen received command: ${result.action}");
+    debugPrint("SavedPapersScreen received command: ${result.action}");
     switch (result.action) {
       case VoiceAction.scrollToTop:
         if (_scrollController.hasClients) {
-          _scrollController.animateTo(0, duration: const Duration(milliseconds: 500), curve: Curves.easeOut);
+          _scrollController.animateTo(
+            0,
+            duration: const Duration(milliseconds: 500),
+            curve: Curves.easeOut,
+          );
         }
         break;
       case VoiceAction.scrollToBottom:
         if (_scrollController.hasClients) {
-          _scrollController.animateTo(_scrollController.position.maxScrollExtent, duration: const Duration(milliseconds: 500), curve: Curves.easeOut);
+          _scrollController.animateTo(
+            _scrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 500),
+            curve: Curves.easeOut,
+          );
         }
         break;
 
@@ -96,25 +105,32 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
         if (result.payload is int) {
           int index = (result.payload as int) - 1; // 1-based to 0-based
           if (index >= 0 && index < _papers.length) {
-             _deletePaper(index);
+            _confirmDeletePaper(index);
           } else {
-             widget.ttsService.speak("Paper number ${result.payload} not found.");
+            widget.ttsService.speak(
+              "Paper number ${result.payload} not found.",
+            );
           }
         }
         break;
       case VoiceAction.openPaper:
         if (result.payload is int) {
-           int index = (result.payload as int) - 1;
-           if (index >= 0 && index < _papers.length) {
-              // Open it
-              _openPaper(_papers[index], index);
-           } else {
-              widget.ttsService.speak("Paper number ${result.payload} not found.");
-           }
+          int index = (result.payload as int) - 1;
+          if (index >= 0 && index < _papers.length) {
+            // Open it
+            _openPaper(_papers[index], index);
+          } else {
+            widget.ttsService.speak(
+              "Paper number ${result.payload} not found.",
+            );
+          }
         }
         break;
       case VoiceAction.clearAllPapers:
-        _clearAllPapers();
+        _confirmClearAll();
+        break;
+      case VoiceAction.search:
+        widget.ttsService.speak("Search functionality is coming soon.");
         break;
       case VoiceAction.goBack:
         Navigator.pop(context);
@@ -133,15 +149,23 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
 
   void _scrollUp() {
     if (_scrollController.hasClients) {
-        final pos = _scrollController.offset - 300;
-        _scrollController.animateTo(pos.clamp(0.0, _scrollController.position.maxScrollExtent), duration: 300.ms, curve: Curves.easeOut);
+      final pos = _scrollController.offset - 300;
+      _scrollController.animateTo(
+        pos.clamp(0.0, _scrollController.position.maxScrollExtent),
+        duration: 300.ms,
+        curve: Curves.easeOut,
+      );
     }
   }
 
   void _scrollDown() {
     if (_scrollController.hasClients) {
-        final pos = _scrollController.offset + 300;
-        _scrollController.animateTo(pos.clamp(0.0, _scrollController.position.maxScrollExtent), duration: 300.ms, curve: Curves.easeOut);
+      final pos = _scrollController.offset + 300;
+      _scrollController.animateTo(
+        pos.clamp(0.0, _scrollController.position.maxScrollExtent),
+        duration: 300.ms,
+        curve: Curves.easeOut,
+      );
     }
   }
 
@@ -188,15 +212,15 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
   // Removed unused _formatTime method
 
   Future<void> _clearAllPapers() async {
-      await widget.ttsService.speak("Clearing all saved papers.");
-      await _storageService.clearDocuments();
-      setState(() {
-          _papers = [];
-      });
-      widget.ttsService.speak("All papers cleared.");
+    await widget.ttsService.speak("Clearing all saved papers.");
+    await _storageService.clearDocuments();
+    setState(() {
+      _papers = [];
+    });
+    widget.ttsService.speak("All papers cleared.");
   }
 
-  Future<void> _loadQuestions() async {
+  Future<void> _loadPapers() async {
     final docs = await _storageService.getDocuments();
 
     setState(() {
@@ -237,7 +261,6 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
     // Stop local listener
     // _sttService.stopListening(); // Removed
 
-
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -253,7 +276,68 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
         ),
       ),
     ); // .then listener restart removed
+  }
 
+  void _confirmDeletePaper(int index) {
+    widget.ttsService.speak("Are you sure you want to delete this paper?");
+    showDialog(
+      context: context,
+      builder: (ctx) => VoiceAlertDialog(
+        title: const Text("Confirm Deletion"),
+        voiceService: widget.voiceService,
+        content: Text("Delete '${_papers[index].name}'?"),
+        onConfirm: () {
+          Navigator.pop(ctx);
+          _deletePaper(index);
+        },
+        onCancel: () => Navigator.pop(ctx),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _deletePaper(index);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text("Delete"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmClearAll() {
+    widget.ttsService.speak("Are you sure you want to clear all papers?");
+    showDialog(
+      context: context,
+      builder: (ctx) => VoiceAlertDialog(
+        title: const Text("Confirm Clear All"),
+        voiceService: widget.voiceService,
+        content: const Text("This will delete all saved papers permanently."),
+        onConfirm: () {
+          Navigator.pop(ctx);
+          _clearAllPapers();
+        },
+        onCancel: () => Navigator.pop(ctx),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _clearAllPapers();
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text("Delete All"),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -304,7 +388,7 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
               onPressed: () async {
                 AccessibilityService().trigger(AccessibilityEvent.warning);
                 await _storageService.clearDocuments();
-                _loadQuestions();
+                _loadPapers();
                 widget.ttsService.speak("All papers deleted.");
               },
             ),
@@ -521,7 +605,8 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
                                           accessibilityService:
                                               widget.accessibilityService ??
                                               AccessibilityService(),
-                                            picovoiceService: widget.picovoiceService,
+                                          picovoiceService:
+                                              widget.picovoiceService,
                                           // sttService: _sttService, // Removed (Also check ExamInfoScreen constructor!)
                                         ),
                                       ),

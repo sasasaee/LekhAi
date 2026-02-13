@@ -9,7 +9,7 @@ import 'services/voice_command_service.dart';
 import 'services/accessibility_service.dart';
 // import 'services/stt_service.dart'; // Removed
 // Screens
-import 'questions_screen.dart';
+import 'saved_papers_screen.dart';
 import 'preferences_screen.dart';
 import 'services/picovoice_service.dart';
 import 'widgets/picovoice_mic_icon.dart';
@@ -185,7 +185,7 @@ class _TakeExamScreenState extends State<TakeExamScreen> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => QuestionsScreen(
+                          builder: (_) => SavedPapersScreen(
                             ttsService: widget.ttsService,
                             voiceService: widget.voiceService,
                             picovoiceService: widget.picovoiceService,
@@ -333,8 +333,8 @@ class _ExamActionTileState extends State<_ExamActionTile>
                               style: GoogleFonts.outfit(
                                 fontSize: 14,
                                 color: Colors.white54,
-                                ),
                               ),
+                            ),
                           ],
                         ),
                       ),

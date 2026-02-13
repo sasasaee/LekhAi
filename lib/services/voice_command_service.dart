@@ -4,8 +4,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'tts_service.dart';
-import 'gemini_question_service.dart';
-import 'question_storage_service.dart'; // Added
+import 'gemini_paper_service.dart';
+import 'paper_storage_service.dart'; // Added
 import '../pdf_viewer_screen.dart';
 // import '../take_exam_screen.dart';
 import '../ocr_screen.dart';
@@ -14,6 +14,7 @@ import '../widgets/accessible_widgets.dart';
 import 'kiosk_service.dart'; // Added
 import 'picovoice_service.dart';
 import 'accessibility_service.dart'; // Added fix for missing class
+import '../widgets/voice_alert_dialog.dart';
 
 enum VoiceContext {
   global,
@@ -42,6 +43,7 @@ enum VoiceAction {
   changeSpeed,
   goBack,
   submitExam,
+  exitExam,
   // Editing Actions
   appendAnswer,
   overwriteAnswer,
@@ -94,28 +96,34 @@ enum VoiceAction {
   setStudentID,
   setExamTime,
   renameFile,
-  
+
   // Scroll Control
   scrollUp,
   scrollDown,
   scrollToTop,
   scrollToBottom,
-  
+
   // File Actions
   saveFile,
   convertFile,
+  shareFile,
+  search,
 
   // Status Queries (from main)
   checkTime,
   checkTotalQuestions,
   checkRemainingQuestions,
   unknown,
+  // Dialog Actions
+  skip,
+  selectOption,
 }
 
 class CommandResult {
   final VoiceAction action;
   final dynamic payload;
-  final dynamic payload2; // Added for extra params (e.g. feature name + state, or just use a Map payload)
+  final dynamic
+  payload2; // Added for extra params (e.g. feature name + state, or just use a Map payload)
   CommandResult(this.action, {this.payload, this.payload2});
 }
 
@@ -124,19 +132,26 @@ class CommandResult {
 class VoiceCommandService {
   final TtsService tts;
   final PicovoiceService picovoiceService;
-  final GeminiQuestionService _geminiService = GeminiQuestionService();
+  final GeminiPaperService _geminiService;
   final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
-  final QuestionStorageService _storageService = QuestionStorageService();
+  final PaperStorageService _storageService;
   bool _isScanDialogOpen = false;
 
-  final StreamController<CommandResult> _commandStream = StreamController.broadcast();
+  final StreamController<CommandResult> _commandStream =
+      StreamController.broadcast();
   Stream<CommandResult> get commandStream => _commandStream.stream;
 
   void broadcastCommand(CommandResult result) {
     _commandStream.add(result);
   }
 
-  VoiceCommandService(this.tts, this.picovoiceService) {
+  VoiceCommandService(
+    this.tts,
+    this.picovoiceService, {
+    GeminiPaperService? geminiService,
+    PaperStorageService? storageService,
+  }) : _geminiService = geminiService ?? GeminiPaperService(),
+       _storageService = storageService ?? PaperStorageService() {
     _initSettings();
   }
 
@@ -150,19 +165,25 @@ class VoiceCommandService {
   }
 
   Future<void> _changeVolume(bool increase) async {
-    volumeNotifier.value = (volumeNotifier.value + (increase ? 0.1 : -0.1)).clamp(0.0, 1.0);
+    volumeNotifier.value = (volumeNotifier.value + (increase ? 0.1 : -0.1))
+        .clamp(0.0, 1.0);
     await tts.setVolume(volumeNotifier.value);
     final sp = await SharedPreferences.getInstance();
     await sp.setDouble('volume', volumeNotifier.value);
-    tts.speak("Volume ${increase ? 'increased' : 'decreased'} to ${(volumeNotifier.value * 100).toInt()} percent.");
+    tts.speak(
+      "Volume ${increase ? 'increased' : 'decreased'} to ${(volumeNotifier.value * 100).toInt()} percent.",
+    );
   }
 
   Future<void> _changeSpeed(bool increase) async {
-    speedNotifier.value = (speedNotifier.value + (increase ? 0.25 : -0.25)).clamp(0.5, 2.0);
+    speedNotifier.value = (speedNotifier.value + (increase ? 0.25 : -0.25))
+        .clamp(0.5, 2.0);
     await tts.setSpeed(speedNotifier.value * 0.5);
     final sp = await SharedPreferences.getInstance();
     await sp.setDouble('speed', speedNotifier.value);
-    tts.speak("Speed ${increase ? 'increased' : 'decreased'} to ${speedNotifier.value.toStringAsFixed(2)}.");
+    tts.speak(
+      "Speed ${increase ? 'increased' : 'decreased'} to ${speedNotifier.value.toStringAsFixed(2)}.",
+    );
   }
 
   CommandResult parse(
@@ -218,88 +239,120 @@ class VoiceCommandService {
 
     // Paper Detail Context
     if (context == VoiceContext.paperDetail) {
-       // "Add Page" / "Scan Page"
-       if (text.contains("add page") || text.contains("scan page") || text.contains("add photo")) {
-         return CommandResult(VoiceAction.scanQuestions);
-       }
+      // "Add Page" / "Scan Page"
+      if (text.contains("add page") ||
+          text.contains("scan page") ||
+          text.contains("add photo")) {
+        return CommandResult(VoiceAction.scanQuestions);
+      }
 
-       // "Question X"
-       final RegExp selectionRegex = RegExp(r"(question|number)\s+([a-z0-9]+)");
-       final match = selectionRegex.firstMatch(text);
-       if (match != null) {
-          String rawNumber = match.group(2)!;
-          int? index = int.tryParse(rawNumber);
-          if (index == null) {
-             const numberMap = {
-            'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
-            'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
-             };
-             index = numberMap[rawNumber];
-          }
-          if (index != null) {
-            return CommandResult(VoiceAction.goToQuestion, payload: index);
-          }
-       }
+      // "Question X"
+      final RegExp selectionRegex = RegExp(r"(question|number)\s+([a-z0-9]+)");
+      final match = selectionRegex.firstMatch(text);
+      if (match != null) {
+        String rawNumber = match.group(2)!;
+        int? index = int.tryParse(rawNumber);
+        if (index == null) {
+          const numberMap = {
+            'one': 1,
+            'two': 2,
+            'three': 3,
+            'four': 4,
+            'five': 5,
+            'six': 6,
+            'seven': 7,
+            'eight': 8,
+            'nine': 9,
+            'ten': 10,
+          };
+          index = numberMap[rawNumber];
+        }
+        if (index != null) {
+          return CommandResult(VoiceAction.goToQuestion, payload: index);
+        }
+      }
     }
 
     // Single Question Context
     if (context == VoiceContext.question) {
-        // ... Generic Navigation ...
-        if (text.contains("next") || text.contains("next question")) {
-            return CommandResult(VoiceAction.nextPage);
-        }
-        if (text.contains("previous") || text.contains("previous question") || text.contains("back")) {
-             return CommandResult(VoiceAction.previousPage);
-        }
-        
-        // ... Feature Toggle ...
-        if (text.contains("play audio") || text.contains("play answer") || text.contains("listen") || text.contains("play the answer")) {
-            return CommandResult(VoiceAction.readAnswer);
-        }
-        if (text.contains("context") || text.contains("read context")) {
-            return CommandResult(VoiceAction.toggleReadContext);
-        }
-        
-        // ... Answer Dictation ...
-        if (text.contains("start answer") || text.contains("start") || text.contains("answer question")) {
-             return CommandResult(VoiceAction.startDictation);
-        }
-        if (text.contains("stop answer") || text.contains("stop") || text.contains("finish answer")) {
-             return CommandResult(VoiceAction.stopDictation);
-        }
+      // ... Generic Navigation ...
+      if (text.contains("next") || text.contains("next question")) {
+        return CommandResult(VoiceAction.nextPage);
+      }
+      if (text.contains("previous") ||
+          text.contains("previous question") ||
+          text.contains("back")) {
+        return CommandResult(VoiceAction.previousPage);
+      }
 
-        if (text.contains("pause")) {
-            return CommandResult(VoiceAction.pauseReading);
-        }
+      // ... Feature Toggle ...
+      if (text.contains("play audio") ||
+          text.contains("play answer") ||
+          text.contains("listen") ||
+          text.contains("play the answer")) {
+        return CommandResult(VoiceAction.readAnswer);
+      }
+      if (text.contains("context") || text.contains("read context")) {
+        return CommandResult(VoiceAction.toggleReadContext);
+      }
 
-        // ... Status Queries ...
-        if (text.contains("how many questions left") || text.contains("questions left") || text.contains("remaining questions")) {
-           return CommandResult(VoiceAction.checkRemainingQuestions);
-        }
-        if (text.contains("how many questions") || text.contains("total questions")) {
-           return CommandResult(VoiceAction.checkTotalQuestions);
-        }
-        if (text.contains("how much time") || text.contains("time left") || text.contains("remaining time")) {
-           return CommandResult(VoiceAction.checkTime);
-        }
+      // ... Answer Dictation ...
+      if (text.contains("start answer") ||
+          text.contains("start") ||
+          text.contains("answer question")) {
+        return CommandResult(VoiceAction.startDictation);
+      }
+      if (text.contains("stop answer") ||
+          text.contains("stop") ||
+          text.contains("finish answer")) {
+        return CommandResult(VoiceAction.stopDictation);
+      }
 
-        // ... Direct Jump (New) ...
-        final RegExp selectionRegex = RegExp(r"(question|number)\s+([a-z0-9]+)");
-        final match = selectionRegex.firstMatch(text);
-        if (match != null) {
-           String rawNumber = match.group(2)!;
-           int? index = int.tryParse(rawNumber);
-           if (index == null) {
-              const numberMap = {
-             'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
-             'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
-              };
-              index = numberMap[rawNumber];
-           }
-           if (index != null) {
-             return CommandResult(VoiceAction.goToQuestion, payload: index);
-           }
+      if (text.contains("pause")) {
+        return CommandResult(VoiceAction.pauseReading);
+      }
+
+      // ... Status Queries ...
+      if (text.contains("how many questions left") ||
+          text.contains("questions left") ||
+          text.contains("remaining questions")) {
+        return CommandResult(VoiceAction.checkRemainingQuestions);
+      }
+      if (text.contains("how many questions") ||
+          text.contains("total questions")) {
+        return CommandResult(VoiceAction.checkTotalQuestions);
+      }
+      if (text.contains("how much time") ||
+          text.contains("time left") ||
+          text.contains("remaining time")) {
+        return CommandResult(VoiceAction.checkTime);
+      }
+
+      // ... Direct Jump (New) ...
+      final RegExp selectionRegex = RegExp(r"(question|number)\s+([a-z0-9]+)");
+      final match = selectionRegex.firstMatch(text);
+      if (match != null) {
+        String rawNumber = match.group(2)!;
+        int? index = int.tryParse(rawNumber);
+        if (index == null) {
+          const numberMap = {
+            'one': 1,
+            'two': 2,
+            'three': 3,
+            'four': 4,
+            'five': 5,
+            'six': 6,
+            'seven': 7,
+            'eight': 8,
+            'nine': 9,
+            'ten': 10,
+          };
+          index = numberMap[rawNumber];
         }
+        if (index != null) {
+          return CommandResult(VoiceAction.goToQuestion, payload: index);
+        }
+      }
     }
 
     // OCR / Take Exam Context
@@ -447,7 +500,7 @@ class VoiceCommandService {
         return CommandResult(VoiceAction.previousPage);
       }
       if (text.contains("reset") || text.contains("default")) {
-          return CommandResult(VoiceAction.resetPreferences);
+        return CommandResult(VoiceAction.resetPreferences);
       }
     }
 
@@ -461,14 +514,20 @@ class VoiceCommandService {
           text.contains("back page")) {
         return CommandResult(VoiceAction.previousPage);
       }
-      if (text.contains("pause")) return CommandResult(VoiceAction.pauseReading);
-      if (text.contains("resume") || text.contains("continue") || text.contains("play")) {
-          return CommandResult(VoiceAction.resumeReading);
+      if (text.contains("pause")) {
+        return CommandResult(VoiceAction.pauseReading);
+      }
+      if (text.contains("resume") ||
+          text.contains("continue") ||
+          text.contains("play")) {
+        return CommandResult(VoiceAction.resumeReading);
       }
       if (text.contains("restart") || text.contains("replay")) {
-          return CommandResult(VoiceAction.restartReading);
+        return CommandResult(VoiceAction.restartReading);
       }
-      if (text.contains("stop")) return CommandResult(VoiceAction.stopDictation);
+      if (text.contains("stop")) {
+        return CommandResult(VoiceAction.stopDictation);
+      }
     }
 
     // --- GLOBAL COMMANDS (Fallback) ---
@@ -549,40 +608,66 @@ class VoiceCommandService {
         text.contains("slower")) {
       return CommandResult(VoiceAction.changeSpeed);
     }
-    
+
     if (text.contains("get started") || text.contains("start app")) {
       return CommandResult(VoiceAction.startApp);
     }
 
-    if (text.contains("confirm")) return CommandResult(VoiceAction.confirmAction);
+    if (text.contains("confirm")) {
+      return CommandResult(VoiceAction.confirmAction);
+    }
     if (text.contains("cancel")) return CommandResult(VoiceAction.cancelAction);
 
-    if (text.contains("student name") || text.contains("my name")) return CommandResult(VoiceAction.setStudentName);
-    if (text.contains("student id") || text.contains("my id")) return CommandResult(VoiceAction.setStudentID);
-    if (text.contains("exam time") || text.contains("set time")) return CommandResult(VoiceAction.setExamTime);
-    if (text.contains("rename") || text.contains("change filename")) return CommandResult(VoiceAction.renameFile);
+    if (text.contains("student name") || text.contains("my name")) {
+      return CommandResult(VoiceAction.setStudentName);
+    }
+    if (text.contains("student id") || text.contains("my id")) {
+      return CommandResult(VoiceAction.setStudentID);
+    }
+    if (text.contains("exam time") || text.contains("set time")) {
+      return CommandResult(VoiceAction.setExamTime);
+    }
+    if (text.contains("rename") || text.contains("change filename")) {
+      return CommandResult(VoiceAction.renameFile);
+    }
 
     if (text.contains("zoom in")) return CommandResult(VoiceAction.zoomIn);
     if (text.contains("zoom out")) return CommandResult(VoiceAction.zoomOut);
-    if (text.contains("reset zoom")) return CommandResult(VoiceAction.resetZoom);
+    if (text.contains("reset zoom")) {
+      return CommandResult(VoiceAction.resetZoom);
+    }
 
     // Settings
     if (text.contains("haptic")) {
-         if (text.contains("on") || text.contains("enable")) return CommandResult(VoiceAction.enableFeature, payload: 'haptics');
-         if (text.contains("off") || text.contains("disable")) return CommandResult(VoiceAction.disableFeature, payload: 'haptics');
+      if (text.contains("on") || text.contains("enable")) {
+        return CommandResult(VoiceAction.enableFeature, payload: 'haptics');
+      }
+      if (text.contains("off") || text.contains("disable")) {
+        return CommandResult(VoiceAction.disableFeature, payload: 'haptics');
+      }
     }
     if (text.contains("voice command")) {
-         if (text.contains("on") || text.contains("enable")) return CommandResult(VoiceAction.enableFeature, payload: 'voice commands');
-         if (text.contains("off") || text.contains("disable")) return CommandResult(VoiceAction.disableFeature, payload: 'voice commands');
+      if (text.contains("on") || text.contains("enable")) {
+        return CommandResult(
+          VoiceAction.enableFeature,
+          payload: 'voice commands',
+        );
+      }
+      if (text.contains("off") || text.contains("disable")) {
+        return CommandResult(
+          VoiceAction.disableFeature,
+          payload: 'voice commands',
+        );
+      }
     }
 
     return CommandResult(VoiceAction.unknown);
   }
 
   Future<void> performGlobalNavigation(CommandResult result) async {
-    // NOTE: Do NOT add to _commandStream here. It causes an infinite loop 
+    // NOTE: Do NOT add to _commandStream here. It causes an infinite loop
     // if screens call this method from their stream listener.
-    
+
     final context = navigatorKey.currentContext;
 
     // Kiosk Mode Security Check
@@ -607,11 +692,11 @@ class VoiceCommandService {
       case VoiceAction.goBack:
         final context = navigatorKey.currentContext;
         if (context != null && KioskService().isKioskActive) {
-            final routeName = ModalRoute.of(context)?.settings.name;
-            if (routeName == '/paper_detail' || routeName == '/question_detail') {
-                 tts.speak("Navigation is locked during exam.");
-                 return;
-            }
+          final routeName = ModalRoute.of(context)?.settings.name;
+          if (routeName == '/paper_detail' || routeName == '/question_detail') {
+            tts.speak("Navigation is locked during exam.");
+            return;
+          }
         }
 
         final canPop = await navigatorKey.currentState?.maybePop() ?? false;
@@ -648,8 +733,10 @@ class VoiceCommandService {
         }
 
         // If we are likely on an intro screen or we can't determine route, try to push replacement
-        if (currentRoute == null || currentRoute == '/' || currentRoute == '/start') {
-           navigatorKey.currentState?.pushReplacementNamed('/home');
+        if (currentRoute == null ||
+            currentRoute == '/' ||
+            currentRoute == '/start') {
+          navigatorKey.currentState?.pushReplacementNamed('/home');
         } else {
           // If already deep, pop until home
           navigatorKey.currentState?.popUntil((route) {
@@ -692,60 +779,80 @@ class VoiceCommandService {
       case VoiceAction.increaseVolume:
         await _changeVolume(true);
         if (context != null && context.mounted) {
-             ScaffoldMessenger.of(context).removeCurrentSnackBar();
-             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Volume Increased"), duration: const Duration(milliseconds: 1000)));
+          ScaffoldMessenger.of(context).removeCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("Volume Increased"),
+              duration: const Duration(milliseconds: 1000),
+            ),
+          );
         }
         break;
       case VoiceAction.decreaseVolume:
         await _changeVolume(false);
-         if (context != null && context.mounted) {
-             ScaffoldMessenger.of(context).removeCurrentSnackBar();
-             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Volume Decreased"), duration: const Duration(milliseconds: 1000)));
+        if (context != null && context.mounted) {
+          ScaffoldMessenger.of(context).removeCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("Volume Decreased"),
+              duration: const Duration(milliseconds: 1000),
+            ),
+          );
         }
         break;
       case VoiceAction.increaseSpeed:
         await _changeSpeed(true);
-         if (context != null && context.mounted) {
-             ScaffoldMessenger.of(context).removeCurrentSnackBar();
-             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Speed Increased"), duration: const Duration(milliseconds: 1000)));
+        if (context != null && context.mounted) {
+          ScaffoldMessenger.of(context).removeCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("Speed Increased"),
+              duration: const Duration(milliseconds: 1000),
+            ),
+          );
         }
         break;
       case VoiceAction.decreaseSpeed:
         await _changeSpeed(false);
-         if (context != null && context.mounted) {
-             ScaffoldMessenger.of(context).removeCurrentSnackBar();
-             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Speed Decreased"), duration: const Duration(milliseconds: 1000)));
+        if (context != null && context.mounted) {
+          ScaffoldMessenger.of(context).removeCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("Speed Decreased"),
+              duration: const Duration(milliseconds: 1000),
+            ),
+          );
         }
         break;
       case VoiceAction.enableFeature:
         final feat = result.payload.toString().toLowerCase();
         if (feat.contains('haptic')) {
-           AccessibilityService().setEnabled(true);
-           AccessibilityService().trigger(AccessibilityEvent.action);
-           tts.speak("Haptic feedback enabled.");
+          AccessibilityService().setEnabled(true);
+          AccessibilityService().trigger(AccessibilityEvent.action);
+          tts.speak("Haptic feedback enabled.");
         } else if (feat.contains('single tap')) {
-           AccessibilityService().setOneTapAnnounce(true);
-           tts.speak("Single tap to announce enabled.");
+          AccessibilityService().setOneTapAnnounce(true);
+          tts.speak("Single tap to announce enabled.");
         } else if (feat.contains('voice command')) {
-            final sp = await SharedPreferences.getInstance();
-            await sp.setBool('voice_commands_enabled', true);
-            await picovoiceService.setEnabled(true);
-            tts.speak("Voice commands enabled.");
+          final sp = await SharedPreferences.getInstance();
+          await sp.setBool('voice_commands_enabled', true);
+          await picovoiceService.setEnabled(true);
+          tts.speak("Voice commands enabled.");
         }
         break;
       case VoiceAction.disableFeature:
         final featOff = result.payload.toString().toLowerCase();
         if (featOff.contains('haptic')) {
-           AccessibilityService().setEnabled(false);
-           tts.speak("Haptic feedback disabled.");
+          AccessibilityService().setEnabled(false);
+          tts.speak("Haptic feedback disabled.");
         } else if (featOff.contains('single tap')) {
-           AccessibilityService().setOneTapAnnounce(false);
-           tts.speak("Single tap to announce disabled.");
+          AccessibilityService().setOneTapAnnounce(false);
+          tts.speak("Single tap to announce disabled.");
         } else if (featOff.contains('voice command')) {
-            final sp = await SharedPreferences.getInstance();
-            await sp.setBool('voice_commands_enabled', false);
-            await picovoiceService.setEnabled(false);
-            tts.speak("Voice commands disabled.");
+          final sp = await SharedPreferences.getInstance();
+          await sp.setBool('voice_commands_enabled', false);
+          await picovoiceService.setEnabled(false);
+          tts.speak("Voice commands disabled.");
         }
         break;
       default:
@@ -755,15 +862,10 @@ class VoiceCommandService {
   }
 
   int? _parseNumber(String raw) {
-    int? val = int.tryParse(raw);
-    if (val != null) return val;
-    final map = {
-      'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
-      'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10
-    };
-    return map[raw.toLowerCase().trim()];
+    // Rhino now handles number parsing via $pv.TwoDigitInteger
+    return int.tryParse(raw);
   }
-  
+
   bool intentStringContains(String intent, List<String> substrs) {
     for (var s in substrs) {
       if (intent.toLowerCase().contains(s.toLowerCase())) return true;
@@ -771,12 +873,18 @@ class VoiceCommandService {
     return false;
   }
 
-  void executeIntent(String intent, Map<String, String>? slots) {
+  void executeIntent(
+    String intent,
+    Map<String, String>? slots, [
+    String? speech,
+  ]) {
     VoiceAction action = VoiceAction.unknown;
     dynamic payload;
     dynamic payload2;
 
-    debugPrint("VoiceCommandService: Received Intent: '$intent', Slots: $slots");
+    debugPrint(
+      "VoiceCommandService: Received Intent: '$intent', Slots: $slots",
+    );
 
     // Helper to get normalized slot value
     String? getVal(List<String> keys) {
@@ -786,70 +894,69 @@ class VoiceCommandService {
       }
       // Fallback: Check if any key contains the slot name (fuzzy match for Rhino slot keys)
       for (var k in keys) {
-         for (var slotKey in slots.keys) {
-             if (slotKey.toLowerCase().contains(k.toLowerCase())) return slots[slotKey]?.toLowerCase().trim();
-         }
+        for (var slotKey in slots.keys) {
+          if (slotKey.toLowerCase().contains(k.toLowerCase())) {
+            return slots[slotKey]?.toLowerCase().trim();
+          }
+        }
       }
       return null;
     }
 
     switch (intent) {
       // --- USER YAML INTENTS ---
+      // --- USER YAML INTENTS ---
       case 'navigation':
         final dest = getVal(['destination']);
-        final numVal = getVal(['number']);
-        
-        // If the intent is navigation and we have "start" in destination or no destination at all,
-        // we assume it's a "Start App" or "Get Started" command.
+        final itemNumStr = getVal(['itemNumber']);
+        final pageNumStr = getVal(['pageNumber']);
+
         if (dest != null) {
-          if (dest.contains('home') || dest.contains('start') || dest.contains('get started')) {
-            action = VoiceAction.startApp;
-          } else if (dest.contains('setting') || dest.contains('preference') || dest.contains('option')) {
-            action = VoiceAction.goToSettings;
-          } else if (dest.contains('exam') || dest.contains('take exam')) {
+          if (intentStringContains(dest, ['home', 'main menu'])) {
+            action = VoiceAction.goToHome;
+          } else if (intentStringContains(dest, ['exam', 'take'])) {
             action = VoiceAction.goToTakeExam;
-          } else if (dest.contains('paper') || dest.contains('saved')) {
+          } else if (intentStringContains(dest, ['saved', 'cards'])) {
             action = VoiceAction.goToSavedPapers;
-          } else if (dest.contains('read document') || dest.contains('pdf') || dest.contains('viewer') || dest.contains('read p d f')) {
+          } else if (intentStringContains(dest, ['pdf', 'read'])) {
             action = VoiceAction.goToReadPDF;
-          } else if (dest.contains('scan questions')) {
+          } else if (intentStringContains(dest, ['setting', 'preference'])) {
+            action = VoiceAction.goToSettings;
+          } else if (intentStringContains(dest, ['scan'])) {
             action = VoiceAction.scanQuestions;
-          } else if (dest.contains('back') || dest.contains('previous')) {
+          } else if (intentStringContains(dest, ['back', 'previous'])) {
             action = VoiceAction.goBack;
-          } else {
-             // If destination is unrecognized, check if we have a number
-             if (numVal != null) {
-                // Fallthrough to number parsing below
-             } else {
-                action = VoiceAction.goToHome; // Fallback
-             }
-          }
-        } else if (numVal != null) {
-          // No destination string (e.g. "Question 1"), but we have a number.
-          // This should NOT fallback to startApp.
-          // We will let the number logic below handle it.
-        } else {
-          // No slots AND no destination: Typical for simple "Get Started" or "Go Back"
-          // We'll let it fall through to fuzzy logic at the bottom which checks for common words in any slot.
-          // IF there are really no slots at all, we might decide based on intent name.
-          if (intent == 'navigation' && (slots == null || slots.isEmpty)) {
-             action = VoiceAction.goBack; // Heuristic: "Go Back" often has no slots if "Back" isn't a slot value.
+          } else if (intentStringContains(dest, [
+            'start',
+            'app',
+            'get started',
+          ])) {
+            action = VoiceAction.startApp;
           }
         }
 
-        if (numVal != null) {
-             int? n = _parseNumber(numVal);
-             if (n != null) {
-                  if (intentStringContains(intent, ['Select paper', 'Open paper']) || (dest?.contains('paper') ?? false)) {
-                      action = VoiceAction.openPaper;
-                  }
-                  if (intentStringContains(intent, ['question', 'navigation']) || (dest?.contains('question') ?? false) || dest == null) {
-                      action = VoiceAction.goToQuestion;
-                      payload = n;
-                  }
-              }
-         }
-         break; 
+        // Check for item number if no specific text action was found or if it's a direct number command
+        if (itemNumStr != null) {
+          int? num = int.tryParse(itemNumStr);
+          if (num != null) {
+            // If we have a destination that hints at 'paper', use openPaper
+            if (dest != null && intentStringContains(dest, ['paper', 'file'])) {
+              action = VoiceAction.openPaper;
+              payload = num;
+            } else {
+              // Default to question navigation
+              action = VoiceAction.goToQuestion;
+              payload = num;
+            }
+          }
+        } else if (pageNumStr != null) {
+          int? p = int.tryParse(pageNumStr);
+          if (p != null) {
+            action = VoiceAction.goToPage;
+            payload = p;
+          }
+        }
+        break;
 
       // --- NEW INTENTS ---
       case 'pdfControl':
@@ -857,13 +964,13 @@ class VoiceCommandService {
         if (pdfAct == 'zoom in') action = VoiceAction.zoomIn;
         if (pdfAct == 'zoom out') action = VoiceAction.zoomOut;
         if (pdfAct == 'reset zoom') action = VoiceAction.resetZoom;
-        
+
         final pageNumStr = getVal(['number']);
         if (pageNumStr != null) {
           int? p = _parseNumber(pageNumStr);
           if (p != null) {
-             action = VoiceAction.goToPage;
-             payload = p;
+            action = VoiceAction.goToPage;
+            payload = p;
           }
         }
         break;
@@ -871,169 +978,301 @@ class VoiceCommandService {
       case 'settingsControl':
         final feat = getVal(['feature']);
         final state = getVal(['state', 'status', 'action', 'turn']);
-        
+
         if (feat != null) {
-           if (state == 'off' || state == 'disable' || state == 'stop') {
-             action = VoiceAction.disableFeature;
-           } else {
-             action = VoiceAction.enableFeature;
-           }
-           payload = feat;
+          if (state == 'off' || state == 'disable' || state == 'stop') {
+            action = VoiceAction.disableFeature;
+          } else {
+            action = VoiceAction.enableFeature;
+          }
+          payload = feat;
         }
         break;
 
       case 'formControl':
-        // These have no slots in YAML. Indistinguishable via Rhino.
-        // We broadcast the intent and let the current screen's regex `parse` (if any) handle it? 
-        // No, Rhino doesn't send the text.
-        // We'll just trigger a general form action or notify the user.
-        action = VoiceAction.unknown;
-        tts.speak("Please use manual input for form fields.");
+        final minutesStr = getVal(['minutes']);
+        if (minutesStr != null) {
+          int? m = int.tryParse(minutesStr);
+          if (m != null) {
+            action = VoiceAction.setExamTime;
+            payload = m;
+            tts.speak("Setting exam time to $m minutes.");
+          }
+        } else {
+          // Fallback for other form commands
+          action = VoiceAction.unknown;
+          tts.speak("Please use manual input for form fields.");
+        }
         break;
 
       case 'AppControl':
         final actionSlot = getVal(['action']);
         final scrollDir = getVal(['scroll_direction']);
-        
+
         if (actionSlot != null) {
-          if (actionSlot == 'start') action = VoiceAction.appendAnswer; // Mapping 'start' to 'appendAnswer' (dictation)
-          else if (actionSlot == 'stop') action = VoiceAction.stopDictation;
-          else if (actionSlot == 'pause') action = VoiceAction.pauseReading;
-          else if (actionSlot == 'resume') action = VoiceAction.resumeReading;
-          else if (actionSlot == 'clear answer') action = VoiceAction.clearAnswer;
-          else if (actionSlot == 'read answer') action = VoiceAction.readAnswer;
-          else if (actionSlot == 'edit answer') action = VoiceAction.appendAnswer;
-          else if (actionSlot == 'open question') action = VoiceAction.goToQuestion;
-          else if (actionSlot == 'exit' || actionSlot == 'close' || actionSlot == 'stop app') action = VoiceAction.goBack;
-          else if (actionSlot == 'start app') action = VoiceAction.startApp;
+          if (actionSlot == 'start') {
+            action = VoiceAction
+                .appendAnswer; // Mapping 'start' to 'appendAnswer' (dictation)
+          } else if (actionSlot == 'stop')
+            action = VoiceAction.stopDictation;
+          else if (actionSlot == 'pause')
+            action = VoiceAction.pauseReading;
+          else if (actionSlot == 'resume')
+            action = VoiceAction.resumeReading;
+          else if (actionSlot == 'clear answer')
+            action = VoiceAction.clearAnswer;
+          else if (actionSlot == 'read answer')
+            action = VoiceAction.readAnswer;
+          else if (actionSlot == 'edit answer')
+            action = VoiceAction.appendAnswer;
+          else if (actionSlot == 'open question')
+            action = VoiceAction.goToQuestion;
+          else if (actionSlot == 'exit' ||
+              actionSlot == 'close' ||
+              actionSlot == 'stop app')
+            action = VoiceAction.goBack;
+          else if (actionSlot == 'start app')
+            action = VoiceAction.startApp;
+          else if (actionSlot == 'confirm')
+            action = VoiceAction.confirmAction;
+          else if (actionSlot == 'cancel')
+            action = VoiceAction.cancelAction;
+          else if (actionSlot == 'skip' || actionSlot == 'skip naming')
+            action = VoiceAction.skip;
+          else if (actionSlot == 'save')
+            action = VoiceAction
+                .saveResult; // Map 'save' to saveResult for dialogs/forms
         } else if (scrollDir != null) {
-          if (scrollDir == 'up') action = VoiceAction.scrollUp;
-          else if (scrollDir == 'down') action = VoiceAction.scrollDown;
-          else if (scrollDir == 'top') action = VoiceAction.scrollToTop;
-          else if (scrollDir == 'bottom') action = VoiceAction.scrollToBottom;
+          if (scrollDir == 'up') {
+            action = VoiceAction.scrollUp;
+          } else if (scrollDir == 'down')
+            action = VoiceAction.scrollDown;
+          else if (scrollDir == 'top')
+            action = VoiceAction.scrollToTop;
+          else if (scrollDir == 'bottom')
+            action = VoiceAction.scrollToBottom;
         }
         break;
 
       case 'ChangePages':
         final dir = getVal(['direction']);
         if (dir == 'next' || dir == 'forward') action = VoiceAction.nextPage;
-        if (dir == 'previous' || dir == 'back') action = VoiceAction.previousPage;
+        if (dir == 'previous' || dir == 'back') {
+          action = VoiceAction.previousPage;
+        }
         break;
 
       case 'readContent':
         final ra = getVal(['readAction']);
         if (ra == 'stop' || ra == 'pause') {
-           // If we are in 'question' context, 'stop' usually means stop dictation
-           // Global navigation will handle the fallback if no screen captures it.
-           action = VoiceAction.stopDictation; 
-        }
-        else if (ra == 'resume') action = VoiceAction.resumeReading;
-        else if (ra == 'start') action = VoiceAction.appendAnswer; // Map 'start answering' etc to dictation
-        else if (ra == 'restart') action = VoiceAction.restartReading;
+          // If we are in 'question' context, 'stop' usually means stop dictation
+          // Global navigation will handle the fallback if no screen captures it.
+          action = VoiceAction.stopDictation;
+        } else if (ra == 'resume')
+          action = VoiceAction.resumeReading;
+        else if (ra == 'start')
+          action = VoiceAction
+              .appendAnswer; // Map 'start answering' etc to dictation
+        else if (ra == 'restart')
+          action = VoiceAction.restartReading;
         else {
-           // Case for "Read question", "Read this page", "Repeat question"
-           action = VoiceAction.readQuestion;
+          // Case for "Read question", "Read this page", "Repeat question"
+          action = VoiceAction.readQuestion;
         }
         break;
 
       case 'examControl':
         final e = getVal(['exam']);
-        if (e == 'start exam' || e == 'start') action = VoiceAction.goToTakeExam;
-        else if (e == 'finish exam' || e == 'submit exam' || e == 'finish' || e == 'end' || e == 'end exam' || e == 'stop exam') action = VoiceAction.submitExam;
-        else if (e == 'cancel exam' || e == 'stop') action = VoiceAction.goBack;
-        else if (e == 'confirm') action = VoiceAction.confirmExamStart;
+        if (e == 'start exam' || e == 'start') {
+          action = VoiceAction.goToTakeExam;
+        } else if (e == 'finish exam' ||
+            e == 'submit exam' ||
+            e == 'finish' ||
+            e == 'end' ||
+            e == 'end exam' ||
+            e == 'stop exam') {
+          action = VoiceAction.submitExam;
+        } else if (e == 'exit exam') {
+          action = VoiceAction.exitExam;
+        } else if (e == 'cancel exam' || e == 'stop') {
+          action = VoiceAction.goBack;
+        } else if (e == 'confirm') {
+          action = VoiceAction.confirmExamStart;
+        }
         break;
 
       case 'capture':
         final src = getVal(['source']);
         final choice = getVal(['scan_choice']);
-        if (src == 'camera' || src == 'photo') action = VoiceAction.scanCamera;
-        else if (src == 'gallery' || src == 'image') action = VoiceAction.scanGallery;
-        else if (choice == 'gemini') action = VoiceAction.useGemini;
-        else if (choice == 'local') action = VoiceAction.useLocalOcr;
-        else action = VoiceAction.scanQuestions;
+        if (src == 'camera' || src == 'photo') {
+          action = VoiceAction.scanCamera;
+        } else if (src == 'gallery' || src == 'image')
+          action = VoiceAction.scanGallery;
+        else if (choice == 'gemini')
+          action = VoiceAction.useGemini;
+        else if (choice == 'local')
+          action = VoiceAction.useLocalOcr;
+        else
+          action = VoiceAction.scanQuestions;
         break;
 
       case 'process':
         final act = getVal(['processAction']);
         if (act != null) {
-          if (act.contains('increase volume') || act.contains('turn up')) action = VoiceAction.increaseVolume;
-          else if (act.contains('decrease volume') || act.contains('turn down')) action = VoiceAction.decreaseVolume;
-          else if (act.contains('increase speed')) action = VoiceAction.increaseSpeed;
-          else if (act.contains('decrease speed')) action = VoiceAction.decreaseSpeed;
-          else if (act.contains('enter exam mode')) action = VoiceAction.enterExamMode;
-          else if (act == 'convert') action = VoiceAction.convertFile;
-          else if (act == 'save') action = VoiceAction.saveFile;
-          else if (act == 'reset') action = VoiceAction.resetPreferences;
+          if (act.contains('increase volume') || act.contains('turn up')) {
+            action = VoiceAction.increaseVolume;
+          } else if (act.contains('decrease volume') ||
+              act.contains('turn down'))
+            action = VoiceAction.decreaseVolume;
+          else if (act.contains('increase speed'))
+            action = VoiceAction.increaseSpeed;
+          else if (act.contains('decrease speed'))
+            action = VoiceAction.decreaseSpeed;
+          else if (act.contains('enter exam mode'))
+            action = VoiceAction.enterExamMode;
+          else if (act == 'convert') {
+            action = VoiceAction.convertFile;
+          } else if (act == 'save') {
+            action = VoiceAction.saveFile;
+          } else if (act == 'reset') {
+            action = VoiceAction.resetPreferences;
+          }
+        }
+        break;
+
+      case 'deleteItem':
+        final itemNumStr = getVal(['itemNumber']);
+        if (itemNumStr != null) {
+          int? num = int.tryParse(itemNumStr);
+          if (num != null) {
+            action = VoiceAction.deletePaper;
+            payload = num;
+          }
+        }
+        break;
+
+      case 'clearHistory':
+        action = VoiceAction.clearAllPapers;
+        break;
+
+      case 'shareContent':
+        action = VoiceAction.shareFile;
+        break;
+
+      case 'searchContent':
+        action = VoiceAction.search;
+        break;
+
+      case 'dialogControl':
+        final resp = getVal(['dialog_response']);
+        final optionNumStr = getVal(['optionNumber']);
+
+        if (resp != null) {
+          if (['yes', 'sure', 'okay'].contains(resp)) {
+            action = VoiceAction.confirmAction;
+          } else if (['no'].contains(resp)) {
+            action = VoiceAction.cancelAction;
+          }
+        }
+
+        if (optionNumStr != null) {
+          int? opt = int.tryParse(optionNumStr);
+          if (opt != null) {
+            action = VoiceAction.selectOption;
+            payload = opt;
+          }
         }
         break;
 
       // --- GLOBAL FALLBACKS ---
       case 'stop':
         // If no context caught it, default to pause reading
-        action = VoiceAction.stopDictation; 
+        action = VoiceAction.stopDictation;
         break;
 
       default:
         // Try fuzzy matching all slots if no specific intent matched above
         if (slots != null && action == VoiceAction.unknown) {
-           for (var val in slots.values) {
-              final v = val.toLowerCase();
-              if (v.contains('home')) action = VoiceAction.goToHome;
-              if (v.contains('setting')) action = VoiceAction.goToSettings;
-              if (v.contains('exam')) action = VoiceAction.goToTakeExam;
-              if (v.contains('back') || v.contains('exit') || v.contains('close')) action = VoiceAction.goBack;
-              if (v.contains('finish') || v.contains('submit') || v.contains('end')) action = VoiceAction.submitExam;
-           }
+          for (var val in slots.values) {
+            final v = val.toLowerCase();
+            if (v.contains('home')) action = VoiceAction.goToHome;
+            if (v.contains('setting')) action = VoiceAction.goToSettings;
+            if (v.contains('exam')) action = VoiceAction.goToTakeExam;
+            if (v.contains('back') ||
+                v.contains('exit') ||
+                v.contains('close')) {
+              action = VoiceAction.goBack;
+            }
+            if (v.contains('finish') ||
+                v.contains('submit') ||
+                v.contains('end')) {
+              action = VoiceAction.submitExam;
+            }
+          }
         }
         break;
     }
-    
-    // --- Parse Enhancements for Specific Text Commands if Intents are Broad ---
+
     if (intent == 'formControl') {
-       // Heuristic fallback using fuzzy matching on the intent name or potentially slots key
-       // This is limited because we don't have the full phrase if Rhino doesn't send it.
-       // However, if we assume the user spoke valid grammar, we can try to guess action
-       // But wait, the YAML `formControl` has "Change filename", "Set student ID", etc.
-       // These are distinct phrases. 
-       // If we can't distinguish, we default to 'setStudentName' (first one?) or log error.
-       // Ideally we need slots in YAML.
-       // Since we updated `parse()` (string based) below, that works for `sttService` (Apple/Google).
-       // But `executeIntent` (Rhino) needs slots or distinct intents.
-       // Check if `action` is still unknown.
-       if (action == VoiceAction.unknown) {
-          // Attempt to scan slots for keys like 'name', 'id', 'time' if user added them? 
-          // (User YAML has NO slots for formControl in `slots:` section? 
-          // actually `formControl` expressions in YAML use:
-          // - Enter student name
-          // - Set student ID
-          // NO SLOTS defined for these expressions in YAML provided:
-          //      - Enter student name
-          //      - Set student ID
-          // Just raw text.
-          // Rhino will match the intent 'formControl'.
-          // Slots will be EMPTY.
-          // Therefore, we CANNOT distinguish "Enter name" from "Enter ID" via `executeIntent` if only intent is passed.
-          // Unless `PicovoiceService` passes the *phrase* too.
-          // Checking `PicovoiceService`: usually `inference.slots` is the map. `inference.intent` is string.
-          // Does it pass the transcript? 
-          // If not, we have a problem with the user's YAML design for Rhino.
-          // But `sttService` uses `parse(text)` which does regex. 
-          // We must ensure `PicovoiceService` isn't solely relied upon for distinct actions sharing an intent without slots.
-          // Recommendation: We'll have to ask user to fix YAML or we can't support formControl via Rhino.
-          // BUT, for now, let's implement the regex in `parse()` which is robust.
-       }
+      // Check for time slots first
+      final hourStr = getVal(['hour']);
+      final minuteStr = getVal(['minute', 'minutes']); // Handle both keys
+      final itemStr = getVal(
+        ['item'],
+      ); // 'formItem' slot mapped to 'item' in YAML regex? No, just use getVal with 'item'
+
+      if (hourStr != null || minuteStr != null) {
+        int totalMinutes = 0;
+        if (hourStr != null) {
+          totalMinutes += (int.tryParse(hourStr) ?? 0) * 60;
+        }
+        if (minuteStr != null) {
+          totalMinutes += int.tryParse(minuteStr) ?? 0;
+        }
+
+        if (totalMinutes > 0) {
+          action = VoiceAction.setExamTime;
+          payload = totalMinutes;
+        }
+      } else if (itemStr != null) {
+        // Handle student name / ID from 'formItem' slot
+        if (itemStr.contains('name')) {
+          action = VoiceAction.setStudentName;
+        } else if (itemStr.contains('id')) {
+          action = VoiceAction.setStudentID;
+        } else if (itemStr.contains('filename') || itemStr.contains('file')) {
+          action = VoiceAction.renameFile;
+        }
+      }
+
+      // Fallback if no slots found
+      if (action == VoiceAction.unknown && speech != null) {
+        // ... (keep speech fallback if needed, or remove)
+        final lowerSpeech = speech.toLowerCase();
+        if (lowerSpeech.contains('name')) {
+          action = VoiceAction.setStudentName;
+        } else if (lowerSpeech.contains('id') ||
+            lowerSpeech.contains('identifier')) {
+          action = VoiceAction.setStudentID;
+        }
+      }
     }
 
     if (action != VoiceAction.unknown) {
-      final result = CommandResult(action, payload: payload, payload2: payload2);
+      final result = CommandResult(
+        action,
+        payload: payload,
+        payload2: payload2,
+      );
       // Broadcast to UI. Screens will handle or delegate back to performGlobalNavigation.
       _commandStream.add(result);
-      
+
       // Fallback: If no screen is listening (e.g. transition state), execute global logic directly.
       if (!_commandStream.hasListener) {
-          debugPrint("VoiceCommandService: No listeners found. Executing global fallback immediately.");
-          performGlobalNavigation(result);
+        debugPrint(
+          "VoiceCommandService: No listeners found. Executing global fallback immediately.",
+        );
+        performGlobalNavigation(result);
       }
     } else {
       tts.speak("I didn't understand that command.");
@@ -1053,7 +1292,7 @@ class VoiceCommandService {
       if (tts.isSpeaking) await tts.stop();
       tts.speak("Checking papers...");
 
-      final storage = QuestionStorageService(); // Import required
+      final storage = PaperStorageService(); // Import required
       final docs = await storage.getDocuments();
       // Papers are displayed reversed in SavedPapers screen: newest first.
       // So index 0 matches the LAST element of the stored list.
@@ -1097,9 +1336,27 @@ class VoiceCommandService {
     _isScanDialogOpen = true;
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => VoiceAlertDialog(
         title: const Text('Scan Options'),
+        voiceService: this,
         content: const Text("Choose your preferred scanning method."),
+        onSelectOption: (option) {
+          Navigator.pop(ctx);
+          if (option == 1) {
+            // Gemini
+            if (apiKey != null && apiKey.isNotEmpty) {
+              _processGeminiFlow(apiKey);
+            } else {
+              tts.speak("Gemini API Key missing.");
+            }
+          } else if (option == 2) {
+            // Local
+            _navigateToOcr();
+          }
+        },
+        onCancel: () {
+          Navigator.pop(ctx);
+        },
         actions: [
           AccessibleTextButton(
             onPressed: () {
@@ -1221,13 +1478,15 @@ class VoiceCommandService {
       if (isCancelled || !context.mounted) return;
 
       // Ask for Rename
+      // Using VoiceAlertDialog
       String? paperName = await showDialog<String>(
         context: context,
         barrierDismissible: false,
         builder: (ctx) {
           final TextEditingController nameController = TextEditingController();
-          return AlertDialog(
+          return VoiceAlertDialog(
             title: const Text("Name this Paper"),
+            voiceService: this,
             content: TextField(
               controller: nameController,
               autofocus: true,
@@ -1236,6 +1495,15 @@ class VoiceCommandService {
                 labelText: "Paper Name",
               ),
             ),
+            onConfirm: () {
+              if (nameController.text.trim().isNotEmpty) {
+                Navigator.pop(ctx, nameController.text.trim());
+              } else {
+                Navigator.pop(ctx, null);
+              }
+            },
+            onSkip: () => Navigator.pop(ctx, null),
+            onCancel: () => Navigator.pop(ctx, null),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, null), // Skip/Default

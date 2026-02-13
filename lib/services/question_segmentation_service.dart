@@ -1,9 +1,7 @@
 import 'dart:math';
 import 'ocr_service.dart';
 
-
-
-import '../models/question_model.dart';
+import '../models/paper_model.dart';
 
 class _RowLine {
   final String text;
@@ -26,13 +24,27 @@ class _RowLine {
 class QuestionSegmentationService {
   // --- regex patterns (tweakable) ---
   static final RegExp _qStart = RegExp(r'^\s*(\d{1,2})\s*[\.\)]\s+');
-  static final RegExp _qStartAlt = RegExp(r'^\s*Q\s*[:.]?\s*(\d{1,3})\b', caseSensitive: false);
+  static final RegExp _qStartAlt = RegExp(
+    r'^\s*Q\s*[:.]?\s*(\d{1,3})\b',
+    caseSensitive: false,
+  );
 
-  static final RegExp _partHeader = RegExp(r'^\s*Part\s*[A-Z]\b', caseSensitive: false);
-  static final RegExp _sectionHeader = RegExp(r'^\s*Section\s*[A-Z]\b', caseSensitive: false);
+  static final RegExp _partHeader = RegExp(
+    r'^\s*Part\s*[A-Z]\b',
+    caseSensitive: false,
+  );
+  static final RegExp _sectionHeader = RegExp(
+    r'^\s*Section\s*[A-Z]\b',
+    caseSensitive: false,
+  );
 
-  static final RegExp _marksExpr = RegExp(r'(\d+(\.\d+)?)\s*[x×]\s*(\d+)\s*=\s*(\d+(\.\d+)?)');
-  static final RegExp _marksWord = RegExp(r'\b(Marks?|Total Marks?)\b', caseSensitive: false);
+  static final RegExp _marksExpr = RegExp(
+    r'(\d+(\.\d+)?)\s*[x×]\s*(\d+)\s*=\s*(\d+(\.\d+)?)',
+  );
+  static final RegExp _marksWord = RegExp(
+    r'\b(Marks?|Total Marks?)\b',
+    caseSensitive: false,
+  );
 
   ParsedDocument segment(List<OcrLine> rawLines) {
     if (rawLines.isEmpty) {
@@ -41,20 +53,21 @@ class QuestionSegmentationService {
 
     // Normalize + remove empty
     final lines = rawLines
-        .map((e) => OcrLine(
-              index: e.index,
-              text: e.text.trim(),
-              l: e.l,
-              t: e.t,
-              r: e.r,
-              b: e.b,
-            ))
+        .map(
+          (e) => OcrLine(
+            index: e.index,
+            text: e.text.trim(),
+            l: e.l,
+            t: e.t,
+            r: e.r,
+            b: e.b,
+          ),
+        )
         .where((e) => e.text.isNotEmpty)
         .toList();
 
     // Estimate page width/height for alignment heuristics
     final pageW = lines.map((e) => e.r).reduce(max);
-
 
     // Sort by top then left
     lines.sort((a, b) {
@@ -70,7 +83,11 @@ class QuestionSegmentationService {
     final header = <String>[];
     final sections = <ParsedSection>[];
 
-    ParsedSection currentSection = ParsedSection(title: null, context: null, questions: []);
+    ParsedSection currentSection = ParsedSection(
+      title: null,
+      context: null,
+      questions: [],
+    );
     ParsedQuestion? currentQuestion;
 
     void flushQuestion() {
@@ -82,7 +99,9 @@ class QuestionSegmentationService {
 
     void flushSectionIfHasContent() {
       flushQuestion();
-      if (currentSection.questions.isNotEmpty || (currentSection.title != null && currentSection.title!.trim().isNotEmpty)) {
+      if (currentSection.questions.isNotEmpty ||
+          (currentSection.title != null &&
+              currentSection.title!.trim().isNotEmpty)) {
         sections.add(currentSection);
       }
     }
@@ -100,7 +119,11 @@ class QuestionSegmentationService {
       // Section header like "Part A: Grammar (60 Marks)"
       if (_isSectionHeader(text)) {
         flushSectionIfHasContent();
-        currentSection = ParsedSection(title: text, context: null, questions: []);
+        currentSection = ParsedSection(
+          title: text,
+          context: null,
+          questions: [],
+        );
         continue;
       }
 
@@ -196,7 +219,8 @@ class QuestionSegmentationService {
     if (!isRight) return false;
 
     final short = rl.text.length <= 25;
-    final looksLikeMarks = _marksExpr.hasMatch(rl.text) ||
+    final looksLikeMarks =
+        _marksExpr.hasMatch(rl.text) ||
         rl.text.contains('×') ||
         rl.text.contains('x') ||
         rl.text.contains('=') ||
@@ -207,7 +231,9 @@ class QuestionSegmentationService {
 
   List<_RowLine> _mergeIntoRows(List<OcrLine> lines, double pageW) {
     // Median line height
-    final heights = lines.map((e) => (e.b - e.t).abs()).where((h) => h > 0).toList()..sort();
+    final heights =
+        lines.map((e) => (e.b - e.t).abs()).where((h) => h > 0).toList()
+          ..sort();
     final medianH = heights.isEmpty ? 12.0 : heights[heights.length ~/ 2];
     final rowThreshold = max(6.0, 0.60 * medianH);
 
@@ -241,7 +267,10 @@ class QuestionSegmentationService {
       row.sort((a, b) => a.l.compareTo(b.l));
 
       final indices = <int>[];
-      double l = double.infinity, t = double.infinity, r = -double.infinity, b = -double.infinity;
+      double l = double.infinity,
+          t = double.infinity,
+          r = -double.infinity,
+          b = -double.infinity;
 
       // Join row cells: if big horizontal gaps, insert " | " (tables)
       final parts = <String>[];
@@ -270,8 +299,8 @@ class QuestionSegmentationService {
       // Add spacing around parenthesized items like (a) -> (a)
       // This helps the TTS service's regex match it correctly as a separate token
       final cleaned = joined.replaceAllMapped(
-        RegExp(r'(?<=\w)\((?=[a-zA-Z0-9])|(?<=[a-zA-Z0-9])\)(?=\w)'), 
-        (m) => m.group(0) == '(' ? ' (' : ') '
+        RegExp(r'(?<=\w)\((?=[a-zA-Z0-9])|(?<=[a-zA-Z0-9])\)(?=\w)'),
+        (m) => m.group(0) == '(' ? ' (' : ') ',
       );
 
       final text = cleaned.replaceAll(RegExp(r'\s+'), ' ').trim();
