@@ -141,7 +141,16 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       barrierDismissible: false,
       builder: (ctx) => PopScope(
         canPop: false,
-        child: AlertDialog(
+        child: VoiceAlertDialog(
+          voiceService: widget.voiceService,
+          onConfirm: () {
+            Navigator.pop(ctx); // Close dialog
+            _confirmAndStartKiosk(startReading: true);
+          },
+          onCancel: () {
+            Navigator.pop(ctx); // Close dialog
+            _handleCancelConfirmation();
+          },
           title: const Text("Exam Mode Confirmation"),
           content: const Text(
             "The app will be locked to prevent exiting.\nDo you want to proceed?",
@@ -365,8 +374,16 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: Colors.grey[900],
+      builder: (ctx) => VoiceAlertDialog(
+        voiceService: widget.voiceService,
+        onConfirm: () {
+          Navigator.pop(ctx);
+          _finalizeExam();
+        },
+        onCancel: () {
+          Navigator.pop(ctx);
+          widget.ttsService.speak("Exam continued.");
+        },
         title: Text(
           "Submit Exam?",
           style: GoogleFonts.outfit(color: Colors.white),
@@ -538,6 +555,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
         break;
 
       case VoiceAction.submitExam: // Use this as "Save" for this screen
+
         if (_kioskEnabled) {
           _confirmEndExam();
         } else {
@@ -1478,6 +1496,9 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
               Navigator.pop(ctx);
               Navigator.pop(context); // Exit PaperDetailScreen
             },
+            onViewPdf: () => _viewPdf(pdfFile.path),
+            onSharePdf: () => _sharePdf(pdfFile.path),
+            onSaveToDownloads: () => _savePdfToDownloads(pdfFile),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [

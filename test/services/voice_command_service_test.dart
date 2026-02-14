@@ -128,23 +128,37 @@ void main() {
     },
   );
 
-  test(
-    'VoiceCommandService broadcasts correct action for navigation with item number',
-    () async {
-      expectLater(
-        voiceService.commandStream,
-        emits(
-          predicate<CommandResult>(
-            (result) =>
-                result.action == VoiceAction.goToQuestion &&
-                result.payload == 5,
-          ),
+  test('VoiceCommandService maps "paper X" to openPaper', () async {
+    expectLater(
+      voiceService.commandStream,
+      emits(
+        predicate<CommandResult>(
+          (result) =>
+              result.action == VoiceAction.openPaper && result.payload == 5,
         ),
-      );
+      ),
+    );
 
-      voiceService.executeIntent('navigation', {'itemNumber': '5'});
-    },
-  );
+    voiceService.executeIntent('navigation', {
+      'itemNumber': '5',
+    }, 'Open paper 5');
+  });
+
+  test('VoiceCommandService maps "question X" to goToQuestion', () async {
+    expectLater(
+      voiceService.commandStream,
+      emits(
+        predicate<CommandResult>(
+          (result) =>
+              result.action == VoiceAction.goToQuestion && result.payload == 3,
+        ),
+      ),
+    );
+
+    voiceService.executeIntent('navigation', {
+      'itemNumber': '3',
+    }, 'Go to question 3');
+  });
 
   test(
     'VoiceCommandService broadcasts correct action for PDF page navigation',

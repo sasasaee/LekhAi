@@ -70,7 +70,7 @@ class MyApp extends StatelessWidget {
           ttsService: ttsService,
           voiceService: voiceCommandService,
           picovoiceService: picovoiceService,
-          // accessibilityService: accessibilityService,
+          accessibilityService: accessibilityService,
         ),
         '/settings': (context) => PreferencesScreen(
           ttsService: ttsService,
@@ -301,6 +301,19 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  Future<void> _openSavedPapers() async {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SavedPapersScreen(
+          ttsService: widget.ttsService,
+          voiceService: widget.voiceService,
+          picovoiceService: widget.picovoiceService,
+        ),
+      ),
+    );
+  }
+
   void _showAboutDialog() {
     showDialog(
       context: context,
@@ -467,6 +480,15 @@ class _HomeScreenState extends State<HomeScreen>
                           color: const Color(0xFFF43F5E), // Rose
                           delay: 700,
                           onTap: _openPdf,
+                        ),
+                        const SizedBox(height: 20),
+                        _DashboardCard(
+                          icon: Icons.question_answer_outlined,
+                          label: "Saved Papers",
+                          subLabel: "Review Archives",
+                          color: const Color(0xFF10B981), // Green
+                          delay: 800,
+                          onTap: _openSavedPapers,
                         ),
                         const SizedBox(height: 20),
                         _DashboardCard(

@@ -114,6 +114,7 @@ class _SavedPapersScreenState extends State<SavedPapersScreen> {
         }
         break;
       case VoiceAction.openPaper:
+      case VoiceAction.goToQuestion:
         if (result.payload is int) {
           int index = (result.payload as int) - 1;
           if (index >= 0 && index < _papers.length) {
@@ -261,21 +262,35 @@ class _SavedPapersScreenState extends State<SavedPapersScreen> {
     // Stop local listener
     // _sttService.stopListening(); // Removed
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => PaperDetailScreen(
-          document: doc,
-          ttsService: widget.ttsService,
-          voiceService: widget.voiceService,
-          accessibilityService: widget.accessibilityService,
-          timestamp: DateTime.now()
-              .toIso8601String(), // Temporary until model update
-          examMode: widget.examMode, // Pass the mode
-          picovoiceService: widget.picovoiceService,
+    if (widget.isSelectionMode) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ExamInfoScreen(
+            document: doc,
+            ttsService: widget.ttsService,
+            voiceService: widget.voiceService,
+            accessibilityService: widget.accessibilityService!,
+            picovoiceService: widget.picovoiceService,
+          ),
         ),
-      ),
-    ); // .then listener restart removed
+      );
+    } else {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PaperDetailScreen(
+            document: doc,
+            ttsService: widget.ttsService,
+            voiceService: widget.voiceService,
+            accessibilityService: widget.accessibilityService,
+            timestamp: DateTime.now().toIso8601String(),
+            examMode: widget.examMode,
+            picovoiceService: widget.picovoiceService,
+          ),
+        ),
+      );
+    }
   }
 
   void _confirmDeletePaper(int index) {
@@ -558,9 +573,13 @@ class _SavedPapersScreenState extends State<SavedPapersScreen> {
                                     ).primaryColor.withValues(alpha: 0.2),
                                     shape: BoxShape.circle,
                                   ),
-                                  child: Icon(
-                                    Icons.description_outlined,
-                                    color: Theme.of(context).primaryColor,
+                                  child: Text(
+                                    "${index + 1}",
+                                    style: GoogleFonts.outfit(
+                                      color: Theme.of(context).primaryColor,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 18,
+                                    ),
                                   ),
                                 ),
                                 title: Text(

@@ -11,6 +11,9 @@ class VoiceAlertDialog extends StatefulWidget {
   final VoidCallback? onCancel;
   final VoidCallback? onSkip;
   final Function(int)? onSelectOption;
+  final VoidCallback? onViewPdf;
+  final VoidCallback? onSharePdf;
+  final VoidCallback? onSaveToDownloads;
 
   const VoiceAlertDialog({
     super.key,
@@ -22,6 +25,9 @@ class VoiceAlertDialog extends StatefulWidget {
     this.onCancel,
     this.onSkip,
     this.onSelectOption,
+    this.onViewPdf,
+    this.onSharePdf,
+    this.onSaveToDownloads,
   });
 
   @override
@@ -64,7 +70,8 @@ class _VoiceAlertDialogState extends State<VoiceAlertDialog> {
     switch (result.action) {
       case VoiceAction.confirmAction:
       case VoiceAction.saveResult:
-      case VoiceAction.saveFile: // Added saveFile as alias for save
+      case VoiceAction.submitExam: // Added: "Submit Exam" triggers confirm
+      case VoiceAction.enterExamMode: // Added: "Start Exam" triggers confirm
         if (widget.onConfirm != null) widget.onConfirm!();
         break;
       case VoiceAction.cancelAction:
@@ -87,6 +94,21 @@ class _VoiceAlertDialogState extends State<VoiceAlertDialog> {
       case VoiceAction.useLocalOcr:
         // Specific logic for Scan Options dialog
         if (widget.onSelectOption != null) widget.onSelectOption!(2);
+        break;
+      case VoiceAction.viewPdf:
+        if (widget.onViewPdf != null) widget.onViewPdf!();
+        break;
+      case VoiceAction.shareFile:
+        if (widget.onSharePdf != null) widget.onSharePdf!();
+        break;
+      case VoiceAction.saveFile:
+        // Handle save to downloads specifically if callback exists, else fall through to existing saveResult logic?
+        // Actually, saveFile is mapped from "save to downloads".
+        if (widget.onSaveToDownloads != null) {
+          widget.onSaveToDownloads!();
+        } else if (widget.onConfirm != null) {
+          widget.onConfirm!();
+        }
         break;
       default:
         break;

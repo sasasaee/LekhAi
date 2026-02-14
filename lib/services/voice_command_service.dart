@@ -37,6 +37,7 @@ enum VoiceAction {
   goToQuestion,
   startDictation,
   goToReadPDF,
+  viewPdf, // Added for post-exam dialog
   stopDictation,
   readQuestion,
   readAnswer,
@@ -705,8 +706,9 @@ class VoiceCommandService {
         }
         break;
       case VoiceAction.submitExam:
-        // BroadCast submit to listeners (PaperDetailScreen etc)
-        broadcastCommand(CommandResult(VoiceAction.submitExam));
+        // Do not re-broadcast. If we are here, no active screen handled it locally
+        // or a background screen delegated it.
+        tts.speak("Cannot submit exam from this screen.");
         break;
       case VoiceAction.previousPage:
         // Generic fallback for previous page
@@ -718,6 +720,7 @@ class VoiceCommandService {
       case VoiceAction.goToSavedPapers:
         await navigatorKey.currentState?.pushNamed('/saved_papers');
         break;
+      case VoiceAction.enterExamMode: // Added as fallback
       case VoiceAction.goToTakeExam:
         await navigatorKey.currentState?.pushNamed('/take_exam');
         break;
@@ -747,6 +750,11 @@ class VoiceCommandService {
       case VoiceAction.goToSettings:
         await navigatorKey.currentState?.pushNamed('/settings');
         break;
+      case VoiceAction.openPaper:
+        if (result.payload is int) {
+          await _handleOpenPaper(result.payload as int);
+        }
+        break;
       case VoiceAction.goToReadPDF:
         await _pickAndOpenPdf();
         break;
@@ -770,11 +778,6 @@ class VoiceCommandService {
         break;
       case VoiceAction.useLocalOcr:
         _navigateToOcr();
-        break;
-      case VoiceAction.openPaper:
-        if (result.payload is int) {
-          _handleOpenPaper(result.payload);
-        }
         break;
       case VoiceAction.increaseVolume:
         await _changeVolume(true);
@@ -935,12 +938,15 @@ class VoiceCommandService {
           }
         }
 
-        // Check for item number if no specific text action was found or if it's a direct number command
         if (itemNumStr != null) {
           int? num = int.tryParse(itemNumStr);
           if (num != null) {
-            // If we have a destination that hints at 'paper', use openPaper
-            if (dest != null && intentStringContains(dest, ['paper', 'file'])) {
+            final lowerSpeech = speech?.toLowerCase() ?? "";
+            // Use speech context to distinguish paper vs question
+            if (lowerSpeech.contains('paper') ||
+                lowerSpeech.contains('file') ||
+                (dest != null &&
+                    intentStringContains(dest, ['paper', 'file']))) {
               action = VoiceAction.openPaper;
               payload = num;
             } else {
@@ -991,12 +997,50 @@ class VoiceCommandService {
 
       case 'formControl':
         final minutesStr = getVal(['minutes']);
+        final lowerSpeech = speech?.toLowerCase() ?? "";
+
         if (minutesStr != null) {
           int? m = int.tryParse(minutesStr);
           if (m != null) {
             action = VoiceAction.setExamTime;
             payload = m;
             tts.speak("Setting exam time to $m minutes.");
+          }
+        } else if (lowerSpeech.contains('name')) {
+          // Heuristic: "set name John Doe" -> "John Doe"
+          // "my name is John" -> "John"
+          final parts = lowerSpeech.split('name');
+          if (parts.length > 1) {
+            String extracted = parts[1].trim();
+            // Remove common filler words
+            extracted = extracted
+                .replaceFirst(RegExp(r'^(is|set|to|as)\s+'), '')
+                .trim();
+            if (extracted.isNotEmpty) {
+              action = VoiceAction.setStudentName;
+              payload = extracted;
+            }
+          }
+          if (action == VoiceAction.unknown) {
+            action = VoiceAction.setStudentName;
+            payload = null; // Trigger prompt
+          }
+        } else if (lowerSpeech.contains('id')) {
+          // Heuristic: "set student id 123" -> "123"
+          final parts = lowerSpeech.split('id');
+          if (parts.length > 1) {
+            String extracted = parts[1].trim();
+            extracted = extracted
+                .replaceFirst(RegExp(r'^(is|set|to|as)\s+'), '')
+                .trim();
+            if (extracted.isNotEmpty) {
+              action = VoiceAction.setStudentID;
+              payload = extracted;
+            }
+          }
+          if (action == VoiceAction.unknown) {
+            action = VoiceAction.setStudentID;
+            payload = null; // Trigger prompt
           }
         } else {
           // Fallback for other form commands
@@ -1027,6 +1071,8 @@ class VoiceCommandService {
             action = VoiceAction.appendAnswer;
           else if (actionSlot == 'open question')
             action = VoiceAction.goToQuestion;
+          else if (actionSlot == 'open paper' || actionSlot == 'select paper')
+            action = VoiceAction.openPaper;
           else if (actionSlot == 'exit' ||
               actionSlot == 'close' ||
               actionSlot == 'stop app')
@@ -1042,6 +1088,9 @@ class VoiceCommandService {
           else if (actionSlot == 'save')
             action = VoiceAction
                 .saveResult; // Map 'save' to saveResult for dialogs/forms
+          else if (actionSlot == 'save to downloads' ||
+              actionSlot == 'download')
+            action = VoiceAction.saveFile;
         } else if (scrollDir != null) {
           if (scrollDir == 'up') {
             action = VoiceAction.scrollUp;
@@ -1084,7 +1133,7 @@ class VoiceCommandService {
       case 'examControl':
         final e = getVal(['exam']);
         if (e == 'start exam' || e == 'start') {
-          action = VoiceAction.goToTakeExam;
+          action = VoiceAction.enterExamMode;
         } else if (e == 'finish exam' ||
             e == 'submit exam' ||
             e == 'finish' ||
@@ -1136,6 +1185,8 @@ class VoiceCommandService {
             action = VoiceAction.saveFile;
           } else if (act == 'reset') {
             action = VoiceAction.resetPreferences;
+          } else if (act.contains('view pdf') || act.contains('open pdf')) {
+            action = VoiceAction.viewPdf;
           }
         }
         break;
@@ -1483,7 +1534,9 @@ class VoiceCommandService {
         context: context,
         barrierDismissible: false,
         builder: (ctx) {
-          final TextEditingController nameController = TextEditingController();
+          final TextEditingController nameController = TextEditingController(
+            text: doc.name,
+          );
           return VoiceAlertDialog(
             title: const Text("Name this Paper"),
             voiceService: this,

@@ -65,6 +65,9 @@ class _TakeExamScreenState extends State<TakeExamScreen> {
 
   void _handleVoiceCommand(CommandResult result) {
     if (!mounted) return;
+    // Prevent handling commands if this screen is not the top-most active screen
+    if (!(ModalRoute.of(context)?.isCurrent ?? false)) return;
+
     switch (result.action) {
       case VoiceAction.scanQuestions:
         _handleScan();
@@ -76,6 +79,20 @@ class _TakeExamScreenState extends State<TakeExamScreen> {
       case VoiceAction.scanGallery:
         // Force gallery logic if possible
         _handleScan();
+        break;
+      case VoiceAction.goToSavedPapers:
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => SavedPapersScreen(
+              ttsService: widget.ttsService,
+              voiceService: widget.voiceService,
+              picovoiceService: widget.picovoiceService,
+              accessibilityService: widget.accessibilityService,
+              isSelectionMode: true, // Exam Flow
+            ),
+          ),
+        );
         break;
       case VoiceAction.goBack:
         Navigator.pop(context);
@@ -168,7 +185,7 @@ class _TakeExamScreenState extends State<TakeExamScreen> {
 
                   _ExamActionTile(
                     icon: Icons.camera_alt_outlined,
-                    label: "Scan Questions",
+                    label: "Scan Papers",
                     subLabel: "Capture & Analyze",
                     color: const Color(0xFF3B82F6),
                     delay: 400,
@@ -177,7 +194,7 @@ class _TakeExamScreenState extends State<TakeExamScreen> {
                   const SizedBox(height: 20),
                   _ExamActionTile(
                     icon: Icons.question_answer_outlined,
-                    label: "Saved Questions",
+                    label: "Saved Papers",
                     subLabel: "Review Archives",
                     color: const Color(0xFF10B981),
                     delay: 500,

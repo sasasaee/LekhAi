@@ -200,10 +200,11 @@ class _OcrScreenState extends State<OcrScreen> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) {
-        final TextEditingController nameController = TextEditingController();
-        if (doc.header.isNotEmpty) {
-          // Try to guess name from header?
-          // nameController.text = doc.header.first;
+        final TextEditingController nameController = TextEditingController(
+          text: doc.name,
+        );
+        if (nameController.text.isEmpty && doc.header.isNotEmpty) {
+          nameController.text = doc.header.first;
         }
 
         return VoiceAlertDialog(
@@ -358,7 +359,7 @@ class _OcrScreenState extends State<OcrScreen> {
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: Text(
-          'Scan Question',
+          'Scan Paper',
           style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
