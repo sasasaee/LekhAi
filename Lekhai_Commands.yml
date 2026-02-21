@@ -1,0 +1,215 @@
+context:
+  expressions:
+    navigation:
+      - Get Started
+      - (@polite) @nav_action $destination:destination
+      - (@polite) show me $destination:destination
+      - @nav_action paper $pv.TwoDigitInteger:itemNumber
+      - @nav_action question $pv.TwoDigitInteger:itemNumber
+    AppControl:
+      - (@polite) $action:action
+      - I want to $action:action
+      - (@polite) scroll down
+      - (@polite) scroll up
+      - (@polite) scroll to top
+      - (@polite) scroll to bottom
+    ChangePages:
+      - (@polite) @direction_action $direction:direction page
+      - (@polite) @direction_action $direction:direction question
+    readContent:
+      - (@polite) @read_action question
+      - (@polite) @read_action this page
+      - (@polite) @read_action last sentence
+      - (@polite) @read_action context
+      - (@polite) @read_action answer
+      - (@polite) $readAction:readAction answering
+      - (@polite) $readAction:readAction speaking
+      - (@polite) $readAction:readAction dictation
+      - (@polite) $readAction:readAction reading
+      - (@polite) play audio
+    examControl:
+      - (@polite) $exam:exam
+      - (@polite) confirm $exam:exam
+      - I want to $exam:exam
+    capture:
+      - (@polite) @scan_action $source:source
+      - (@polite) @scan_action from $source:source
+      - (@polite) use $scan_choice:scan_choice
+      - (@polite) choose $scan_choice:scan_choice
+      - @nav_action $source:source
+    process:
+      - (@polite) $processAction:processAction
+      - (@polite) $processAction:processAction result
+      - (@polite) save file
+      - (@polite) convert file
+      - (@polite) enter exam mode
+    pdfControl:
+      - (@polite) @nav_action page $pv.TwoDigitInteger:pageNumber
+      - (@polite) $pdf_action:pdf_action
+    settingsControl:
+      - (@polite) @edit_action $feature:feature
+      - (@polite) turn on $feature:feature
+      - (@polite) turn off $feature:feature
+      - (@polite) enable $feature:feature
+      - (@polite) disable $feature:feature
+      - (@polite) reset preferences
+    formControl:
+      - (@polite) @edit_action $formItem:item
+      - (@polite) @edit_action exam time $pv.SingleDigitInteger:hour hour $pv.TwoDigitInteger:minute minutes
+      - (@polite) @edit_action exam time $pv.TwoDigitInteger:minutes minutes
+      - (@polite) @edit_action time $pv.TwoDigitInteger:minutes minutes
+      - (@polite) @edit_action total time
+      - (@polite) @edit_action filename
+      - (@polite) name this file
+    deleteItem:
+      - (@polite) @remove_action paper $pv.TwoDigitInteger:itemNumber
+    clearHistory:
+      - (@polite) @remove_action all papers
+      - (@polite) @remove_action history
+    shareContent:
+      - (@polite) @share_action this paper
+      - (@polite) @share_action this file
+      - (@polite) @share_action
+    searchContent:
+      - (@polite) @find_action papers
+      - (@polite) @find_action a paper
+      - (@polite) search
+    dialogControl:
+      - (@polite) $dialog_response:dialog_response
+      - (@polite) select option $pv.TwoDigitInteger:optionNumber
+      - (@polite) choose option $pv.TwoDigitInteger:optionNumber
+      - (@polite) option $pv.TwoDigitInteger:optionNumber
+  slots:
+    formItem:
+      - student name
+      - my name
+      - name
+      - student ID
+      - my ID
+      - ID
+    destination:
+      - home
+      - take exam
+      - read p d f
+      - saved papers
+      - preferences
+      - settings
+      - scan paper
+      - scan questions
+    action:
+      - start
+      - stop
+      - pause
+      - resume
+      - clear answer
+      - edit answer
+      - read answer
+      - exit
+      - close
+      - stop app
+      - start app
+      - confirm
+      - skip
+      - skip naming
+      - save
+    direction:
+      - forward
+      - back
+      - previous
+      - next
+    readAction:
+      - start
+      - stop
+      - pause
+      - resume
+      - restart
+    exam:
+      - start exam
+      - finish exam
+      - submit exam
+      - cancel exam
+      - end exam
+      - exit exam
+    source:
+      - camera
+      - gallery
+      - image
+      - photo
+    scan_choice:
+      - gemini
+      - local
+    processAction:
+      - reset
+      - decrease volume
+      - increase volume
+      - turn down volume
+      - turn up volume
+      - decrease speed
+      - increase speed
+      - enter exam mode
+      - convert
+      - process
+    pdf_action:
+      - zoom in
+      - zoom out
+      - reset zoom
+    feature:
+      - haptics
+      - single tap
+      - voice commands
+    dialog_response:
+      - yes
+      - no
+      - sure
+      - okay
+  macros:
+    polite:
+      - please
+      - kindly
+      - can you
+      - I want to
+    nav_action:
+      - go to
+      - navigate to
+      - take me to
+      - open
+      - show
+      - visit
+    read_action:
+      - read
+      - speak
+      - narrate
+      - tell me
+      - say
+    scan_action:
+      - scan
+      - capture
+      - take
+      - pick
+      - choose
+      - use
+    edit_action:
+      - set
+      - change
+      - enter
+      - input
+      - write
+      - update
+    remove_action:
+      - delete
+      - remove
+      - clear
+      - erase
+    share_action:
+      - share
+      - send
+      - export
+    find_action:
+      - search for
+      - find
+      - look for
+    direction_action:
+      - go
+      - move
+      - switch to
+      - turn

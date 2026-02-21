@@ -9,7 +9,7 @@ import 'package:lekhai/services/tts_service.dart';
 // import 'package:lekhai/services/stt_service.dart'; // Removed
 import 'package:lekhai/services/voice_command_service.dart';
 import 'package:lekhai/services/accessibility_service.dart';
-import 'package:lekhai/models/question_model.dart';
+import 'package:lekhai/models/paper_model.dart';
 import 'package:lekhai/services/picovoice_service.dart';
 import 'package:lekhai/widgets/picovoice_mic_icon.dart';
 
@@ -37,18 +37,24 @@ class ExamInfoScreen extends StatefulWidget {
 
 class _ExamInfoScreenState extends State<ExamInfoScreen> {
   final _formKey = GlobalKey<FormState>();
+  final TextEditingController _hoursController = TextEditingController(
+    text: '1',
+  );
+  final TextEditingController _minutesController = TextEditingController(
+    text: '0',
+  );
+  String _hoursText = '1';
+  String _minutesText = '0';
   String _name = '';
   String _studentId = '';
-  String _timerText = '60'; // Default 60 minutes
-  
+
   // Focus Nodes for Voice Navigation
   final FocusNode _nameFocus = FocusNode();
   final FocusNode _idFocus = FocusNode();
-  final FocusNode _timeFocus = FocusNode();
-  
-  StreamSubscription? _commandSubscription;
+  final FocusNode _hoursFocus = FocusNode();
+  final FocusNode _minutesFocus = FocusNode();
 
-  bool _shouldListen = true;
+  StreamSubscription? _commandSubscription;
 
   @override
   void initState() {
@@ -58,91 +64,117 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
     );
     // _initVoiceListener(); // Removed
     _subscribeToVoiceCommands();
-    
+
     // Add focus listeners for Handoff Resume
     void focusListener() {
-      if (!_nameFocus.hasFocus && !_idFocus.hasFocus && !_timeFocus.hasFocus) {
-          // If all lost focus, assume dictation/editing done
-          widget.picovoiceService.resumeListening();
+      if (!_nameFocus.hasFocus &&
+          !_idFocus.hasFocus &&
+          !_hoursFocus.hasFocus &&
+          !_minutesFocus.hasFocus) {
+        // If all lost focus, assume dictation/editing done
+        widget.picovoiceService.resumeListening();
       }
     }
+
     _nameFocus.addListener(focusListener);
     _idFocus.addListener(focusListener);
-    _timeFocus.addListener(focusListener);
+    _hoursFocus.addListener(focusListener);
+    _minutesFocus.addListener(focusListener);
   }
-  
+
   void _subscribeToVoiceCommands() {
     _commandSubscription = widget.voiceService.commandStream.listen((result) {
       if (mounted) {
-         _executeVoiceCommand(result);
+        _executeVoiceCommand(result);
       }
     });
   }
 
   @override
   void dispose() {
-    _shouldListen = false;
     _commandSubscription?.cancel();
     _nameFocus.dispose();
     _idFocus.dispose();
-    _timeFocus.dispose();
+    _hoursFocus.dispose();
+    _minutesFocus.dispose();
     // widget.sttService.stopListening(); // Removed
+    _hoursController.dispose();
+    _minutesController.dispose();
     super.dispose();
   }
 
   // _initVoiceListener and _startListening Removed
-  
+
   void _executeVoiceCommand(CommandResult result) {
-        if (!(ModalRoute.of(context)?.isCurrent ?? false)) return;
-        if (result.action == VoiceAction.confirmExamStart || 
-            result.action == VoiceAction.enterExamMode ||
-            result.action == VoiceAction.submitForm) {
-          _confirmAndStartExam();
-        } else if (result.action == VoiceAction.goBack || result.action == VoiceAction.cancelExamStart) {
-          Navigator.pop(context);
-        } else if (result.action == VoiceAction.goToHome) {
-           widget.voiceService.performGlobalNavigation(result);
+    if (!mounted) return;
+    if (!(ModalRoute.of(context)?.isCurrent ?? false)) return;
+
+    if (result.action == VoiceAction.confirmExamStart ||
+        result.action == VoiceAction.enterExamMode ||
+        result.action == VoiceAction.submitForm) {
+      _confirmAndStartExam();
+    } else if (result.action == VoiceAction.goBack ||
+        result.action == VoiceAction.cancelExamStart) {
+      Navigator.pop(context);
+    } else if (result.action == VoiceAction.goToHome) {
+      widget.voiceService.performGlobalNavigation(result);
+    }
+
+    // Form Navigation
+    if (result.action == VoiceAction.setStudentName) {
+      if (result.payload != null && result.payload.toString().isNotEmpty) {
+        setState(() => _name = result.payload.toString());
+        widget.ttsService.speak("Name set to $_name");
+        widget.picovoiceService.resumeListening(); // Direct set -> resume
+      } else {
+        FocusScope.of(context).requestFocus(_nameFocus);
+        widget.ttsService.speak("Please say or type your name.");
+        // Don't resume -> wait for focus loss
+      }
+    }
+    if (result.action == VoiceAction.setStudentID) {
+      if (result.payload != null && result.payload.toString().isNotEmpty) {
+        setState(() => _studentId = result.payload.toString());
+        widget.ttsService.speak("ID set to $_studentId");
+        widget.picovoiceService.resumeListening();
+      } else {
+        FocusScope.of(context).requestFocus(_idFocus);
+        widget.ttsService.speak("Please say or type your ID.");
+      }
+    }
+    if (result.action == VoiceAction.setExamTime) {
+      if (result.payload != null) {
+        int totalMinutes = 0;
+        if (result.payload is int) {
+          totalMinutes = result.payload;
+        } else {
+          String p = result.payload.toString().replaceAll(
+            RegExp(r'[^0-9]'),
+            '',
+          );
+          totalMinutes = int.tryParse(p) ?? 0;
         }
-        
-        // Form Navigation
-        if (result.action == VoiceAction.setStudentName) {
-            if (result.payload != null && result.payload.toString().isNotEmpty) {
-               setState(() => _name = result.payload.toString());
-               widget.ttsService.speak("Name set to $_name");
-               widget.picovoiceService.resumeListening(); // Direct set -> resume
-            } else {
-               FocusScope.of(context).requestFocus(_nameFocus);
-               widget.ttsService.speak("Please say or type your name.");
-               // Don't resume -> wait for focus loss
-            }
+
+        if (totalMinutes > 0) {
+          int h = totalMinutes ~/ 60;
+          int m = totalMinutes % 60;
+          setState(() {
+            _hoursText = h.toString();
+            _minutesText = m.toString();
+            _hoursController.text = h.toString();
+            _minutesController.text = m.toString();
+          });
+          widget.ttsService.speak("Duration set to $h hours and $m minutes");
+          widget.picovoiceService.resumeListening();
+        } else {
+          widget.ttsService.speak("Invalid time format.");
+          widget.picovoiceService.resumeListening();
         }
-        if (result.action == VoiceAction.setStudentID) {
-            if (result.payload != null && result.payload.toString().isNotEmpty) {
-               setState(() => _studentId = result.payload.toString());
-               widget.ttsService.speak("ID set to $_studentId");
-               widget.picovoiceService.resumeListening();
-            } else {
-               FocusScope.of(context).requestFocus(_idFocus);
-               widget.ttsService.speak("Please say or type your ID.");
-            }
-        }
-        if (result.action == VoiceAction.setExamTime) {
-            if (result.payload != null && result.payload.toString().isNotEmpty) {
-               // extract just digits if needed, though payload should be clean
-               String p = result.payload.toString().replaceAll(RegExp(r'[^0-9]'), '');
-               if (p.isNotEmpty) {
-                  setState(() => _timerText = p);
-                  widget.ttsService.speak("Duration set to $_timerText minutes");
-                  widget.picovoiceService.resumeListening();
-               } else {
-                   widget.ttsService.speak("Invalid time format.");
-                   widget.picovoiceService.resumeListening(); // Resume anyway on error
-               }
-            } else {
-               FocusScope.of(context).requestFocus(_timeFocus);
-               widget.ttsService.speak("Please set the exam duration.");
-            }
-        }
+      } else {
+        FocusScope.of(context).requestFocus(_hoursFocus);
+        widget.ttsService.speak("Please set the exam duration.");
+      }
+    }
   }
 
   void _confirmAndStartExam() {
@@ -151,9 +183,12 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
       return;
     }
 
-    int? minutes = int.tryParse(_timerText);
-    if (minutes == null || minutes <= 0) {
-      widget.ttsService.speak("Invalid duration.");
+    int hours = int.tryParse(_hoursText) ?? 0;
+    int minutes = int.tryParse(_minutesText) ?? 0;
+    int totalMinutes = (hours * 60) + minutes;
+
+    if (totalMinutes <= 0) {
+      widget.ttsService.speak("Invalid duration. Must be at least 1 minute.");
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Please enter a valid duration > 0")),
       );
@@ -161,10 +196,10 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
     }
 
     // Convert to seconds
-    int durationSeconds = minutes * 60;
+    int durationSeconds = totalMinutes * 60;
 
     widget.ttsService.speak(
-      "Starting exam for $_name with $minutes minutes duration.",
+      "Starting exam for $_name with $hours hours and $minutes minutes duration.",
     );
 
     Navigator.pushReplacement(
@@ -328,24 +363,64 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
                   const SizedBox(height: 16),
 
                   // Timer Input
-                  TextFormField(
-                    focusNode: _timeFocus,
-                    initialValue: _timerText,
-                    style: GoogleFonts.outfit(color: Colors.white),
-                    keyboardType: TextInputType.number,
-                    decoration: _inputDecoration(
-                      "Duration (Minutes)",
-                      Icons.timer,
-                    ),
-                    validator: (val) {
-                      if (val == null || val.isEmpty) {
-                        return "Duration required";
-                      }
-                      final n = int.tryParse(val);
-                      if (n == null || n <= 0) return "Must be positive";
-                      return null;
-                    },
-                    onChanged: (val) => setState(() => _timerText = val),
+                  // Timer Input (Hours and Minutes)
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _hoursController,
+                          focusNode: _hoursFocus,
+                          keyboardType: TextInputType.number,
+                          style: GoogleFonts.outfit(color: Colors.white),
+                          decoration: _inputDecoration("Hours", Icons.timer),
+                          validator: (val) {
+                            if (val == null || val.isEmpty) return "Required";
+                            final n = int.tryParse(val);
+                            if (n == null || n < 0) return "Invalid";
+                            return null;
+                          },
+                          onChanged: (val) {
+                            setState(() {
+                              _hoursText = val;
+                            });
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: TextFormField(
+                          controller: _minutesController,
+                          focusNode: _minutesFocus,
+                          keyboardType: TextInputType.number,
+                          style: GoogleFonts.outfit(color: Colors.white),
+                          decoration: InputDecoration(
+                            labelText: "Minutes",
+                            labelStyle: const TextStyle(color: Colors.white60),
+                            prefixIcon: const Icon(
+                              Icons.timer_outlined,
+                              color: Colors.white60,
+                            ),
+                            filled: true,
+                            fillColor: Colors.white.withValues(alpha: 0.05),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                          validator: (val) {
+                            if (val == null || val.isEmpty) return "Required";
+                            final n = int.tryParse(val);
+                            if (n == null || n < 0) return "Invalid";
+                            return null;
+                          },
+                          onChanged: (val) {
+                            setState(() {
+                              _minutesText = val;
+                            });
+                          },
+                        ),
+                      ),
+                    ],
                   ),
 
                   const SizedBox(height: 40),
@@ -354,7 +429,7 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
                     onPressed:
                         (_name.isNotEmpty &&
                             _studentId.isNotEmpty &&
-                            _timerText.isNotEmpty)
+                            (_hoursText.isNotEmpty || _minutesText.isNotEmpty))
                         ? _confirmAndStartExam
                         : null, // Disable if fields empty
                     style: ElevatedButton.styleFrom(

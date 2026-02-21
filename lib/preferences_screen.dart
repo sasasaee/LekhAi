@@ -4,7 +4,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'services/tts_service.dart';
 import 'widgets/picovoice_mic_icon.dart'; // Added
-import 'package:permission_handler/permission_handler.dart';
 import 'services/voice_command_service.dart';
 import 'services/accessibility_service.dart';
 import 'services/picovoice_service.dart'; // Added
