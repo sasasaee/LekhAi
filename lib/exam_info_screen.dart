@@ -12,6 +12,17 @@ import 'package:lekhai/services/accessibility_service.dart';
 import 'package:lekhai/models/paper_model.dart';
 import 'package:lekhai/services/picovoice_service.dart';
 import 'package:lekhai/widgets/picovoice_mic_icon.dart';
+import 'package:lekhai/widgets/accessible_widgets.dart';
+import 'package:lekhai/services/audio_recorder_service.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:audioplayers/audioplayers.dart';
+import 'dart:io';
+import 'package:lekhai/utils/string_utils.dart';
+import 'package:lekhai/widgets/voice_alert_dialog.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:lekhai/services/gemini_paper_service.dart';
+
+enum DictationField { name, id, none }
 
 class ExamInfoScreen extends StatefulWidget {
   final ParsedDocument document;
@@ -48,6 +59,9 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
   String _name = '';
   String _studentId = '';
 
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _idController = TextEditingController();
+
   // Focus Nodes for Voice Navigation
   final FocusNode _nameFocus = FocusNode();
   final FocusNode _idFocus = FocusNode();
@@ -55,6 +69,16 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
   final FocusNode _minutesFocus = FocusNode();
 
   StreamSubscription? _commandSubscription;
+
+  // Audio Recording states
+  final AudioRecorderService _audioRecorderService = AudioRecorderService();
+  bool _isListening = false;
+  bool _isProcessingAudio = false;
+  bool _isListeningDialogOpen = false;
+  bool _isTranscribingDialogOpen = false;
+  String? _tempAudioPath;
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  DictationField _currentDictationField = DictationField.none;
 
   @override
   void initState() {
@@ -80,6 +104,9 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
     _idFocus.addListener(focusListener);
     _hoursFocus.addListener(focusListener);
     _minutesFocus.addListener(focusListener);
+
+    // Initial safety resume
+    widget.picovoiceService.resumeListening();
   }
 
   void _subscribeToVoiceCommands() {
@@ -88,18 +115,30 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
         _executeVoiceCommand(result);
       }
     });
+    widget.picovoiceService.stateNotifier.addListener(_onPicovoiceStateChanged);
+  }
+
+  void _onPicovoiceStateChanged() {
+    if (widget.picovoiceService.stateNotifier.value == PicovoiceState.wakeDetected) {
+      if (_isListening) {
+        _stopListening();
+      }
+    }
   }
 
   @override
   void dispose() {
     _commandSubscription?.cancel();
+    widget.picovoiceService.stateNotifier.removeListener(_onPicovoiceStateChanged);
+    _audioPlayer.dispose();
     _nameFocus.dispose();
     _idFocus.dispose();
     _hoursFocus.dispose();
     _minutesFocus.dispose();
-    // widget.sttService.stopListening(); // Removed
     _hoursController.dispose();
     _minutesController.dispose();
+    _nameController.dispose();
+    _idController.dispose();
     super.dispose();
   }
 
@@ -123,24 +162,40 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
     // Form Navigation
     if (result.action == VoiceAction.setStudentName) {
       if (result.payload != null && result.payload.toString().isNotEmpty) {
-        setState(() => _name = result.payload.toString());
+        setState(() {
+          _name = result.payload.toString();
+          _nameController.text = _name;
+        });
         widget.ttsService.speak("Name set to $_name");
         widget.picovoiceService.resumeListening(); // Direct set -> resume
       } else {
         FocusScope.of(context).requestFocus(_nameFocus);
-        widget.ttsService.speak("Please say or type your name.");
-        // Don't resume -> wait for focus loss
+        _startListening();
       }
     }
     if (result.action == VoiceAction.setStudentID) {
       if (result.payload != null && result.payload.toString().isNotEmpty) {
-        setState(() => _studentId = result.payload.toString());
+        setState(() {
+          _studentId = result.payload.toString();
+          _idController.text = _studentId;
+        });
         widget.ttsService.speak("ID set to $_studentId");
         widget.picovoiceService.resumeListening();
       } else {
         FocusScope.of(context).requestFocus(_idFocus);
-        widget.ttsService.speak("Please say or type your ID.");
+        _startListening();
       }
+    }
+    if (result.action == VoiceAction.startDictation) {
+      if (_nameFocus.hasFocus || _idFocus.hasFocus) {
+        _startListening();
+      } else {
+        widget.ttsService.speak("Please select name or ID field first.");
+        widget.picovoiceService.resumeListening();
+      }
+    }
+    if (result.action == VoiceAction.stopDictation) {
+      _stopListening();
     }
     if (result.action == VoiceAction.setExamTime) {
       if (result.payload != null) {
@@ -174,6 +229,244 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
         FocusScope.of(context).requestFocus(_hoursFocus);
         widget.ttsService.speak("Please set the exam duration.");
       }
+    }
+  }
+
+  void _startListening() async {
+    if (!await _audioRecorderService.hasPermission()) {
+      widget.ttsService.speak("Microphone permission needed.");
+      return;
+    }
+
+    if (_nameFocus.hasFocus) {
+      _currentDictationField = DictationField.name;
+    } else if (_idFocus.hasFocus) {
+      _currentDictationField = DictationField.id;
+    } else {
+      _currentDictationField = DictationField.none;
+    }
+
+    await widget.ttsService.speak("Listening.");
+    await Future.delayed(const Duration(milliseconds: 600));
+    final tempDir = await getTemporaryDirectory();
+    _tempAudioPath = '${tempDir.path}/temp_form_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    try {
+      await _audioRecorderService.startRecording(_tempAudioPath!);
+      setState(() {
+        _isListening = true;
+        _isProcessingAudio = false;
+      });
+      if (mounted && !_isListeningDialogOpen) {
+        _isListeningDialogOpen = true;
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            content: Row(
+              children: const [
+                CircularProgressIndicator(),
+                SizedBox(width: 16),
+                Expanded(child: Text("Listening... Say 'hey lekhai stop' to finish.")),
+              ],
+            ),
+          ),
+        ).then((_) => _isListeningDialogOpen = false);
+      }
+    } catch (e) {
+      widget.ttsService.speak("Failed to start recording.");
+    }
+  }
+
+  void _stopListening() async {
+    if (_isListening) {
+      final path = await _audioRecorderService.stopRecording();
+      
+      if (_isListeningDialogOpen && mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        _isListeningDialogOpen = false;
+      }
+
+      setState(() {
+        _isListening = false;
+        _isProcessingAudio = true;
+      });
+      if (path == null) {
+        widget.ttsService.speak("Recording failed.");
+        setState(() => _isProcessingAudio = false);
+        return;
+      }
+      
+      if (mounted && !_isTranscribingDialogOpen) {
+        _isTranscribingDialogOpen = true;
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            content: Row(
+              children: const [
+                CircularProgressIndicator(),
+                SizedBox(width: 16),
+                Text("Transcribing..."),
+              ],
+            ),
+          ),
+        ).then((_) => _isTranscribingDialogOpen = false);
+      }
+
+      await _processAudioDictation(path);
+    }
+  }
+
+  Future<void> _processAudioDictation(String audioPath) async {
+    final prefs = await SharedPreferences.getInstance();
+    final apiKey = prefs.getString('gemini_api_key');
+    String transcribedText = "";
+    if (apiKey != null && apiKey.isNotEmpty) {
+      try {
+        final geminiService = GeminiPaperService();
+        transcribedText = await geminiService.transcribeAudio(audioPath, apiKey);
+      } catch (e) {
+        transcribedText = "[Transcription Failed: $e]";
+      }
+    } else {
+      transcribedText = "[No API Key - Audio Saved. Type answer manually.]";
+      widget.ttsService.speak("No API Key found. Audio saved, please type manually.");
+    }
+    if (!mounted) return;
+
+    if (_isTranscribingDialogOpen) {
+      Navigator.of(context, rootNavigator: true).pop();
+      _isTranscribingDialogOpen = false;
+    }
+
+    String processed = StringUtils.stripWakeWordsAndCommands(transcribedText);
+
+    setState(() {
+      _isProcessingAudio = false;
+    });
+
+    await Future.delayed(const Duration(milliseconds: 100));
+    _onDictationFinished(processed);
+  }
+
+  void _onDictationFinished(String answer) async {
+    // If dictating ID, extract digits first
+    if (_currentDictationField == DictationField.id) {
+      answer = StringUtils.extractDigits(answer);
+      if (answer.isEmpty) {
+        widget.ttsService.speak("I couldn't hear any numbers. Please try again.");
+        widget.picovoiceService.resumeListening();
+        return; // Don't show confirmation if empty ID
+      }
+    }
+
+    if (answer.isEmpty) {
+      widget.ttsService.speak("I couldn't hear anything. Please try again.");
+      widget.picovoiceService.resumeListening();
+      return;
+    }
+
+    widget.ttsService.speak("You said: $answer. Is this correct?");
+    if (mounted) {
+      _showConfirmationDialog(answer);
+    }
+  }
+
+  Future<void> _showConfirmationDialog(String answer) async {
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => VoiceAlertDialog(
+        voiceService: widget.voiceService,
+        onConfirm: () async {
+          Navigator.pop(ctx);
+          if (_currentDictationField == DictationField.name) {
+            setState(() {
+              _name = answer;
+              _nameController.text = answer;
+            });
+          } else if (_currentDictationField == DictationField.id) {
+            setState(() {
+              _studentId = answer;
+              _idController.text = answer;
+            });
+          }
+          _discardAudio();
+          widget.ttsService.speak("Saved.");
+          widget.picovoiceService.resumeListening(); // Direct set -> resume
+          FocusScope.of(context).unfocus(); // Unfocus text fields after save
+        },
+        onCancel: () {
+          Navigator.pop(ctx);
+          _discardAudio();
+          // refocus the correct field before retrying
+          if (_currentDictationField == DictationField.name) {
+            FocusScope.of(context).requestFocus(_nameFocus);
+          } else if (_currentDictationField == DictationField.id) {
+            FocusScope.of(context).requestFocus(_idFocus);
+          }
+          widget.picovoiceService.resumeListening();
+        },
+        title: const Text("Confirm"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text("You said:\n\n$answer"),
+            if (_tempAudioPath != null)
+              TextButton.icon(
+                icon: const Icon(Icons.play_arrow),
+                label: const Text("Play Preview"),
+                onPressed: () async {
+                  await _audioPlayer.play(DeviceFileSource(_tempAudioPath!));
+                },
+              ),
+          ],
+        ),
+        actions: [
+          AccessibleTextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _discardAudio();
+              if (_currentDictationField == DictationField.name) {
+                FocusScope.of(context).requestFocus(_nameFocus);
+              } else if (_currentDictationField == DictationField.id) {
+                FocusScope.of(context).requestFocus(_idFocus);
+              }
+              widget.picovoiceService.resumeListening();
+            },
+            child: const Text("Retry"),
+          ),
+          AccessibleElevatedButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              if (_currentDictationField == DictationField.name) {
+                setState(() {
+                  _name = answer;
+                  _nameController.text = answer;
+                });
+              } else if (_currentDictationField == DictationField.id) {
+                setState(() {
+                  _studentId = answer;
+                  _idController.text = answer;
+                });
+              }
+              _discardAudio();
+              widget.ttsService.speak("Saved.");
+              widget.picovoiceService.resumeListening();
+              FocusScope.of(context).unfocus(); 
+            },
+            child: const Text("Confirm"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _discardAudio() {
+    if (_tempAudioPath != null) {
+      final file = File(_tempAudioPath!);
+      if (file.existsSync()) file.deleteSync();
+      _tempAudioPath = null;
     }
   }
 
@@ -330,8 +623,8 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
 
                   // Name input
                   TextFormField(
+                    controller: _nameController,
                     focusNode: _nameFocus,
-                    initialValue: _name,
                     style: GoogleFonts.outfit(color: Colors.white),
                     decoration: _inputDecoration("Full Name", Icons.person),
                     validator: (val) =>
@@ -342,8 +635,8 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
 
                   // Student ID input
                   TextFormField(
+                    controller: _idController,
                     focusNode: _idFocus,
-                    initialValue: _studentId,
                     style: GoogleFonts.outfit(color: Colors.white),
                     decoration: _inputDecoration("Student ID", Icons.badge),
                     validator: (val) =>

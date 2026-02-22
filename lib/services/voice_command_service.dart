@@ -588,14 +588,15 @@ class VoiceCommandService {
       return CommandResult(VoiceAction.readLastSentence);
     }
 
-    if (text.contains("start dictation") || text.contains("start writing")) {
+    if (text.contains("start dictation") || text.contains("start writing") || text.contains("start answer")) {
       return CommandResult(VoiceAction.startDictation);
     }
     if (text.contains("stop dictation") ||
         text.contains("stop answering") ||
         text.contains("stop writing") ||
         text.contains("pause writing") ||
-        text.contains("pause dictation")) {
+        text.contains("pause dictation") ||
+        text.contains("stop answer")) {
       return CommandResult(VoiceAction.stopDictation);
     }
     if (text.contains("read question") || text.contains("repeat question")) {
@@ -614,10 +615,10 @@ class VoiceCommandService {
       return CommandResult(VoiceAction.startApp);
     }
 
-    if (text.contains("confirm")) {
+    if (text.contains("confirm") || text.contains("yes") || text.contains("correct")) {
       return CommandResult(VoiceAction.confirmAction);
     }
-    if (text.contains("cancel")) return CommandResult(VoiceAction.cancelAction);
+    if (text.contains("cancel") || text.contains("no") || text.contains("retry")) return CommandResult(VoiceAction.cancelAction);
 
     if (text.contains("student name") || text.contains("my name")) {
       return CommandResult(VoiceAction.setStudentName);
