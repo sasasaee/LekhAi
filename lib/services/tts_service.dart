@@ -6,10 +6,14 @@ import 'package:flutter/foundation.dart';
 import 'math_text_processor.dart';
 
 class TtsService {
+  static final TtsService _instance = TtsService._internal();
+  factory TtsService() => _instance;
+
   final FlutterTts _tts = FlutterTts();
   bool _initialized = false;
+  bool _isTransitioning = false;
 
-  String? _lastText;
+  String _lastText = "";
   bool _isPaused = false;
   bool get isPaused => _isPaused; //public getter for the pdf read
 
@@ -20,7 +24,7 @@ class TtsService {
       false; // Internal flag to know if we are actually speaking to auto-resume
   bool get isSpeaking => _isSpeaking;
 
-  TtsService() {
+  TtsService._internal() {
     _init();
   }
 
@@ -50,6 +54,10 @@ class TtsService {
 
     _defaultCompletionHandler = () {
       debugPrint("TTS → setCompletionHandler callback fired");
+      if (_isTransitioning) {
+        debugPrint("TTS → Suppressing END signal (transitioning)");
+        return;
+      }
       _isSpeaking = false;
       _currentWordStart = 0;
       debugPrint("TTS → Broadcasting speakingStream: FALSE");
@@ -78,6 +86,10 @@ class TtsService {
 
     _tts.setCancelHandler(() {
       debugPrint("TTS → setCancelHandler callback fired");
+      if (_isTransitioning) {
+        debugPrint("TTS → Suppressing END signal (transitioning)");
+        return;
+      }
       _isSpeaking = false;
       _currentWordStart = 0;
       _speakingController.add(false);
@@ -85,6 +97,7 @@ class TtsService {
 
     _tts.setErrorHandler((msg) {
       debugPrint("TTS → setErrorHandler callback fired: $msg");
+      if (_isTransitioning) return;
       _isSpeaking = false;
       _speakingController.add(false);
     });
@@ -147,29 +160,21 @@ class TtsService {
 
     // CRITICAL: Broadcast speaking=true IMMEDIATELY to prevent STT restart race condition
     // The setStartHandler might fire later, but STT needs to know NOW that we're about to speak
-    debugPrint("TTS → Broadcasting speakingStream: TRUE (pre-speak)");
-    _speakingController.add(true);
-    _isSpeaking = true;
-    debugPrint("TTS → _isSpeaking set to true");
+    debugPrint("TTS → speak() called with: '${text.substring(0, text.length > 50 ? 50 : text.length)}...'");
 
-    // Stop any current speech - this ends the previous utterance
-    // Broadcast FALSE to signal the previous speech has stopped
-    if (_isSpeaking) {
-      debugPrint(
-        "TTS → Stopping previous speech, broadcasting speakingStream: FALSE",
-      );
-      await _tts.stop();
-      _speakingController.add(false);
-      await Future.delayed(const Duration(milliseconds: 100)); // Brief pause
-    } else {
-      await _tts.stop();
+    // Pre-emptively signal intent to speak if NOT already speaking
+    if (!_isSpeaking) {
+      debugPrint("TTS → Broadcasting speakingStream: TRUE (pre-speak)");
+      _speakingController.add(true);
+      _isSpeaking = true;
     }
-    debugPrint("TTS → Stopped previous speech");
 
-    // Now broadcast TRUE again for the NEW speech
-    debugPrint("TTS → Broadcasting speakingStream: TRUE (for new speech)");
-    _speakingController.add(true);
-    _isSpeaking = true;
+    // Stop any current speech - this ends the previous utterance internally
+    // but WE DON'T broadcast FALSE here, because we are immediately starting new speech.
+    _isTransitioning = true;
+    await _tts.stop();
+    _isTransitioning = false;
+    debugPrint("TTS → Stopped previous speech engines (internally)");
 
     final processedText = _preprocessText(text);
     _lastText = processedText;
@@ -181,16 +186,15 @@ class TtsService {
     debugPrint("TTS → Platform speak() returned (but may still be speaking)");
 
     // FALLBACK: Estimate speech duration and broadcast FALSE after completion
-    // This ensures STT resumes even if no follow-up speech occurs
-    // Rough estimate: ~150ms per word (at default speed)
+    // Conservative estimate: 250ms per word + 1 second buffer
     final wordCount = processedText.split(' ').length;
-    final estimatedDurationMs = (wordCount * 150) + 200; // Add 00ms buffer
+    final estimatedDurationMs = (wordCount * 250) + 1000; 
 
     debugPrint("TTS → Setting fallback timer for ${estimatedDurationMs}ms");
     Future.delayed(Duration(milliseconds: estimatedDurationMs), () {
-      if (_isSpeaking) {
+      if (_isSpeaking && _lastText == processedText) {
         debugPrint(
-          "TTS → Fallback timer fired. Broadcasting speakingStream: FALSE",
+          "TTS → Fallback timer fired for '$_lastText'. Broadcasting speakingStream: FALSE",
         );
         _isSpeaking = false;
         _speakingController.add(false);
@@ -255,9 +259,9 @@ class TtsService {
   }
 
   Future<void> resume() async {
-    if (_isPaused && _lastText != null) {
+    if (_isPaused) {
       // If we have progress, resume from there
-      String textToSpeak = _lastText!;
+      String textToSpeak = _lastText;
       if (_currentWordStart > 0 && _currentWordStart < textToSpeak.length) {
         textToSpeak = textToSpeak.substring(_currentWordStart);
       }

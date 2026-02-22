@@ -1,4 +1,5 @@
 import 'package:porcupine_flutter/porcupine_manager.dart';
+import 'dart:async';
 import 'package:porcupine_flutter/porcupine_error.dart';
 // import 'package:porcupine_flutter/porcupine.dart';
 import 'package:rhino_flutter/rhino_manager.dart';
@@ -36,6 +37,8 @@ class PicovoiceService {
   final AccessibilityService _accessibility = AccessibilityService();
   VoiceCommandService? _voiceCommandService;
 
+  StreamSubscription<bool>? _ttsSubscription;
+
   // State
   final ValueNotifier<PicovoiceState> stateNotifier = ValueNotifier(
     PicovoiceState.idle,
@@ -55,6 +58,8 @@ class PicovoiceService {
 
   bool _isInitialized = false;
   bool _isEnabled = true; // Default to true
+  bool _isStarting = false; // Prevention latch for concurrent starts
+  bool _isPorcupineRunning = false; // Internal tracking of Porcupine engine state
 
   PicovoiceService._internal();
 
@@ -65,7 +70,9 @@ class PicovoiceService {
     await _loadSettings();
 
     // Subscribe to TTS to handle collisions
-    _tts.speakingStream.listen((isSpeaking) {
+    _ttsSubscription?.cancel();
+    _ttsSubscription = _tts.speakingStream.listen((isSpeaking) {
+      debugPrint("Picovoice: TTS speakingStream received: $isSpeaking");
       if (isSpeaking) {
         _pauseForTts();
       } else {
@@ -141,6 +148,11 @@ class PicovoiceService {
   Future<void> _initEngines() async {
     debugPrint("Picovoice: Using AccessKey: ${_accessKey?.substring(0, 5)}...");
 
+    if (_isPorcupineRunning) {
+      debugPrint("Picovoice: Engines already running. Stopping before re-init.");
+      await _stopEngines();
+    }
+
     try {
       // Extract assets to local file system
       final keywordPath = await _extractAsset(_keywordPath);
@@ -162,11 +174,10 @@ class PicovoiceService {
         _accessKey!,
         [keywordPath],
         _wakeWordCallback,
-        errorCallback: (error) {
-          debugPrint("Picovoice: Porcupine Error: $error");
-          _errorCallback(error);
-        },
+        errorCallback: _errorCallback,
       );
+      _isPorcupineRunning = true; // fromKeywordPaths automatically starts the engines
+      debugPrint("Picovoice: Porcupine engine started.");
 
       // Initialize Rhino (Speech-to-Intent)
       _rhinoManager = await RhinoManager.create(
@@ -175,18 +186,12 @@ class PicovoiceService {
         _inferenceCallback,
         sensitivity:
             0.7, // Increased sensitivity for better short phrase recognition
-        processErrorCallback: (error) {
-          debugPrint("Picovoice: Rhino Error: $error");
-          _errorCallback(error);
-        },
+        processErrorCallback: _errorCallback,
       );
 
-      // Start Porcupine Loop
-      await _porcupineManager?.start();
       _isInitialized = true;
-      debugPrint(
-        "Picovoice: Engines Initialized successfully. State: ${stateNotifier.value}",
-      );
+      stateNotifier.value = PicovoiceState.idle;
+      debugPrint("Picovoice: Engines initialized. State -> Idle.");
       debugPrint(
         "Picovoice: Listening for Wake Word ONLY (Filename: ${keywordPath.split('/').last})",
       );
@@ -206,14 +211,19 @@ class PicovoiceService {
   }
 
   Future<void> _stopEngines() async {
-    await _porcupineManager?.stop();
-    await _porcupineManager?.delete();
-    _porcupineManager = null;
-
-    await _rhinoManager
-        ?.delete(); // Rhino doesn't have stop(), just delete/process
-    _rhinoManager = null;
-
+    try {
+      if (_isPorcupineRunning) {
+        debugPrint("Picovoice: Stopping Porcupine...");
+        await _porcupineManager?.stop();
+        _isPorcupineRunning = false;
+      }
+      await _porcupineManager?.delete();
+      await _rhinoManager?.delete();
+      _porcupineManager = null;
+      _rhinoManager = null;
+    } catch (e) {
+      debugPrint("Picovoice: Error stopping engines: $e");
+    }
     _isInitialized = false;
   }
 
@@ -229,14 +239,26 @@ class PicovoiceService {
     // 2. Switch to Rhino
     try {
       await _porcupineManager?.stop();
+      _isPorcupineRunning = false;
       stateNotifier.value = PicovoiceState.commandListening;
       debugPrint("Picovoice: Listening for command...");
       await _rhinoManager?.process();
     } catch (e) {
       debugPrint("Picovoice: Error switching to Rhino: $e");
       // Try to recover
-      stateNotifier.value = PicovoiceState.idle;
-      await _porcupineManager?.start();
+      stateNotifier.value = PicovoiceState.error; // Changed from idle to error for better visibility
+      // Attempt to restart Porcupine if it's not running
+      if (!_isPorcupineRunning) {
+        try {
+          await _porcupineManager?.start();
+          _isPorcupineRunning = true;
+          stateNotifier.value = PicovoiceState.idle;
+          debugPrint("Picovoice: Porcupine restarted after Rhino switch error.");
+        } catch (restartError) {
+          debugPrint("Picovoice: Error restarting Porcupine after Rhino switch error: $restartError");
+          errorNotifier.value = "Failed to recover after Rhino switch error.";
+        }
+      }
     }
   }
 
@@ -272,10 +294,26 @@ class PicovoiceService {
           PicovoiceState.processing; // or a new state like 'pausedForDictation'
       // DO NOT RESTART PORCUPINE HERE
     } else {
+      // --- ROBUST STATE PROTECTION ---
+      // If executeIntent triggered speech, state might already be ttsSpeaking.
+      // Do NOT overwrite it to idle, otherwise _resumeFromTts will never fire.
+      if (_tts.isSpeaking) {
+        debugPrint(
+          "Picovoice: Inference done but TTS is speaking. Switching to ttsSpeaking state.",
+        );
+        stateNotifier.value = PicovoiceState.ttsSpeaking;
+        // The TTS listener will handle porcupine restarting.
+        return;
+      }
+
       // Return to Idle (Wake Word Listening)
       stateNotifier.value = PicovoiceState.idle;
       try {
-        await _porcupineManager?.start();
+        if (!_isPorcupineRunning) {
+          debugPrint("Picovoice: Restarting Porcupine after inference.");
+          await _porcupineManager?.start();
+          _isPorcupineRunning = true;
+        }
       } catch (e) {
         debugPrint("Picovoice: Error restarting Porcupine: $e");
         stateNotifier.value = PicovoiceState.error;
@@ -285,15 +323,33 @@ class PicovoiceService {
 
   /// Call this when the external dictation/task is finished to resume listening.
   Future<void> resumeListening() async {
-    if (!_isInitialized || !_isEnabled) return;
+    if (!_isInitialized || !_isEnabled || _isStarting) return;
+
+    if (_tts.isSpeaking) {
+      debugPrint(
+        "Picovoice: resumeListening called but TTS is speaking. Setting state to ttsSpeaking and waiting.",
+      );
+      stateNotifier.value = PicovoiceState.ttsSpeaking;
+      // Porcupine should already be stopped via the speakingStream listener
+      return;
+    }
 
     debugPrint("Picovoice: Resuming listening after handoff.");
     stateNotifier.value = PicovoiceState.idle;
+    _isStarting = true;
     try {
-      await _porcupineManager?.start();
+      if (!_isPorcupineRunning) {
+        await _porcupineManager?.start();
+        _isPorcupineRunning = true;
+        debugPrint("Picovoice: Porcupine resumed.");
+      } else {
+        debugPrint("Picovoice: Porcupine already running.");
+      }
     } catch (e) {
       debugPrint("Picovoice: Error resuming Porcupine: $e");
       stateNotifier.value = PicovoiceState.error;
+    } finally {
+      _isStarting = false;
     }
   }
 
@@ -305,26 +361,47 @@ class PicovoiceService {
   // --- Controls ---
 
   Future<void> _pauseForTts() async {
-    if (_isInitialized) {
+    if (_isInitialized && _isPorcupineRunning) {
       debugPrint("Picovoice: Pausing for TTS");
+      try {
+        await _porcupineManager?.stop();
+        _isPorcupineRunning = false;
+        stateNotifier.value = PicovoiceState.ttsSpeaking;
+      } catch (e) {
+        debugPrint("Picovoice: Error pausing Porcupine: $e");
+      }
+    } else if (_isInitialized) {
+      // Even if already stopped, we should be in ttsSpeaking state if TTS started
       stateNotifier.value = PicovoiceState.ttsSpeaking;
-      // Stop whichever is running
-      // Usually Porcupine is running in Idle loop.
-      await _porcupineManager?.stop();
-      // Rhino usually stops itself after inference, so we assume we are in Idle or Listening.
-      // If we are in Rhino mode, we can't easily "pause" it mid-inference without delete/create?
-      // Rhino `process()` blocks? No, it's async but internally manages audio.
-      // We'll assume Porcupine is the main one to pause.
-      // If Rhino is active, TTS hopefully won't trigger until inference is done?
-      // Or if TTS triggers, Rhino might just fail to hear?
     }
   }
 
   Future<void> _resumeFromTts() async {
-    if (_isInitialized && stateNotifier.value == PicovoiceState.ttsSpeaking) {
+    if (_isInitialized &&
+        stateNotifier.value == PicovoiceState.ttsSpeaking &&
+        !_isStarting) {
       debugPrint("Picovoice: Resuming after TTS");
-      await _porcupineManager?.start();
-      stateNotifier.value = PicovoiceState.idle;
+      // Add a stabilization delay to ensure native audio session is fully released
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (!_tts.isSpeaking && stateNotifier.value == PicovoiceState.ttsSpeaking) {
+        _isStarting = true;
+        try {
+          if (!_isPorcupineRunning) {
+            await _porcupineManager?.start();
+            _isPorcupineRunning = true;
+            stateNotifier.value = PicovoiceState.idle;
+            debugPrint("Picovoice: Porcupine restarted after TTS.");
+          } else {
+            debugPrint("Picovoice: Porcupine already running after TTS.");
+            stateNotifier.value = PicovoiceState.idle;
+          }
+        } catch (e) {
+          debugPrint("Picovoice: Error resuming Porcupine after TTS: $e");
+          stateNotifier.value = PicovoiceState.error;
+        } finally {
+          _isStarting = false;
+        }
+      }
     }
   }
 

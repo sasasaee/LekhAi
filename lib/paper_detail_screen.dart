@@ -16,6 +16,7 @@ import 'services/pdf_service.dart'; // Added PdfService
 import 'package:open_filex/open_filex.dart'; // Added for View PDF
 import 'package:share_plus/share_plus.dart'; // Added for Share PDF
 import 'widgets/voice_alert_dialog.dart'; // Added
+import 'utils/string_utils.dart'; // Added for fuzzy matching
 
 // --- PAPER DETAIL SCREEN ---
 
@@ -192,7 +193,10 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
           widget.ttsService.speak("Exam started. Reading question 1.");
           // Short delay to ensure TTS message starts before screen switch
           Future.delayed(const Duration(milliseconds: 2000), () {
-            if (mounted) _openQuestionByNumber(1);
+            if (mounted) {
+              widget.picovoiceService.resumeListening(); // Ensure awake before transferring control
+              _openQuestionByNumber(1);
+            }
           });
         }
       },
@@ -1775,6 +1779,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     // Start Command Listener
     // _initVoiceCommandListener(); // Removed
     _subscribeToVoiceCommands();
+    widget.picovoiceService.resumeListening();
 
     _answerController.addListener(() {
       widget.question.answer = _answerController.text;
@@ -2006,6 +2011,8 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
   Future<void> _stopAndInit() async {
     await widget.ttsService.stop();
     await _loadSettings();
+    // Explicitly wake up Picovoice after clearing TTS and setting up the screen
+    widget.picovoiceService.resumeListening();
   }
 
   Future<void> _loadSettings() async {
@@ -2186,7 +2193,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
       if (path == null) {
         widget.ttsService.speak("Recording failed.");
         setState(() => _isProcessingAudio = false);
-        // _initVoiceCommandListener(); // Removed
+        widget.picovoiceService.resumeListening();
         return;
       }
       await _processAudioAnswer(path);
@@ -2218,35 +2225,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     if (!mounted) return;
 
     // --- POST-PROCESSING: Strip Wake Word and Stop Command ---
-    String processed = transcribedText.trim();
-
-    // 1. Strip Wake Word (Case Insensitive)
-    final wakeWord = "hey lekhai";
-    if (processed.toLowerCase().startsWith(wakeWord)) {
-      processed = processed.substring(wakeWord.length).trim();
-    }
-
-    // 2. Strip Stop Command (Case Insensitive, at the end)
-    final stopWords = [
-      "stop answering",
-      "stop writing",
-      "stop dictation",
-      "pause writing",
-      "pause dictation",
-    ];
-    for (var word in stopWords) {
-      if (processed.toLowerCase().endsWith(word)) {
-        processed = processed
-            .substring(0, processed.length - word.length)
-            .trim();
-        break;
-      }
-    }
-
-    // Remove trailing punctuation that might remain after stripping
-    if (processed.endsWith(',') || processed.endsWith('.')) {
-      processed = processed.substring(0, processed.length - 1).trim();
-    }
+    String processed = StringUtils.stripWakeWordsAndCommands(transcribedText);
 
     setState(() {
       _isProcessingAudio = false;
@@ -2298,7 +2277,25 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     await showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => VoiceAlertDialog(
+        voiceService: widget.voiceService,
+        onConfirm: () async {
+          Navigator.pop(ctx);
+          await _handleConfirmedAnswer();
+          AccessibilityService().trigger(AccessibilityEvent.success);
+          widget.ttsService.speak("Answer saved.");
+          widget.picovoiceService.resumeListening();
+        },
+        onCancel: () {
+          Navigator.pop(ctx);
+          _discardAudio();
+          if (mounted) {
+            setState(() {
+              _answerController.text = "";
+            });
+            widget.picovoiceService.resumeListening();
+          }
+        },
         title: const Text("Confirm Answer"),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -2322,7 +2319,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
               setState(() {
                 _answerController.text = "";
               });
-              _startListening();
+              widget.picovoiceService.resumeListening();
             },
             child: const Text("Retry"),
           ),
@@ -2332,6 +2329,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
               await _handleConfirmedAnswer();
               AccessibilityService().trigger(AccessibilityEvent.success);
               widget.ttsService.speak("Answer saved.");
+              widget.picovoiceService.resumeListening();
             },
             child: const Text("Confirm"),
           ),
