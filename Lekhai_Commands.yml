@@ -4,8 +4,11 @@ context:
       - Get Started
       - (@polite) @nav_action $destination:destination
       - (@polite) show me $destination:destination
-      - @nav_action paper $pv.TwoDigitInteger:itemNumber
-      - @nav_action question $pv.TwoDigitInteger:itemNumber
+      - @nav_action $itemType:itemType $pv.TwoDigitInteger:itemNumber
+      - (@polite) go back
+      - go back to summary
+      - back to list
+
     AppControl:
       - (@polite) $action:action
       - I want to $action:action
@@ -16,12 +19,16 @@ context:
     ChangePages:
       - (@polite) @direction_action $direction:direction page
       - (@polite) @direction_action $direction:direction question
+      - (@polite) $direction:direction question
+      - (@polite) $direction:direction page
     readContent:
       - (@polite) @read_action question
       - (@polite) @read_action this page
       - (@polite) @read_action last sentence
       - (@polite) @read_action context
       - (@polite) @read_action answer
+      - (@polite) @read_action my answer
+      - (@polite) @read_action what I wrote
       - (@polite) $readAction:readAction answering
       - (@polite) $readAction:readAction speaking
       - (@polite) $readAction:readAction dictation
@@ -30,6 +37,7 @@ context:
     examControl:
       - (@polite) $exam:exam
       - (@polite) confirm $exam:exam
+      - (@polite) confirm exit
       - I want to $exam:exam
     capture:
       - (@polite) @scan_action $source:source
@@ -48,11 +56,28 @@ context:
       - (@polite) $pdf_action:pdf_action
     settingsControl:
       - (@polite) @edit_action $feature:feature
-      - (@polite) turn on $feature:feature
-      - (@polite) turn off $feature:feature
-      - (@polite) enable $feature:feature
-      - (@polite) disable $feature:feature
-      - (@polite) reset preferences
+      - (@polite) turn $state:state on $feature:feature
+      - (@polite) turn $state:state off $feature:feature
+      - (@polite) $state:state enable $feature:feature
+      - (@polite) $state:state disable $feature:feature
+      - (@polite) $state:state preferences
+    EditingControl:
+      - (@polite) @remove_action last $edit_unit:edit_unit
+      - (@polite) @remove_action the $edit_unit:edit_unit
+      - (@polite) @remove_action $edit_unit:edit_unit
+      - (@polite) undo (@polite)
+      - (@polite) redo (@polite)
+      - (@polite) clear answer
+      - (@polite) new paragraph
+      - (@polite) uppercase last word
+      - (@polite) capitalize last word
+      - (@polite) lowercase last word
+      - (@polite) go to $text_position:text_position
+    infoQuery:
+      - (@polite) word count
+      - (@polite) how many words did I write
+      - (@polite) how many words
+      - (@polite) character count
     formControl:
       - (@polite) @edit_action $formItem:item
       - (@polite) @edit_action exam time $pv.SingleDigitInteger:hour hour $pv.TwoDigitInteger:minute minutes
@@ -112,6 +137,15 @@ context:
       - skip
       - skip naming
       - save
+      - go back
+      - return
+
+    itemType:
+      - paper
+      - file
+      - document
+      - question
+
     direction:
       - forward
       - back
@@ -130,6 +164,7 @@ context:
       - cancel exam
       - end exam
       - exit exam
+      - confirm exit
     source:
       - camera
       - gallery
@@ -155,13 +190,32 @@ context:
       - reset zoom
     feature:
       - haptics
-      - single tap
       - voice commands
+    edit_unit:
+      - word
+      - line
+      - sentence
+      - paragraph
+    text_position:
+      - start
+      - end
+      - beginning
+      - top
+      - bottom
     dialog_response:
       - yes
       - no
       - sure
       - okay
+      - retry
+      - discard
+      - no thank you
+    state:
+      - "on"
+      - "off"
+      - reset
+      - save
+
   macros:
     polite:
       - please

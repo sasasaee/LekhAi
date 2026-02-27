@@ -14,6 +14,7 @@ class VoiceAlertDialog extends StatefulWidget {
   final VoidCallback? onViewPdf;
   final VoidCallback? onSharePdf;
   final VoidCallback? onSaveToDownloads;
+  final VoidCallback? onRetry;
 
   const VoiceAlertDialog({
     super.key,
@@ -28,6 +29,7 @@ class VoiceAlertDialog extends StatefulWidget {
     this.onViewPdf,
     this.onSharePdf,
     this.onSaveToDownloads,
+    this.onRetry,
   });
 
   @override
@@ -72,15 +74,20 @@ class _VoiceAlertDialogState extends State<VoiceAlertDialog> {
       case VoiceAction.saveResult:
       case VoiceAction.submitExam: // Added: "Submit Exam" triggers confirm
       case VoiceAction.enterExamMode: // Added: "Start Exam" triggers confirm
+      case VoiceAction.confirmExamStart: // Added for exam start dialog
         if (widget.onConfirm != null) widget.onConfirm!();
         break;
       case VoiceAction.cancelAction:
       case VoiceAction.goBack: // "Back" usually cancels a dialog
       case VoiceAction.exitExam: // "Exit exam" closes post-exam dialog
+      case VoiceAction.cancelExamStart: // Added for exam start dialog
         if (widget.onCancel != null) widget.onCancel!();
         break;
       case VoiceAction.skip:
         if (widget.onSkip != null) widget.onSkip!();
+        break;
+      case VoiceAction.retry:
+        if (widget.onRetry != null) widget.onRetry!();
         break;
       case VoiceAction.selectOption:
         if (widget.onSelectOption != null && result.payload is int) {

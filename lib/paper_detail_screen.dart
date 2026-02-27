@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
 import 'services/gemini_paper_service.dart';
@@ -541,7 +542,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       case VoiceAction.goBack:
         if (_kioskEnabled) {
           widget.ttsService.speak(
-            "Exam is locked. You cannot go back until you submit.",
+            "Exam is locked. Do you want to exit and cancel your progress? Say Confirm Exit to end exam.",
           );
           return;
         }
@@ -569,6 +570,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
         break;
 
       case VoiceAction.exitExam:
+      case VoiceAction.cancelExam:
         if (_isExamFinished) {
           // Close dialog + exit screen
           if (Navigator.canPop(context)) Navigator.pop(context); // pop dialog
@@ -579,8 +581,16 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
           if (mounted) Navigator.pop(context);
         } else {
           widget.ttsService.speak(
-            "Exam is locked. Say finish exam to submit first.",
+            "Exam is locked. Say finish exam to submit first. Or say confirm exit to cancel and exit.",
           );
+        }
+        break;
+
+      case VoiceAction.confirmExit:
+        if (_kioskEnabled) {
+          await widget.ttsService.speak("Exam cancelled. Exiting.");
+          // KioskService disposal is handled in dispose()
+          if (mounted) Navigator.pop(context);
         }
         break;
 
@@ -729,7 +739,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
         }
       }
 
-      widget.ttsService.speak("Opening previous question.");
+      widget.ttsService.speak("Opening question ${prevQ.number}.");
 
       final route = MaterialPageRoute(
         settings: const RouteSettings(name: '/question_detail'),
@@ -784,7 +794,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
         }
       }
 
-      widget.ttsService.speak("Opening next question.");
+      widget.ttsService.speak("Opening question ${nextQ.number}.");
 
       // Stop local listening before pushing new screen
       // _sttService.stopListening(); // Removed
@@ -867,6 +877,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
           },
           onTimeCheck: _getFormattedTimeLeft,
           onCountCheck: () => _getFormattedQuestionCount(target!.number),
+          isExamMode: _kioskEnabled, // Added
         ),
       );
 
@@ -1048,7 +1059,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                Theme.of(context).cardTheme.color!.withOpacity(0.8),
+                (Theme.of(context).cardTheme.color ?? Theme.of(context).primaryColor).withOpacity(0.8),
                 Theme.of(context).scaffoldBackgroundColor,
                 Colors.black,
               ],
@@ -1727,6 +1738,7 @@ class SingleQuestionScreen extends StatefulWidget {
   final Function(int)? onJump; // Added
   final String Function()? onTimeCheck; // Added
   final String Function()? onCountCheck; // Added
+  final bool isExamMode; // Added
 
   const SingleQuestionScreen({
     super.key,
@@ -1741,6 +1753,7 @@ class SingleQuestionScreen extends StatefulWidget {
     this.onJump,
     this.onTimeCheck,
     this.onCountCheck,
+    this.isExamMode = false, // Added
   });
 
   @override
@@ -1784,6 +1797,26 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     _answerController.addListener(() {
       widget.question.answer = _answerController.text;
     });
+
+    // Sync with global speed/volume
+    widget.voiceService.volumeNotifier.addListener(_onServiceVolumeChanged);
+    widget.voiceService.speedNotifier.addListener(_onServiceSpeedChanged);
+  }
+
+  void _onServiceVolumeChanged() {
+    if (mounted) {
+      setState(() {
+        _currentVolume = widget.voiceService.volumeNotifier.value;
+      });
+    }
+  }
+
+  void _onServiceSpeedChanged() {
+    if (mounted) {
+      setState(() {
+        _displaySpeed = widget.voiceService.speedNotifier.value;
+      });
+    }
   }
 
   void _subscribeToVoiceCommands() {
@@ -1897,8 +1930,21 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         break;
 
       case VoiceAction.goBack:
-        await widget.ttsService.speak("Going back.");
+        // Inside a question, "Go back" takes you to the list/summary.
+        // We ALLOW this even in exam mode, as it's internal navigation.
+        // The PaperDetailScreen (summary) will block actual app exit.
+        await widget.ttsService.speak("Going back to summary.");
         if (mounted) Navigator.pop(context);
+        break;
+      case VoiceAction.goToHome:
+        if (widget.isExamMode) {
+          widget.ttsService.speak(
+            "Exam is locked. Go back to summary first, then say confirm exit to end exam.",
+          );
+          return;
+        }
+        await widget.ttsService.speak("Exiting to home.");
+        if (mounted) Navigator.popUntil(context, (route) => route.isFirst);
         break;
 
       case VoiceAction.nextPage:
@@ -1960,7 +2006,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         break;
 
       default:
-        // No global navigation inside exam question for safety, except home if needed
+        widget.voiceService.performGlobalNavigation(result);
         break;
     }
   }
@@ -2033,6 +2079,8 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     widget.picovoiceService.stateNotifier.removeListener(
       _onPicovoiceStateChanged,
     );
+    widget.voiceService.volumeNotifier.removeListener(_onServiceVolumeChanged);
+    widget.voiceService.speedNotifier.removeListener(_onServiceSpeedChanged);
     _answerController.dispose();
     widget.ttsService.stop();
     _audioPlayer.dispose();
@@ -2214,7 +2262,11 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
           apiKey,
         );
       } catch (e) {
-        transcribedText = "[Transcription Failed: $e]";
+        String err = e.toString();
+        if (err.toLowerCase().contains("quota") || err.toLowerCase().contains("limit")) {
+          widget.ttsService.speak("AI capacity reached. Please wait a minute and retry.");
+        }
+        transcribedText = "[Transcription Failed: $err]";
       }
     } else {
       transcribedText = "[No API Key - Audio Saved. Type answer manually.]";
@@ -2273,6 +2325,19 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     }
   }
 
+  void _handleRetryAnswer(BuildContext ctx) async {
+    Navigator.pop(ctx);
+    _discardAudio();
+    setState(() {
+      _answerController.text = "";
+    });
+    // PicovoiceService handoff is handled by startListening
+    widget.ttsService.speak("Listening again.");
+    // Wait for "Listening again" to finish to avoid crosstalk
+    await Future.delayed(const Duration(milliseconds: 1500)); 
+    _startListening(append: false);
+  }
+
   Future<void> _showConfirmationDialog(String answer) async {
     await showDialog(
       context: context,
@@ -2296,6 +2361,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
             widget.picovoiceService.resumeListening();
           }
         },
+        onRetry: () => _handleRetryAnswer(ctx),
         title: const Text("Confirm Answer"),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -2313,14 +2379,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         ),
         actions: [
           AccessibleTextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _discardAudio();
-              setState(() {
-                _answerController.text = "";
-              });
-              widget.picovoiceService.resumeListening();
-            },
+            onPressed: () => _handleRetryAnswer(ctx),
             child: const Text("Retry"),
           ),
           AccessibleElevatedButton(

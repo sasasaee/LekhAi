@@ -270,7 +270,7 @@ class _SavedPapersScreenState extends State<SavedPapersScreen> {
             document: doc,
             ttsService: widget.ttsService,
             voiceService: widget.voiceService,
-            accessibilityService: widget.accessibilityService!,
+            accessibilityService: widget.accessibilityService,
             picovoiceService: widget.picovoiceService,
           ),
         ),
@@ -416,7 +416,7 @@ class _SavedPapersScreenState extends State<SavedPapersScreen> {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              Theme.of(context).cardTheme.color!.withValues(alpha: 0.8),
+              (Theme.of(context).cardTheme.color ?? Theme.of(context).primaryColor).withValues(alpha: 0.8),
               Theme.of(context).scaffoldBackgroundColor,
               Colors.black,
             ],

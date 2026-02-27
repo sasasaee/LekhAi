@@ -224,6 +224,42 @@ class _HomeScreenState extends State<HomeScreen>
       const Duration(seconds: 1),
       (timer) => _updateTime(),
     );
+    _subscribeToVoiceCommands();
+  }
+
+  StreamSubscription? _commandSubscription;
+
+  void _subscribeToVoiceCommands() {
+    _commandSubscription = widget.voiceService.commandStream.listen((result) {
+      if (mounted) {
+        _handleVoiceCommand(result);
+      }
+    });
+  }
+
+  void _handleVoiceCommand(CommandResult result) {
+    if (!(ModalRoute.of(context)?.isCurrent ?? false)) return;
+
+    switch (result.action) {
+      case VoiceAction.goBack:
+        widget.ttsService.speak("You are at the home screen.");
+        break;
+      case VoiceAction.goToSettings:
+        Navigator.pushNamed(context, '/settings');
+        break;
+      case VoiceAction.goToSavedPapers:
+        _openSavedPapers();
+        break;
+      case VoiceAction.goToTakeExam:
+        _openTakeExam();
+        break;
+      case VoiceAction.goToReadPDF:
+        _openPdf();
+        break;
+      default:
+        widget.voiceService.performGlobalNavigation(result);
+        break;
+    }
   }
 
   void _updateTime() {
@@ -236,7 +272,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   @override
   void dispose() {
-    // Picovoice continues running in background/navigation, unlike SttService loop
+    _commandSubscription?.cancel();
     _controller.dispose();
     _timeTimer.cancel();
     super.dispose();

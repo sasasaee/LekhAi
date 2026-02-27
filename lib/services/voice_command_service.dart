@@ -118,6 +118,9 @@ enum VoiceAction {
   // Dialog Actions
   skip,
   selectOption,
+  confirmExit,
+  cancelExam,
+  retry,
 }
 
 class CommandResult {
@@ -859,9 +862,38 @@ class VoiceCommandService {
           tts.speak("Voice commands disabled.");
         }
         break;
+      case VoiceAction.resetPreferences:
+        await _resetPreferences();
+        break;
+      case VoiceAction.saveResult:
+        // Already auto-saved to SharedPreferences in _changeVolume/_changeSpeed
+        tts.speak("Settings saved.");
+        break;
       default:
         // Unknown global action
         break;
+    }
+  }
+
+  Future<void> _resetPreferences() async {
+    volumeNotifier.value = 0.7;
+    speedNotifier.value = 1.0;
+    await tts.setVolume(0.7);
+    await tts.setSpeed(0.5); // 1.0 displayed = 0.5 internal
+    final sp = await SharedPreferences.getInstance();
+    await sp.setDouble('volume', 0.7);
+    await sp.setDouble('speed', 1.0);
+    tts.speak("Preferences reset to defaults.");
+
+    // Sync UI if listeners are attached
+    final context = navigatorKey.currentContext;
+    if (context != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Preferences Reset"),
+          duration: Duration(seconds: 1),
+        ),
+      );
     }
   }
 
@@ -937,14 +969,33 @@ class VoiceCommandService {
           ])) {
             action = VoiceAction.startApp;
           }
+        } else if (itemNumStr == null && pageNumStr == null) {
+          final lowerSpeech = speech?.toLowerCase() ?? "";
+          if (lowerSpeech.contains('summary') || lowerSpeech.contains('list')) {
+            action = VoiceAction.goBack;
+          } else if (lowerSpeech.contains('next') ||
+              lowerSpeech.contains('forward')) {
+            action = VoiceAction.nextPage;
+          } else if (lowerSpeech.contains('previous') ||
+              lowerSpeech.contains('back')) {
+            action = VoiceAction.previousPage;
+          } else {
+            // If navigation intent has no slots, it's likely "go back"
+            action = VoiceAction.goBack;
+          }
         }
 
         if (itemNumStr != null) {
           int? num = int.tryParse(itemNumStr);
           if (num != null) {
+            final itemType = getVal(['itemType']);
             final lowerSpeech = speech?.toLowerCase() ?? "";
-            // Use speech context to distinguish paper vs question
-            if (lowerSpeech.contains('paper') ||
+            
+            // Check itemType slot first, then fallback to speech context
+            if (itemType != null && (itemType == 'paper' || itemType == 'file' || itemType == 'document')) {
+              action = VoiceAction.openPaper;
+              payload = num;
+            } else if (lowerSpeech.contains('paper') ||
                 lowerSpeech.contains('file') ||
                 (dest != null &&
                     intentStringContains(dest, ['paper', 'file']))) {
@@ -985,14 +1036,26 @@ class VoiceCommandService {
       case 'settingsControl':
         final feat = getVal(['feature']);
         final state = getVal(['state', 'status', 'action', 'turn']);
+        final lowerSpeech = speech?.toLowerCase() ?? "";
 
         if (feat != null) {
-          if (state == 'off' || state == 'disable' || state == 'stop') {
+          if (state == 'off' ||
+              state == 'disable' ||
+              state == 'stop' ||
+              lowerSpeech.contains('off') ||
+              lowerSpeech.contains('disable')) {
             action = VoiceAction.disableFeature;
           } else {
             action = VoiceAction.enableFeature;
           }
           payload = feat;
+        } else if (state != null || lowerSpeech.isNotEmpty) {
+          final lower = (state ?? lowerSpeech).toLowerCase();
+          if (lower.contains('reset')) {
+            action = VoiceAction.resetPreferences;
+          } else if (lower.contains('save')) {
+            action = VoiceAction.saveResult;
+          }
         }
         break;
 
@@ -1126,28 +1189,43 @@ class VoiceCommandService {
         else if (ra == 'restart')
           action = VoiceAction.restartReading;
         else {
-          // Case for "Read question", "Read this page", "Repeat question"
-          action = VoiceAction.readQuestion;
+          final lowerSpeech = speech?.toLowerCase() ?? "";
+          if (lowerSpeech.contains('next') || lowerSpeech.contains('forward')) {
+            action = VoiceAction.nextPage;
+          } else if (lowerSpeech.contains('previous') ||
+              lowerSpeech.contains('back')) {
+            action = VoiceAction.previousPage;
+          } else {
+            // Case for "Read question", "Read this page", "Repeat question"
+            action = VoiceAction.readQuestion;
+          }
         }
         break;
 
       case 'examControl':
         final e = getVal(['exam']);
-        if (e == 'start exam' || e == 'start') {
-          action = VoiceAction.enterExamMode;
-        } else if (e == 'finish exam' ||
-            e == 'submit exam' ||
-            e == 'finish' ||
-            e == 'end' ||
-            e == 'end exam' ||
-            e == 'stop exam') {
-          action = VoiceAction.submitExam;
-        } else if (e == 'exit exam') {
-          action = VoiceAction.exitExam;
-        } else if (e == 'cancel exam' || e == 'stop') {
+        final lowerSpeech = speech?.toLowerCase() ?? "";
+
+        if (e != null) {
+          if (e == 'start exam' || e == 'start') {
+            action = VoiceAction.confirmExamStart; // Or enterExamMode? usually confirmed first
+          } else if (e.contains('finish') ||
+              e.contains('submit') ||
+              e.contains('end')) {
+            action = VoiceAction.submitExam;
+          } else if (e.contains('exit')) {
+            action = VoiceAction.goBack;
+          } else if (e.contains('cancel')) {
+            action = VoiceAction.cancelExam; // Or goBack
+          } else if (e.contains('confirm exit')) {
+            action = VoiceAction.confirmExit;
+          } else if (e.contains('confirm')) {
+            action = VoiceAction.confirmExamStart;
+          }
+        } else if (lowerSpeech.contains('confirm exit')) {
+          action = VoiceAction.confirmExit;
+        } else if (lowerSpeech.contains('exit')) {
           action = VoiceAction.goBack;
-        } else if (e == 'confirm') {
-          action = VoiceAction.confirmExamStart;
         }
         break;
 
@@ -1222,8 +1300,8 @@ class VoiceCommandService {
         if (resp != null) {
           if (['yes', 'sure', 'okay'].contains(resp)) {
             action = VoiceAction.confirmAction;
-          } else if (['no'].contains(resp)) {
-            action = VoiceAction.cancelAction;
+          } else if (['no', 'retry', 'discard'].contains(resp)) {
+            action = VoiceAction.retry;
           }
         }
 
@@ -1599,14 +1677,31 @@ class VoiceCommandService {
         ),
       );
     } catch (e) {
-      if (!isCancelled && context.mounted) {
-        Navigator.pop(context); // Close dialog on error
+      if (context.mounted && !isCancelled) {
+        Navigator.pop(context); // Close Progress Dialog
       }
-      if (!isCancelled && context.mounted) {
+
+      String userMessage = "Error processing paper with Gemini AI.";
+      final errorStr = e.toString().toLowerCase();
+
+      if (errorStr.contains("quota") || errorStr.contains("429") || errorStr.contains("limit")) {
+        userMessage = "Gemini API quota exceeded or rate limited. Please check your billing or wait a few minutes before trying again.";
+      } else if (errorStr.contains("key")) {
+        userMessage = "Invalid Gemini API key. Please check your settings.";
+      }
+
+      tts.speak(userMessage);
+
+      if (context.mounted && !isCancelled) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text(userMessage),
+            backgroundColor: Colors.redAccent,
+            duration: const Duration(seconds: 5),
+          ),
         );
       }
+      debugPrint("Gemini Flow Error: $e");
     }
   }
 

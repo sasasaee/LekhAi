@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -38,13 +39,40 @@ class _StartPageState extends State<StartPage> {
     widget.ttsService.speak(
       "Welcome to LekhAi. Your intelligent study companion. Say Start App to begin.",
     );
-    // _initVoiceListener(); // Removed
+    _subscribeToVoiceCommands();
+  }
+
+  StreamSubscription? _commandSubscription;
+
+  void _subscribeToVoiceCommands() {
+    _commandSubscription = widget.voiceService.commandStream.listen((result) {
+      if (mounted) {
+        _handleVoiceCommand(result);
+      }
+    });
+  }
+
+  void _handleVoiceCommand(CommandResult result) {
+    if (!(ModalRoute.of(context)?.isCurrent ?? false)) return;
+
+    switch (result.action) {
+      case VoiceAction.startApp:
+      case VoiceAction.goToHome:
+        _navigateToHome();
+        break;
+      case VoiceAction.goBack:
+        widget.ttsService.speak("Exiting application.");
+        Navigator.pop(context);
+        break;
+      default:
+        widget.voiceService.performGlobalNavigation(result);
+        break;
+    }
   }
 
   @override
   void dispose() {
-    // _shouldListen = false;
-    // _sttService.stopListening();
+    _commandSubscription?.cancel();
     super.dispose();
   }
 

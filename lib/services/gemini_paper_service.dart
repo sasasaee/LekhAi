@@ -6,9 +6,16 @@ import '../models/paper_model.dart';
 import 'package:flutter/foundation.dart';
 
 class GeminiPaperService {
+  static final GeminiPaperService _instance = GeminiPaperService._internal();
+  factory GeminiPaperService() => _instance;
+  GeminiPaperService._internal();
+
+  static String? _cachedModelName;
+
   Future<ParsedDocument> processImage(String imagePath, String apiKey) async {
     // 1. Find a valid model name dynamically
-    final modelName = await _findValidModel(apiKey) ?? 'gemini-1.5-flash';
+    final modelName = _cachedModelName ?? await _findValidModel(apiKey) ?? 'gemini-1.5-flash';
+    _cachedModelName = modelName;
     debugPrint("GeminiService using model: $modelName");
 
     final model = GenerativeModel(
@@ -53,37 +60,53 @@ class GeminiPaperService {
         final json = jsonDecode(response.body);
         final models = json['models'] as List;
 
-        String? bestMatch;
-
-        for (final m in models) {
-          final name = m['name'].toString(); // e.g. models/gemini-1.5-flash
+        final availableModels = models.map((m) {
+          final name = m['name'].toString().replaceFirst('models/', '');
           final supportedMethods = m['supportedGenerationMethods'] as List?;
+          return {
+            'name': name,
+            'supportsGenerate': supportedMethods?.contains('generateContent') ?? false,
+          };
+        }).where((m) => m['supportsGenerate'] == true).map((m) => m['name'] as String).toList();
 
-          if (supportedMethods != null &&
-              supportedMethods.contains('generateContent')) {
-            // Clean name
-            final cleanName = name.replaceFirst('models/', '');
+        debugPrint("Available Gemini models: $availableModels");
 
-            // Prefer flash
-            if (cleanName.contains('flash')) {
-              // If we already have a flash match, maybe check for 'latest' or versions?
-              // For now, just taking the first 'flash' or updating if we find a '1.5-flash' specifically
-              bestMatch = cleanName;
-              if (cleanName == 'gemini-1.5-flash') {
-                return cleanName; // Perfect match
-              }
-            }
+        // Prioritized list of stable models
+        const prioritizedModels = [
+          'gemini-1.5-flash',
+          'gemini-1.5-pro',
+          'gemini-1.0-pro',
+        ];
 
-            bestMatch ??= cleanName; // Fallback to any valid model
+        for (final pModel in prioritizedModels) {
+          if (availableModels.contains(pModel)) {
+            debugPrint("Selected prioritized model: $pModel");
+            return pModel;
           }
         }
-        return bestMatch;
+
+        // Fallback to any 'flash' model if prioritized ones aren't available
+        final flashFallback = availableModels.firstWhere(
+          (m) => m.contains('flash'),
+          orElse: () => '',
+        );
+        if (flashFallback.isNotEmpty) {
+          debugPrint("Priority match failed, falling back to flash: $flashFallback");
+          return flashFallback;
+        }
+
+        // Final fallback
+        if (availableModels.isNotEmpty) {
+          debugPrint("Final fallback to first available: ${availableModels.first}");
+          return availableModels.first;
+        }
       }
     } catch (e) {
       debugPrint("Error listing models: $e");
     }
-    return null; // Fallback to default
+    return null; // Fallback to default in processImage
   }
+
 
   String _buildPrompt() {
     return """
@@ -192,7 +215,8 @@ class GeminiPaperService {
   }
 
   Future<String> transcribeAudio(String audioPath, String apiKey) async {
-    final modelName = await _findValidModel(apiKey) ?? 'gemini-1.5-flash';
+    final modelName = _cachedModelName ?? await _findValidModel(apiKey) ?? 'gemini-1.5-flash';
+    _cachedModelName = modelName;
     final model = GenerativeModel(model: modelName, apiKey: apiKey);
 
     final audioBytes = await File(audioPath).readAsBytes();

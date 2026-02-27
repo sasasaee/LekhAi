@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'dart:ui';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -29,14 +30,7 @@ class PreferencesScreen extends StatefulWidget {
 }
 
 class _PreferencesScreenState extends State<PreferencesScreen> {
-  // Track what the user sees (Human-readable speed)
-  double _displaySpeed = 1.0;
-  double _volume = 0.7;
-
-  // final SttService _sttService = SttService(); // Removed
-  // final bool _isListening = false; // Removed
   bool _voiceCommandsEnabled = true; // Default ON
-  bool _oneTapAnnounce = true; // Default ON
   final TextEditingController _apiKeyController = TextEditingController();
   final TextEditingController _picovoiceKeyController = TextEditingController(); // Added
 
@@ -46,31 +40,17 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     _loadPreferences();
     widget.ttsService.speak("Settings");
     
-    // Listen for changes from voice commands to keep UI in sync
-    widget.voiceService.volumeNotifier.addListener(_onServiceVolumeChanged);
-    widget.voiceService.speedNotifier.addListener(_onServiceSpeedChanged);
+    // Subscribe to voice command stream
+    _commandSubscription = widget.voiceService.commandStream.listen((result) {
+      if (mounted) _executeVoiceCommand(result);
+    });
   }
 
-  void _onServiceVolumeChanged() {
-    if (mounted) {
-      setState(() {
-        _volume = widget.voiceService.volumeNotifier.value;
-      });
-    }
-  }
-
-  void _onServiceSpeedChanged() {
-    if (mounted) {
-      setState(() {
-        _displaySpeed = widget.voiceService.speedNotifier.value;
-      });
-    }
-  }
+  StreamSubscription? _commandSubscription;
 
   @override
   void dispose() {
-    widget.voiceService.volumeNotifier.removeListener(_onServiceVolumeChanged);
-    widget.voiceService.speedNotifier.removeListener(_onServiceSpeedChanged);
+    _commandSubscription?.cancel();
     _apiKeyController.dispose();
     _picovoiceKeyController.dispose(); // Added
     super.dispose();
@@ -82,31 +62,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   void _executeVoiceCommand(CommandResult result) async {
     if (!(ModalRoute.of(context)?.isCurrent ?? false)) return;
     switch (result.action) {
-      case VoiceAction.toggleHaptic:
-        bool newState = !AccessibilityService().enabled;
-        setState(() {
-          AccessibilityService().setEnabled(newState);
-        });
-        if (newState) AccessibilityService().trigger(AccessibilityEvent.action);
-        widget.ttsService.speak(
-          "Haptic feedback ${newState ? 'enabled' : 'disabled'}.",
-        );
-        break;
-
-      case VoiceAction.toggleVoiceCommands:
-        // Toggling voice commands OFF via voice.
-        setState(() => _voiceCommandsEnabled = !_voiceCommandsEnabled);
-        final sp = await SharedPreferences.getInstance();
-        await sp.setBool('voice_commands_enabled', _voiceCommandsEnabled);
-
-        if (_voiceCommandsEnabled) {
-          widget.ttsService.speak("Voice commands enabled.");
-        } else {
-          // _sttService.stopListening(); // Removed
-          widget.ttsService.speak("Voice commands disabled.");
-        }
-        break;
-
       case VoiceAction.increaseVolume:
         _changeVolume(true);
         break;
@@ -124,8 +79,8 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
         break;
 
       case VoiceAction.goBack:
-        final canPop = await Navigator.maybePop(context);
-        if (!canPop) widget.ttsService.speak("You are already at the root.");
+        widget.ttsService.speak("Exiting preferences.");
+        Navigator.pop(context);
         break;
 
       case VoiceAction.saveResult:
@@ -139,46 +94,21 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       case VoiceAction.enableFeature:
         final feature = result.payload as String?;
         if (feature == 'haptics') {
-          if (AccessibilityService().enabled) {
-            widget.ttsService.speak("Haptic feedback is already enabled.");
-          } else {
-            setState(() => AccessibilityService().setEnabled(true));
-            AccessibilityService().trigger(AccessibilityEvent.action);
-            widget.ttsService.speak("Haptic feedback enabled.");
-          }
+          _setHaptics(true);
         } else if (feature == 'voice commands') {
-          if (_voiceCommandsEnabled) {
-            widget.ttsService.speak("Voice commands are already enabled.");
-          } else {
-            setState(() => _voiceCommandsEnabled = true);
-            PicovoiceService().setEnabled(true);
-            final sp = await SharedPreferences.getInstance();
-            await sp.setBool('voice_commands_enabled', true);
-            widget.ttsService.speak("Voice commands enabled.");
-          }
+          _setVoiceCommands(true);
         }
         break;
 
       case VoiceAction.disableFeature:
         final feature = result.payload as String?;
         if (feature == 'haptics') {
-          if (!AccessibilityService().enabled) {
-            widget.ttsService.speak("Haptic feedback is already disabled.");
-          } else {
-            setState(() => AccessibilityService().setEnabled(false));
-            widget.ttsService.speak("Haptic feedback disabled.");
-          }
+          _setHaptics(false);
         } else if (feature == 'voice commands') {
-          if (!_voiceCommandsEnabled) {
-            widget.ttsService.speak("Voice commands are already disabled.");
-          } else {
-            setState(() => _voiceCommandsEnabled = false);
-            PicovoiceService().setEnabled(false);
-            final sp = await SharedPreferences.getInstance();
-            await sp.setBool('voice_commands_enabled', false);
-            widget.ttsService.speak("Voice commands disabled.");
-          }
+          _setVoiceCommands(false);
         }
+        break;
+
         break;
 
       default:
@@ -187,28 +117,70 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     }
   }
 
-  void _changeVolume(bool increase) async {
-    double newVolume = _volume + (increase ? 0.1 : -0.1);
-    if (newVolume > 1.0) newVolume = 1.0;
-    if (newVolume < 0.0) newVolume = 0.0;
+  void _reset() async {
+    // 1. Reset Global Notifiers (This will sync other screens)
+    widget.voiceService.speedNotifier.value = 1.0;
+    widget.voiceService.volumeNotifier.value = 0.7;
 
-    setState(() => _volume = newVolume);
-    await widget.ttsService.setVolume(_volume);
+    // 2. Local State Reset
+    setState(() {
+      _apiKeyController.clear();
+      _picovoiceKeyController.clear();
+    });
+
+    // 3. Service/Pref Reset
+    await widget.ttsService.resetPreferences(); // Resets speed/volume in prefs/engine
+    final sp = await SharedPreferences.getInstance();
+    await sp.remove('gemini_api_key');
+    await sp.remove('picovoice_access_key'); 
+    await widget.picovoiceService?.updateAccessKey(''); 
+
+    widget.ttsService.speak("Preferences have been reset.");
+    AccessibilityService().trigger(AccessibilityEvent.warning);
+  }
+
+  void _changeVolume(bool increase) async {
+    double oldVol = widget.voiceService.volumeNotifier.value;
+    double newVolume = (oldVol + (increase ? 0.1 : -0.1)).clamp(0.0, 1.0);
+    widget.voiceService.volumeNotifier.value = newVolume;
+    await widget.ttsService.setVolume(newVolume);
     widget.ttsService.speak(
       "Volume ${increase ? 'increased' : 'decreased'} to ${(newVolume * 100).toInt()} percent.",
     );
   }
 
   void _changeSpeed(bool increase) async {
-    double newSpeed = _displaySpeed + (increase ? 0.25 : -0.25);
-    if (newSpeed > 2.0) newSpeed = 2.0;
-    if (newSpeed < 0.5) newSpeed = 0.5;
-
-    setState(() => _displaySpeed = newSpeed);
+    double oldSpeed = widget.voiceService.speedNotifier.value;
+    double newSpeed = (oldSpeed + (increase ? 0.25 : -0.25)).clamp(0.5, 2.0);
+    widget.voiceService.speedNotifier.value = newSpeed;
     await widget.ttsService.setSpeed(newSpeed * 0.5);
     widget.ttsService.speak(
-      "Speed ${increase ? 'increased' : 'decreased'} to ${_displaySpeed.toStringAsFixed(2)}.",
+      "Speed ${increase ? 'increased' : 'decreased'} to ${newSpeed.toStringAsFixed(2)}.",
     );
+  }
+
+  void _setHaptics(bool enabled) {
+    if (enabled == AccessibilityService().enabled) {
+      widget.ttsService.speak("Haptic feedback is already ${enabled ? 'enabled' : 'disabled'}.");
+      return;
+    }
+    setState(() {
+      AccessibilityService().setEnabled(enabled);
+    });
+    if (enabled) AccessibilityService().trigger(AccessibilityEvent.action);
+    widget.ttsService.speak("Haptic feedback ${enabled ? 'enabled' : 'disabled'}.");
+  }
+
+  void _setVoiceCommands(bool enabled) async {
+    if (enabled == _voiceCommandsEnabled) {
+      widget.ttsService.speak("Voice commands are already ${enabled ? 'enabled' : 'disabled'}.");
+      return;
+    }
+    setState(() => _voiceCommandsEnabled = enabled);
+    final sp = await SharedPreferences.getInstance();
+    await sp.setBool('voice_commands_enabled', enabled);
+    await widget.picovoiceService?.setEnabled(enabled);
+    widget.ttsService.speak("Voice commands ${enabled ? 'enabled' : 'disabled'}.");
   }
 
   Future<void> _loadPreferences() async {
@@ -216,44 +188,44 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     final sp = await SharedPreferences.getInstance();
     if (mounted) {
       setState(() {
-        // Load the human-readable speed, default to 1.0
-        _displaySpeed = (prefs['speed'] as num?)?.toDouble() ?? 1.0;
-        _volume = (prefs['volume'] as num?)?.toDouble() ?? 0.7;
         _apiKeyController.text = sp.getString('gemini_api_key') ?? '';
-        _picovoiceKeyController.text = sp.getString('picovoice_access_key') ?? ''; // Added
+        _picovoiceKeyController.text = sp.getString('picovoice_access_key') ?? '';
+        
+        // Load into notifiers
+        widget.voiceService.speedNotifier.value = (prefs['speed'] as num?)?.toDouble() ?? 1.0;
+        widget.voiceService.volumeNotifier.value = (prefs['volume'] as num?)?.toDouble() ?? 0.7;
 
         // Load Haptics
         bool hapticsEnabled = prefs['haptics'] as bool? ?? true;
         AccessibilityService().setEnabled(hapticsEnabled);
 
-        // Load One Tap Announce
-        _oneTapAnnounce = prefs['one_tap_announce'] as bool? ?? true;
-        AccessibilityService().setOneTapAnnounce(_oneTapAnnounce);
+        // Load One Tap Announce (still needed for AccessibilityService)
+        bool oneTapAnnounce = prefs['one_tap_announce'] as bool? ?? true;
+        AccessibilityService().setOneTapAnnounce(oneTapAnnounce);
 
-        // Load Voice Commands
         _voiceCommandsEnabled = sp.getBool('voice_commands_enabled') ?? true;
       });
-      // Ensure engine is synced with mapped value immediately
-      await widget.ttsService.setSpeed(_displaySpeed * 0.5);
-      await widget.ttsService.setVolume(_volume);
+      // Ensure engine is synced
+      await widget.ttsService.setSpeed(widget.voiceService.speedNotifier.value * 0.5);
+      await widget.ttsService.setVolume(widget.voiceService.volumeNotifier.value);
     }
   }
 
   Future<void> _savePreferences() async {
-    // 1. Map display speed to engine speed for the session
-    double engineSpeed = _displaySpeed * 0.5;
-    await widget.ttsService.setSpeed(engineSpeed);
-    await widget.ttsService.setVolume(_volume);
+    final speed = widget.voiceService.speedNotifier.value;
+    final volume = widget.voiceService.volumeNotifier.value;
 
-    // 2. Save the display speed (so other screens load 1.0, 1.25, etc.)
+    // 1. Persist
     await widget.ttsService.savePreferences(
-      speed: _displaySpeed,
-      volume: _volume,
+      speed: speed,
+      volume: volume,
     );
     await widget.ttsService.saveHapticPreference(
       AccessibilityService().enabled,
     );
-    await widget.ttsService.saveOneTapAnnouncePreference(_oneTapAnnounce);
+    await widget.ttsService.saveOneTapAnnouncePreference(
+      AccessibilityService().oneTapAnnounce,
+    );
 
     final sp = await SharedPreferences.getInstance();
     await sp.setString('gemini_api_key', _apiKeyController.text.trim());
@@ -274,27 +246,8 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     AccessibilityService().trigger(AccessibilityEvent.success);
 
     if (mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Preferences saved')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Preferences saved')));
     }
-  }
-
-  void _reset() async {
-    setState(() {
-      _displaySpeed = 1.0; // Reset to normal human speed
-      _volume = 0.7;
-      _apiKeyController.clear();
-      _picovoiceKeyController.clear(); // Added
-    });
-
-    // Reset TTS engine to internal defaults
-    await widget.ttsService.resetPreferences();
-    final sp = await SharedPreferences.getInstance();
-    await sp.remove('gemini_api_key');
-
-    widget.ttsService.speak("Preferences have been reset.");
-    AccessibilityService().trigger(AccessibilityEvent.warning);
   }
 
   @override
@@ -510,41 +463,32 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'Speed: ${_displaySpeed.toStringAsFixed(2)}x',
-                            style: GoogleFonts.outfit(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(
-                              Icons.play_circle_fill,
-                              color: Colors.blueAccent,
-                              size: 32,
-                            ),
-                            onPressed: () => widget.ttsService.speak(
-                              "This is a speed test at ${_displaySpeed.toStringAsFixed(2)} speed",
-                            ),
-                          ),
-                        ],
-                      ),
                       ValueListenableBuilder<double>(
                         valueListenable: widget.voiceService.speedNotifier,
                         builder: (context, speed, child) {
-                          return AccessibleSlider(
-                            min: 0.5,
-                            max: 1.75,
-                            value: speed,
-                            divisions: 5,
-                            onChanged: (v) {
-                              widget.voiceService.speedNotifier.value = v;
-                              widget.ttsService.setSpeed(v * 0.5);
-                            },
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Speed: ${speed.toStringAsFixed(2)}x',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              AccessibleSlider(
+                                min: 0.5,
+                                max: 2.0,
+                                value: speed,
+                                divisions: 6,
+                                onChanged: (v) {
+                                  widget.voiceService.speedNotifier.value = v;
+                                  widget.ttsService.setSpeed(v * 0.5);
+                                },
+                              ),
+                            ],
                           );
                         },
                       ),
@@ -558,41 +502,32 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'Volume: ${(_volume * 100).toInt()}%',
-                            style: GoogleFonts.outfit(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(
-                              Icons.volume_up_rounded,
-                              color: Colors.greenAccent,
-                              size: 32,
-                            ),
-                            onPressed: () => widget.ttsService.speak(
-                              "This is a volume test",
-                            ),
-                          ),
-                        ],
-                      ),
                       ValueListenableBuilder<double>(
                         valueListenable: widget.voiceService.volumeNotifier,
                         builder: (context, volume, child) {
-                          return AccessibleSlider(
-                            min: 0.0,
-                            max: 1.0,
-                            value: volume,
-                            divisions: 10,
-                            onChanged: (v) {
-                              widget.voiceService.volumeNotifier.value = v;
-                              widget.ttsService.setVolume(v);
-                            },
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                               Text(
+                                'Volume: ${(volume * 100).toInt()}%',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              AccessibleSlider(
+                                min: 0.0,
+                                max: 1.0,
+                                value: volume,
+                                divisions: 10,
+                                onChanged: (v) {
+                                  widget.voiceService.volumeNotifier.value = v;
+                                  widget.ttsService.setVolume(v);
+                                },
+                              ),
+                            ],
                           );
                         },
                       ),
@@ -633,36 +568,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                 const SizedBox(height: 20),
 
                 // Single Tap Announce Toggle
-                _GlassCard(
-                  child: SwitchListTile(
-                    value: _oneTapAnnounce,
-                    activeThumbColor: Theme.of(context).primaryColor,
-                    title: Text(
-                      "Single Tap to Announce",
-                      style: GoogleFonts.outfit(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                    subtitle: Text(
-                      "Double tap to activate when enabled",
-                      style: GoogleFonts.outfit(color: Colors.white54),
-                    ),
-                    onChanged: (val) {
-                      setState(() {
-                        _oneTapAnnounce = val;
-                        AccessibilityService().setOneTapAnnounce(val);
-                      });
-                      if (val) {
-                        AccessibilityService().trigger(
-                          AccessibilityEvent.action,
-                        );
-                      }
-                    },
-                  ),
-                ),
-                const SizedBox(height: 20),
+                 const SizedBox(height: 20),
 
                 // Voice Commands Toggle
                 _GlassCard(

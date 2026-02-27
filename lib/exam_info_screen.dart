@@ -28,7 +28,7 @@ class ExamInfoScreen extends StatefulWidget {
   final ParsedDocument document;
   final TtsService ttsService;
   final VoiceCommandService voiceService;
-  final AccessibilityService accessibilityService;
+  final AccessibilityService? accessibilityService;
   final PicovoiceService picovoiceService;
   // final SttService sttService; // Removed
 
@@ -37,7 +37,7 @@ class ExamInfoScreen extends StatefulWidget {
     required this.document,
     required this.ttsService,
     required this.voiceService,
-    required this.accessibilityService,
+    this.accessibilityService,
     required this.picovoiceService,
     // required this.sttService, // Removed
   });
