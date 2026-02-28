@@ -12,6 +12,7 @@ import 'services/accessibility_service.dart';
 import 'saved_papers_screen.dart';
 import 'preferences_screen.dart';
 import 'services/picovoice_service.dart';
+import 'services/screen_description_service.dart'; // Added
 import 'widgets/picovoice_mic_icon.dart';
 
 // import 'dart:ui'; // For standard imports if needed
@@ -47,7 +48,7 @@ class _TakeExamScreenState extends State<TakeExamScreen> {
   void initState() {
     super.initState();
     widget.accessibilityService.trigger(AccessibilityEvent.navigation);
-    widget.ttsService.speak("Take Exam.");
+    ScreenDescriptionService().announceScreen('take_exam', widget.ttsService);
     _subscribeToVoiceCommands();
   }
 
@@ -96,6 +97,12 @@ class _TakeExamScreenState extends State<TakeExamScreen> {
         break;
       case VoiceAction.goBack:
         Navigator.pop(context);
+        break;
+      case VoiceAction.describeScreen:
+        ScreenDescriptionService().describeScreen(
+          'take_exam',
+          widget.ttsService,
+        );
         break;
       default:
         widget.voiceService.performGlobalNavigation(result);

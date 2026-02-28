@@ -8,6 +8,7 @@ import 'widgets/picovoice_mic_icon.dart'; // Added
 import 'services/voice_command_service.dart';
 import 'services/accessibility_service.dart';
 import 'services/picovoice_service.dart'; // Added
+import 'services/screen_description_service.dart'; // Added
 import 'widgets/accessible_widgets.dart'; // Added
 // import 'services/stt_service.dart'; // Removed
 
@@ -31,15 +32,13 @@ class PreferencesScreen extends StatefulWidget {
 
 class _PreferencesScreenState extends State<PreferencesScreen> {
   bool _voiceCommandsEnabled = true; // Default ON
-  final TextEditingController _apiKeyController = TextEditingController();
-  final TextEditingController _picovoiceKeyController = TextEditingController(); // Added
 
   @override
   void initState() {
     super.initState();
     _loadPreferences();
-    widget.ttsService.speak("Settings");
-    
+    ScreenDescriptionService().announceScreen('settings', widget.ttsService);
+
     // Subscribe to voice command stream
     _commandSubscription = widget.voiceService.commandStream.listen((result) {
       if (mounted) _executeVoiceCommand(result);
@@ -51,13 +50,10 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
   @override
   void dispose() {
     _commandSubscription?.cancel();
-    _apiKeyController.dispose();
-    _picovoiceKeyController.dispose(); // Added
     super.dispose();
   }
 
   // SttService listener methods removed
-
 
   void _executeVoiceCommand(CommandResult result) async {
     if (!(ModalRoute.of(context)?.isCurrent ?? false)) return;
@@ -109,6 +105,11 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
         }
         break;
 
+      case VoiceAction.describeScreen:
+        ScreenDescriptionService().describeScreen(
+          'settings',
+          widget.ttsService,
+        );
         break;
 
       default:
@@ -123,17 +124,11 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     widget.voiceService.volumeNotifier.value = 0.7;
 
     // 2. Local State Reset
-    setState(() {
-      _apiKeyController.clear();
-      _picovoiceKeyController.clear();
-    });
+    // State cleared.
 
     // 3. Service/Pref Reset
-    await widget.ttsService.resetPreferences(); // Resets speed/volume in prefs/engine
-    final sp = await SharedPreferences.getInstance();
-    await sp.remove('gemini_api_key');
-    await sp.remove('picovoice_access_key'); 
-    await widget.picovoiceService?.updateAccessKey(''); 
+    await widget.ttsService
+        .resetPreferences(); // Resets speed/volume in prefs/engine
 
     widget.ttsService.speak("Preferences have been reset.");
     AccessibilityService().trigger(AccessibilityEvent.warning);
@@ -161,26 +156,34 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
 
   void _setHaptics(bool enabled) {
     if (enabled == AccessibilityService().enabled) {
-      widget.ttsService.speak("Haptic feedback is already ${enabled ? 'enabled' : 'disabled'}.");
+      widget.ttsService.speak(
+        "Haptic feedback is already ${enabled ? 'enabled' : 'disabled'}.",
+      );
       return;
     }
     setState(() {
       AccessibilityService().setEnabled(enabled);
     });
     if (enabled) AccessibilityService().trigger(AccessibilityEvent.action);
-    widget.ttsService.speak("Haptic feedback ${enabled ? 'enabled' : 'disabled'}.");
+    widget.ttsService.speak(
+      "Haptic feedback ${enabled ? 'enabled' : 'disabled'}.",
+    );
   }
 
   void _setVoiceCommands(bool enabled) async {
     if (enabled == _voiceCommandsEnabled) {
-      widget.ttsService.speak("Voice commands are already ${enabled ? 'enabled' : 'disabled'}.");
+      widget.ttsService.speak(
+        "Voice commands are already ${enabled ? 'enabled' : 'disabled'}.",
+      );
       return;
     }
     setState(() => _voiceCommandsEnabled = enabled);
     final sp = await SharedPreferences.getInstance();
     await sp.setBool('voice_commands_enabled', enabled);
     await widget.picovoiceService?.setEnabled(enabled);
-    widget.ttsService.speak("Voice commands ${enabled ? 'enabled' : 'disabled'}.");
+    widget.ttsService.speak(
+      "Voice commands ${enabled ? 'enabled' : 'disabled'}.",
+    );
   }
 
   Future<void> _loadPreferences() async {
@@ -188,12 +191,11 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     final sp = await SharedPreferences.getInstance();
     if (mounted) {
       setState(() {
-        _apiKeyController.text = sp.getString('gemini_api_key') ?? '';
-        _picovoiceKeyController.text = sp.getString('picovoice_access_key') ?? '';
-        
         // Load into notifiers
-        widget.voiceService.speedNotifier.value = (prefs['speed'] as num?)?.toDouble() ?? 1.0;
-        widget.voiceService.volumeNotifier.value = (prefs['volume'] as num?)?.toDouble() ?? 0.7;
+        widget.voiceService.speedNotifier.value =
+            (prefs['speed'] as num?)?.toDouble() ?? 1.0;
+        widget.voiceService.volumeNotifier.value =
+            (prefs['volume'] as num?)?.toDouble() ?? 0.7;
 
         // Load Haptics
         bool hapticsEnabled = prefs['haptics'] as bool? ?? true;
@@ -206,8 +208,12 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
         _voiceCommandsEnabled = sp.getBool('voice_commands_enabled') ?? true;
       });
       // Ensure engine is synced
-      await widget.ttsService.setSpeed(widget.voiceService.speedNotifier.value * 0.5);
-      await widget.ttsService.setVolume(widget.voiceService.volumeNotifier.value);
+      await widget.ttsService.setSpeed(
+        widget.voiceService.speedNotifier.value * 0.5,
+      );
+      await widget.ttsService.setVolume(
+        widget.voiceService.volumeNotifier.value,
+      );
     }
   }
 
@@ -216,10 +222,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     final volume = widget.voiceService.volumeNotifier.value;
 
     // 1. Persist
-    await widget.ttsService.savePreferences(
-      speed: speed,
-      volume: volume,
-    );
+    await widget.ttsService.savePreferences(speed: speed, volume: volume);
     await widget.ttsService.saveHapticPreference(
       AccessibilityService().enabled,
     );
@@ -227,26 +230,13 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       AccessibilityService().oneTapAnnounce,
     );
 
-    final sp = await SharedPreferences.getInstance();
-    await sp.setString('gemini_api_key', _apiKeyController.text.trim());
-
-    // Save Picovoice Key and Reload Service
-    String newPicoKey = _picovoiceKeyController.text.trim();
-    if (newPicoKey.isNotEmpty) {
-      // Save to Prefs (PicovoiceService reads this on init, but we might want to update live)
-      await sp.setString('picovoice_access_key', newPicoKey); 
-       // If service is running, update it
-       if (widget.picovoiceService != null) {
-          debugPrint("Preferences: Requesting Picovoice live update...");
-          await widget.picovoiceService!.updateAccessKey(newPicoKey);
-       }
-    }
-
     widget.ttsService.speak("Preferences saved successfully.");
     AccessibilityService().trigger(AccessibilityEvent.success);
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Preferences saved')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Preferences saved')));
     }
   }
 
@@ -300,164 +290,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
             padding: const EdgeInsets.all(24),
             child: Column(
               children: [
-                // Picovoice AccessKey Card (New)
-                _GlassCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Picovoice AccessKey',
-                         style: GoogleFonts.outfit(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      // Service Status Indicator
-                      ValueListenableBuilder<PicovoiceState>(
-                        valueListenable: widget.picovoiceService?.stateNotifier ?? ValueNotifier(PicovoiceState.disabled),
-                        builder: (ctx, state, child) {
-                          String statusText = "Ready";
-                          Color statusColor = Colors.greenAccent;
-                          IconData statusIcon = Icons.check_circle_outline;
-
-                          switch (state) {
-                            case PicovoiceState.error:
-                              statusText = "Error (Check AccessKey)";
-                              statusColor = Colors.redAccent;
-                              statusIcon = Icons.error_outline;
-                              break;
-                            case PicovoiceState.commandListening:
-                              statusText = "Listening for Command...";
-                              statusColor = Colors.orangeAccent;
-                              statusIcon = Icons.mic;
-                              break;
-                            case PicovoiceState.ttsSpeaking:
-                              statusText = "Paused (TTS Active)";
-                              statusColor = Colors.blueAccent;
-                              statusIcon = Icons.volume_up;
-                              break;
-                            case PicovoiceState.idle:
-                              statusText = "Listening for Wake Word";
-                              statusColor = Colors.greenAccent;
-                              statusIcon = Icons.record_voice_over;
-                              break;
-                            case PicovoiceState.disabled:
-                              statusText = "Disabled";
-                              statusColor = Colors.white24;
-                              statusIcon = Icons.mic_off;
-                              break;
-                            default:
-                              statusText = "Syncing...";
-                              statusColor = Colors.white54;
-                          }
-
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: statusColor.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: statusColor.withValues(alpha: 0.3)),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(statusIcon, size: 14, color: statusColor),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      statusText,
-                                      style: GoogleFonts.outfit(color: statusColor, fontSize: 12, fontWeight: FontWeight.bold),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              if (state == PicovoiceState.error)
-                                ValueListenableBuilder<String?>(
-                                  valueListenable: widget.picovoiceService!.errorNotifier,
-                                  builder: (ctx, errMsg, _) {
-                                    if (errMsg == null) return const SizedBox.shrink();
-                                    return Padding(
-                                      padding: const EdgeInsets.only(top: 8.0, left: 4.0),
-                                      child: Text(
-                                        "Reason: $errMsg",
-                                        style: GoogleFonts.outfit(color: Colors.redAccent.withValues(alpha: 0.7), fontSize: 11),
-                                      ),
-                                    );
-                                  },
-                                ),
-                            ],
-                          );
-                        }
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: _picovoiceKeyController,
-                        style: GoogleFonts.outfit(color: Colors.white),
-                        decoration: InputDecoration(
-                          hintText: 'Enter Picovoice Key',
-                          hintStyle: GoogleFonts.outfit(color: Colors.white38),
-                          filled: true,
-                          fillColor: Colors.black.withValues(alpha: 0.2),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
-                          ),
-                          suffixIcon: const Icon(Icons.mic_external_on, color: Colors.white70),
-                        ),
-                        obscureText: true,
-                      ),
-                       const SizedBox(height: 8),
-                      Text(
-                        "Required for offline voice commands.",
-                        style: GoogleFonts.outfit(color: Colors.white54, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-
-                // API Key Card
-                _GlassCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Gemini API Key',
-                        style: GoogleFonts.outfit(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: _apiKeyController,
-                        style: GoogleFonts.outfit(color: Colors.white),
-                        decoration: InputDecoration(
-                          hintText: 'Enter your API Key here',
-                          hintStyle: GoogleFonts.outfit(color: Colors.white38),
-                          filled: true,
-                          fillColor: Colors.black.withValues(alpha: 0.2),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
-                          ),
-                          suffixIcon: const Icon(
-                            Icons.key,
-                            color: Colors.white70,
-                          ),
-                        ),
-                        obscureText: true,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-
                 // Speed Card
                 _GlassCard(
                   child: Column(
@@ -508,7 +340,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                               Text(
+                              Text(
                                 'Volume: ${(volume * 100).toInt()}%',
                                 style: GoogleFonts.outfit(
                                   fontSize: 18,
@@ -568,7 +400,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                 const SizedBox(height: 20),
 
                 // Single Tap Announce Toggle
-                 const SizedBox(height: 20),
+                const SizedBox(height: 20),
 
                 // Voice Commands Toggle
                 _GlassCard(

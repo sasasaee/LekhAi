@@ -5,6 +5,7 @@ import 'theme/app_theme.dart';
 import 'dart:async';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 // Services
 import 'services/tts_service.dart';
@@ -12,6 +13,7 @@ import 'services/voice_command_service.dart';
 import 'services/picovoice_service.dart';
 import 'widgets/picovoice_mic_icon.dart'; // Changed
 import 'services/accessibility_service.dart';
+import 'services/screen_description_service.dart'; // Added
 // Screens
 import 'take_exam_screen.dart'; // Extracted screen
 import 'preferences_screen.dart';
@@ -24,13 +26,14 @@ import 'start_page.dart'; // Imported StartPage
 // import 'package:image_picker/image_picker.dart';
 // import 'services/gemini_question_service.dart';
 // import 'ocr_screen.dart';
-// import 'paper_detail_screen.dart';
+// import 'answer_sheet_screen.dart';
 // import 'models/question_model.dart';
 // import 'widgets/accessible_widgets.dart';
 // import 'widgets/animated_button.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: ".env");
   runApp(MyApp());
 }
 
@@ -216,7 +219,7 @@ class _HomeScreenState extends State<HomeScreen>
 
     // 2. Initial Greeting & Haptics
     widget.accessibilityService.trigger(AccessibilityEvent.navigation);
-    widget.ttsService.speak("Welcome.");
+    ScreenDescriptionService().announceScreen('home', widget.ttsService);
 
     // 3. Start Time Timer
     _updateTime();
@@ -243,6 +246,9 @@ class _HomeScreenState extends State<HomeScreen>
     switch (result.action) {
       case VoiceAction.goBack:
         widget.ttsService.speak("You are at the home screen.");
+        break;
+      case VoiceAction.describeScreen:
+        ScreenDescriptionService().describeScreen('home', widget.ttsService);
         break;
       case VoiceAction.goToSettings:
         Navigator.pushNamed(context, '/settings');

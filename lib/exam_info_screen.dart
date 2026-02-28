@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:lekhai/paper_detail_screen.dart';
+import 'package:lekhai/answer_sheet_screen.dart';
 // import 'dart:io';
 // import 'questions_screen.dart';
 // import 'package:lekhai/services/ocr_service.dart';
@@ -19,8 +19,9 @@ import 'package:audioplayers/audioplayers.dart';
 import 'dart:io';
 import 'package:lekhai/utils/string_utils.dart';
 import 'package:lekhai/widgets/voice_alert_dialog.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:lekhai/services/gemini_paper_service.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:lekhai/services/screen_description_service.dart'; // Added
 
 enum DictationField { name, id, none }
 
@@ -83,9 +84,7 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
   @override
   void initState() {
     super.initState();
-    widget.ttsService.speak(
-      "Exam Setup. Please review rules and enter details. Say Start Exam to begin.",
-    );
+    ScreenDescriptionService().announceScreen('exam_info', widget.ttsService);
     // _initVoiceListener(); // Removed
     _subscribeToVoiceCommands();
 
@@ -119,7 +118,8 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
   }
 
   void _onPicovoiceStateChanged() {
-    if (widget.picovoiceService.stateNotifier.value == PicovoiceState.wakeDetected) {
+    if (widget.picovoiceService.stateNotifier.value ==
+        PicovoiceState.wakeDetected) {
       if (_isListening) {
         _stopListening();
       }
@@ -129,7 +129,9 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
   @override
   void dispose() {
     _commandSubscription?.cancel();
-    widget.picovoiceService.stateNotifier.removeListener(_onPicovoiceStateChanged);
+    widget.picovoiceService.stateNotifier.removeListener(
+      _onPicovoiceStateChanged,
+    );
     _audioPlayer.dispose();
     _nameFocus.dispose();
     _idFocus.dispose();
@@ -246,10 +248,11 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
       _currentDictationField = DictationField.none;
     }
 
-    await widget.ttsService.speak("Listening.");
+    await widget.ttsService.speak("Listening. Say hey lekhai stop to finish.");
     await Future.delayed(const Duration(milliseconds: 600));
     final tempDir = await getTemporaryDirectory();
-    _tempAudioPath = '${tempDir.path}/temp_form_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    _tempAudioPath =
+        '${tempDir.path}/temp_form_${DateTime.now().millisecondsSinceEpoch}.m4a';
     try {
       await _audioRecorderService.startRecording(_tempAudioPath!);
       setState(() {
@@ -266,7 +269,9 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
               children: const [
                 CircularProgressIndicator(),
                 SizedBox(width: 16),
-                Expanded(child: Text("Listening... Say 'hey lekhai stop' to finish.")),
+                Expanded(
+                  child: Text("Listening... Say 'hey lekhai stop' to finish."),
+                ),
               ],
             ),
           ),
@@ -280,7 +285,7 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
   void _stopListening() async {
     if (_isListening) {
       final path = await _audioRecorderService.stopRecording();
-      
+
       if (_isListeningDialogOpen && mounted) {
         Navigator.of(context, rootNavigator: true).pop();
         _isListeningDialogOpen = false;
@@ -295,7 +300,7 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
         setState(() => _isProcessingAudio = false);
         return;
       }
-      
+
       if (mounted && !_isTranscribingDialogOpen) {
         _isTranscribingDialogOpen = true;
         showDialog(
@@ -318,19 +323,34 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
   }
 
   Future<void> _processAudioDictation(String audioPath) async {
-    final prefs = await SharedPreferences.getInstance();
-    final apiKey = prefs.getString('gemini_api_key');
+    final String? apiKey = dotenv.env['GEMINI_API_KEY'];
     String transcribedText = "";
+
+    String contextPrompt = "";
+    if (_currentDictationField == DictationField.name) {
+      contextPrompt =
+          "Extract ONLY the student's name from this audio. Ignore any system TTS bleeding into the audio such as 'Listening say hey lekhai stop to finish' or similar phrases. Also explicitly ignore any wake words or commands trailing at the beginning or end such as 'hey lekhai', 'he like i', or 'stop to finish'. Only output the name itself. No extra symbols.";
+    } else if (_currentDictationField == DictationField.id) {
+      contextPrompt =
+          "Extract ONLY the student's ID (numbers/digits) from this audio. Ignore any system TTS bleeding into the audio such as 'Listening say hey lekhai stop to finish' or similar phrases. Also explicitly ignore any wake words or commands trailing at the beginning or end such as 'hey lekhai', 'he like i', or 'stop to finish'. Only output the ID digits. No extra text or symbols.";
+    }
+
     if (apiKey != null && apiKey.isNotEmpty) {
       try {
         final geminiService = GeminiPaperService();
-        transcribedText = await geminiService.transcribeAudio(audioPath, apiKey);
+        transcribedText = await geminiService.transcribeAudio(
+          audioPath,
+          apiKey,
+          contextPrompt: contextPrompt.isNotEmpty ? contextPrompt : null,
+        );
       } catch (e) {
         transcribedText = "[Transcription Failed: $e]";
       }
     } else {
       transcribedText = "[No API Key - Audio Saved. Type answer manually.]";
-      widget.ttsService.speak("No API Key found. Audio saved, please type manually.");
+      widget.ttsService.speak(
+        "No API Key found. Audio saved, please type manually.",
+      );
     }
     if (!mounted) return;
 
@@ -354,7 +374,9 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
     if (_currentDictationField == DictationField.id) {
       answer = StringUtils.extractDigits(answer);
       if (answer.isEmpty) {
-        widget.ttsService.speak("I couldn't hear any numbers. Please try again.");
+        widget.ttsService.speak(
+          "I couldn't hear any numbers. Please try again.",
+        );
         widget.picovoiceService.resumeListening();
         return; // Don't show confirmation if empty ID
       }
@@ -366,7 +388,12 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
       return;
     }
 
-    widget.ttsService.speak("You said: $answer. Is this correct?");
+    // Create a spellable version of the answer
+    String spellOut = answer.split('').join('. ');
+
+    widget.ttsService.speak(
+      "You said: $spellOut. That is $answer. Is this correct?",
+    );
     if (mounted) {
       _showConfirmationDialog(answer);
     }
@@ -453,7 +480,7 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
               _discardAudio();
               widget.ttsService.speak("Saved.");
               widget.picovoiceService.resumeListening();
-              FocusScope.of(context).unfocus(); 
+              FocusScope.of(context).unfocus();
             },
             child: const Text("Confirm"),
           ),
@@ -491,6 +518,33 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
     // Convert to seconds
     int durationSeconds = totalMinutes * 60;
 
+    // Create a clean deep copy for the exam, clearing any previous answers
+    final cleanSections = widget.document.sections.map((section) {
+      final cleanQuestions = section.questions.map((q) {
+        return ParsedQuestion(
+          number: q.number,
+          prompt: q.prompt,
+          body: List.from(q.body),
+          marks: q.marks,
+          sourceLineIndices: List.from(q.sourceLineIndices),
+          answer: '', // Clear text answer
+          audioPath: null, // Clear audio answer
+        );
+      }).toList();
+      return ParsedSection(
+        title: section.title,
+        context: section.context,
+        questions: cleanQuestions,
+      );
+    }).toList();
+
+    final cleanDocument = ParsedDocument(
+      id: widget.document.id,
+      name: widget.document.name,
+      header: List.from(widget.document.header),
+      sections: cleanSections,
+    );
+
     widget.ttsService.speak(
       "Starting exam for $_name with $hours hours and $minutes minutes duration.",
     );
@@ -498,11 +552,11 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (_) => PaperDetailScreen(
+        builder: (_) => AnswerSheetScreen(
           ttsService: widget.ttsService,
           voiceService: widget.voiceService,
           accessibilityService: widget.accessibilityService,
-          document: widget.document,
+          document: cleanDocument, // Pass the clean document
           studentName: _name,
           studentId: _studentId,
           examMode: true,

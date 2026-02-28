@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/voice_command_service.dart';
+import '../services/tts_service.dart'; // Added for popup descriptions
 
 class VoiceAlertDialog extends StatefulWidget {
   final Widget title;
@@ -15,6 +16,8 @@ class VoiceAlertDialog extends StatefulWidget {
   final VoidCallback? onSharePdf;
   final VoidCallback? onSaveToDownloads;
   final VoidCallback? onRetry;
+  final String? voiceDescription; // Added: TTS announcement when dialog opens
+  final TtsService? ttsService; // Added: needed for voiceDescription
 
   const VoiceAlertDialog({
     super.key,
@@ -30,6 +33,8 @@ class VoiceAlertDialog extends StatefulWidget {
     this.onSharePdf,
     this.onSaveToDownloads,
     this.onRetry,
+    this.voiceDescription,
+    this.ttsService,
   });
 
   @override
@@ -55,6 +60,10 @@ class _VoiceAlertDialogState extends State<VoiceAlertDialog> {
     super.initState();
     // Listen to the stream for events
     _subscription = widget.voiceService.commandStream.listen(_handleCommand);
+    // Announce dialog description for accessibility
+    if (widget.voiceDescription != null && widget.ttsService != null) {
+      widget.ttsService!.speak(widget.voiceDescription!);
+    }
   }
 
   @override
@@ -106,9 +115,11 @@ class _VoiceAlertDialogState extends State<VoiceAlertDialog> {
         if (widget.onViewPdf != null) widget.onViewPdf!();
         break;
       case VoiceAction.shareFile:
+      case VoiceAction.sharePdf:
         if (widget.onSharePdf != null) widget.onSharePdf!();
         break;
       case VoiceAction.saveFile:
+      case VoiceAction.savePdfToDownloads:
         // Handle save to downloads specifically if callback exists, else fall through to existing saveResult logic?
         // Actually, saveFile is mapped from "save to downloads".
         if (widget.onSaveToDownloads != null) {

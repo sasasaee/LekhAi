@@ -9,6 +9,7 @@ import 'services/voice_command_service.dart';
 import 'package:google_fonts/google_fonts.dart'; // Added
 import 'widgets/picovoice_mic_icon.dart';
 import 'services/picovoice_service.dart';
+import 'services/screen_description_service.dart'; // Added
 
 // import 'dart:ui'; // Added
 // import 'widgets/accessible_widgets.dart'; // Added
@@ -39,7 +40,7 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   List<String> _sentences = [];
   int _currentIndex = 0;
   bool _isReading = false;
-  
+
   StreamSubscription? _commandSubscription;
 
   @override
@@ -48,12 +49,13 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
     _loadPdf();
     // _initVoiceCommandListener(); // Removed local STT
     _subscribeToVoiceCommands();
+    ScreenDescriptionService().announceScreen('pdf_viewer', widget.ttsService);
   }
 
   void _subscribeToVoiceCommands() {
     _commandSubscription = widget.voiceService.commandStream.listen((result) {
       if (mounted) {
-         _handleVoiceCommand(result);
+        _handleVoiceCommand(result);
       }
     });
   }
@@ -113,9 +115,15 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
         break;
       case VoiceAction.goToPage:
         if (result.payload is int) {
-           _pdfController.jumpToPage(result.payload);
-           widget.ttsService.speak("Going to page ${result.payload}.");
+          _pdfController.jumpToPage(result.payload);
+          widget.ttsService.speak("Going to page ${result.payload}.");
         }
+        break;
+      case VoiceAction.describeScreen:
+        ScreenDescriptionService().describeScreen(
+          'pdf_viewer',
+          widget.ttsService,
+        );
         break;
       // Fallback
       default:

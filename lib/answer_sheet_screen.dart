@@ -17,6 +17,7 @@ import 'services/pdf_service.dart'; // Added PdfService
 import 'package:open_filex/open_filex.dart'; // Added for View PDF
 import 'package:share_plus/share_plus.dart'; // Added for Share PDF
 import 'widgets/voice_alert_dialog.dart'; // Added
+import 'package:flutter_dotenv/flutter_dotenv.dart'; // Added
 import 'utils/string_utils.dart'; // Added for fuzzy matching
 
 // --- PAPER DETAIL SCREEN ---
@@ -28,6 +29,7 @@ import 'dart:ui';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'dart:async';
 import 'services/picovoice_service.dart';
+import 'services/screen_description_service.dart'; // Added
 import 'widgets/picovoice_mic_icon.dart';
 import 'dart:convert';
 // import 'package:permission_handler/permission_handler.dart'; // Added for Save PDF permissions
@@ -35,7 +37,7 @@ import 'dart:convert';
 // import 'exam_info_screen.dart';
 // import 'dart:convert';
 
-class PaperDetailScreen extends StatefulWidget {
+class AnswerSheetScreen extends StatefulWidget {
   final ParsedDocument document;
   final TtsService ttsService;
   final VoiceCommandService voiceService; // Added
@@ -47,7 +49,7 @@ class PaperDetailScreen extends StatefulWidget {
   final int? examDurationSeconds;
   final PicovoiceService picovoiceService;
 
-  const PaperDetailScreen({
+  const AnswerSheetScreen({
     super.key,
     required this.document,
     required this.ttsService,
@@ -63,10 +65,10 @@ class PaperDetailScreen extends StatefulWidget {
   });
 
   @override
-  State<PaperDetailScreen> createState() => _PaperDetailScreenState();
+  State<AnswerSheetScreen> createState() => _AnswerSheetScreenState();
 }
 
-class _PaperDetailScreenState extends State<PaperDetailScreen> {
+class _AnswerSheetScreenState extends State<AnswerSheetScreen> {
   late ParsedDocument _document;
   final GeminiPaperService _geminiService = GeminiPaperService();
   final PaperStorageService _storageService = PaperStorageService();
@@ -94,6 +96,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
 
   StreamSubscription? _commandSubscription;
   final ScrollController _scrollController = ScrollController(); // Added
+  String? _lastPdfPath;
 
   @override
   void initState() {
@@ -108,6 +111,14 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
     AccessibilityService().trigger(AccessibilityEvent.navigation);
     // _initVoiceCommandListener(); // Removed
     _subscribeToVoiceCommands();
+
+    // Screen Announcement
+    final paperName = _document.name ?? 'Untitled';
+    ScreenDescriptionService().announceScreen(
+      'answer_sheet',
+      widget.ttsService,
+      dynamicDetail: 'Paper: $paperName.',
+    );
 
     if (widget.examMode) {
       // Don't start immediately. Ask for confirmation first.
@@ -147,7 +158,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
           voiceService: widget.voiceService,
           onConfirm: () {
             Navigator.pop(ctx); // Close dialog
-            _confirmAndStartKiosk(startReading: true);
+            _confirmAndStartKiosk(startReading: false);
           },
           onCancel: () {
             Navigator.pop(ctx); // Close dialog
@@ -168,7 +179,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
             AccessibleElevatedButton(
               onPressed: () {
                 Navigator.pop(ctx); // Close dialog
-                _confirmAndStartKiosk(startReading: true);
+                _confirmAndStartKiosk(startReading: false);
               },
               child: const Text("Start Exam"),
             ),
@@ -178,7 +189,12 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
     );
   }
 
+  bool _isStartingExam = false;
+
   void _confirmAndStartKiosk({bool startReading = false}) async {
+    if (_isStartingExam) return;
+    _isStartingExam = true;
+
     setState(() {
       _isWaitingForConfirmation = false;
       _kioskEnabled = true;
@@ -195,7 +211,8 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
           // Short delay to ensure TTS message starts before screen switch
           Future.delayed(const Duration(milliseconds: 2000), () {
             if (mounted) {
-              widget.picovoiceService.resumeListening(); // Ensure awake before transferring control
+              widget.picovoiceService
+                  .resumeListening(); // Ensure awake before transferring control
               _openQuestionByNumber(1);
             }
           });
@@ -211,32 +228,31 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
     Navigator.pop(context); // Go back to scan/list screen
   }
 
-  void _startCountdownSequence({VoidCallback? onDone}) {
+  void _startCountdownSequence({VoidCallback? onDone}) async {
     setState(() {
       _showCountdown = true;
       _countdownValue = 3;
     });
 
-    widget.ttsService.speak("Exam starting in 3...");
+    await widget.ttsService.speak("Exam starting in 3");
+    await Future.delayed(const Duration(seconds: 1));
 
-    Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
+    if (!mounted) return;
 
+    for (int i = 2; i >= 1; i--) {
       setState(() {
-        if (_countdownValue > 1) {
-          _countdownValue--;
-          widget.ttsService.speak("$_countdownValue...");
-        } else {
-          timer.cancel();
-          _showCountdown = false;
-          _initExamSession(); // Initialize Timer & Persistence
-          if (onDone != null) onDone();
-        }
+        _countdownValue = i;
       });
+      await widget.ttsService.speak("$i");
+      await Future.delayed(const Duration(seconds: 1));
+      if (!mounted) return;
+    }
+
+    setState(() {
+      _showCountdown = false;
     });
+    _initExamSession(); // Initialize Timer & Persistence
+    if (onDone != null) onDone();
   }
 
   Future<void> _initExamSession() async {
@@ -372,7 +388,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
 
     // 2. Announce
     widget.ttsService.speak(
-      "Ending exam. You have answered $answered out of $total questions. Double tap confirm to submit.",
+      "Ending exam. You have answered $answered out of $total questions. Say confirm to submit. Say cancel to continue.",
     );
 
     // 3. Show Dialog
@@ -511,7 +527,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
         if (_isWaitingForConfirmation) {
           // If dialog is open, pop it first (we know it's top of stack)
           if (Navigator.canPop(context)) Navigator.pop(context);
-          _confirmAndStartKiosk(startReading: true);
+          _confirmAndStartKiosk(startReading: false);
         }
         break;
 
@@ -569,6 +585,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
         }
         break;
 
+      case VoiceAction.cancelAction:
       case VoiceAction.exitExam:
       case VoiceAction.cancelExam:
         if (_isExamFinished) {
@@ -583,6 +600,34 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
           widget.ttsService.speak(
             "Exam is locked. Say finish exam to submit first. Or say confirm exit to cancel and exit.",
           );
+        }
+        break;
+
+      case VoiceAction.viewPdf:
+        if (_isExamFinished && _lastPdfPath != null) {
+          if (Navigator.canPop(context)) Navigator.pop(context); // popup
+          _viewPdf(_lastPdfPath!);
+        } else {
+          widget.ttsService.speak("PDF is not available.");
+        }
+        break;
+
+      case VoiceAction.sharePdf:
+        if (_isExamFinished && _lastPdfPath != null) {
+          if (Navigator.canPop(context)) Navigator.pop(context); // popup
+          _sharePdf(_lastPdfPath!);
+        } else {
+          widget.ttsService.speak("PDF is not available.");
+        }
+        break;
+
+      case VoiceAction.savePdfToDownloads:
+        if (_isExamFinished && _lastPdfPath != null) {
+          if (Navigator.canPop(context)) Navigator.pop(context); // popup
+          // Need a File object for this helper
+          _savePdfToDownloads(File(_lastPdfPath!));
+        } else {
+          widget.ttsService.speak("PDF is not available.");
         }
         break;
 
@@ -631,6 +676,17 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
           _showRenameDialog();
         } else {
           widget.ttsService.speak("Cannot rename file during exam.");
+        }
+        break;
+
+      case VoiceAction.readContext:
+        final headerText = _document.header.join(". ");
+        if (headerText.isNotEmpty) {
+          widget.ttsService.speak("Reading paper header context. $headerText");
+        } else {
+          widget.ttsService.speak(
+            "No header context available for this paper.",
+          );
         }
         break;
 
@@ -835,8 +891,13 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
     }
   }
 
+  bool _isOpeningQuestion = false;
+
   // Helper to open a question via voice
-  void _openQuestionByNumber(int number, {bool replace = false}) {
+  void _openQuestionByNumber(int number, {bool replace = false}) async {
+    if (_isOpeningQuestion) return; // Prevent double-triggers
+    _isOpeningQuestion = true;
+
     ParsedQuestion? target;
     String? contextText;
 
@@ -853,6 +914,11 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
 
     if (target != null) {
       widget.ttsService.speak("Opening question $number.");
+
+      // Allow slight delay before next open is permitted (increased to 3s for slow navigations)
+      Future.delayed(const Duration(milliseconds: 3000), () {
+        if (mounted) _isOpeningQuestion = false;
+      });
 
       // Stop local listening before pushing new screen
       // _sttService.stopListening(); // Removed
@@ -1059,7 +1125,9 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                (Theme.of(context).cardTheme.color ?? Theme.of(context).primaryColor).withOpacity(0.8),
+                (Theme.of(context).cardTheme.color ??
+                        Theme.of(context).primaryColor)
+                    .withOpacity(0.8),
                 Theme.of(context).scaffoldBackgroundColor,
                 Colors.black,
               ],
@@ -1372,8 +1440,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
   }
 
   Future<void> _onAddPage(BuildContext context) async {
-    final prefs = await SharedPreferences.getInstance();
-    final apiKey = prefs.getString('gemini_api_key');
+    final apiKey = dotenv.env['GEMINI_API_KEY'];
 
     if (context.mounted) {
       showDialog(
@@ -1494,6 +1561,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
       if (mounted) {
         setState(() {
           _isExamFinished = true;
+          _lastPdfPath = pdfFile.path;
         });
 
         widget.ttsService.speak(
@@ -1509,7 +1577,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
             title: const Text("Exam Completed"),
             onCancel: () {
               Navigator.pop(ctx);
-              Navigator.pop(context); // Exit PaperDetailScreen
+              Navigator.pop(context); // Exit AnswerSheetScreen
             },
             onViewPdf: () => _viewPdf(pdfFile.path),
             onSharePdf: () => _sharePdf(pdfFile.path),
@@ -1562,7 +1630,7 @@ class _PaperDetailScreenState extends State<PaperDetailScreen> {
               AccessibleTextButton(
                 onPressed: () {
                   Navigator.pop(ctx);
-                  Navigator.pop(context); // Exit PaperDetailScreen
+                  Navigator.pop(context); // Exit AnswerSheetScreen
                 },
                 child: const Text("Close & Exit"),
               ),
@@ -1776,6 +1844,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
   bool _isProcessingAudio = false;
   String? _tempAudioPath;
   final AudioPlayer _audioPlayer = AudioPlayer();
+  final ScrollController _scrollController = ScrollController();
 
   // Hands-Free State
   bool _isAppending = true;
@@ -1932,7 +2001,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
       case VoiceAction.goBack:
         // Inside a question, "Go back" takes you to the list/summary.
         // We ALLOW this even in exam mode, as it's internal navigation.
-        // The PaperDetailScreen (summary) will block actual app exit.
+        // The AnswerSheetScreen (summary) will block actual app exit.
         await widget.ttsService.speak("Going back to summary.");
         if (mounted) Navigator.pop(context);
         break;
@@ -1945,6 +2014,18 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         }
         await widget.ttsService.speak("Exiting to home.");
         if (mounted) Navigator.popUntil(context, (route) => route.isFirst);
+        break;
+
+      case VoiceAction.readContext:
+        if (widget.contextText != null && widget.contextText!.isNotEmpty) {
+          widget.ttsService.speak(
+            "Reading section context. ${widget.contextText}",
+          );
+        } else {
+          widget.ttsService.speak(
+            "No shared context available for this section.",
+          );
+        }
         break;
 
       case VoiceAction.nextPage:
@@ -1966,7 +2047,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         break;
 
       case VoiceAction.submitExam:
-        // Pop back to PaperDetailScreen first
+        // Pop back to AnswerSheetScreen first
         if (mounted) Navigator.pop(context);
         // Delay slightly for transition before broadcasting so parent is "Current"
         Future.delayed(const Duration(milliseconds: 300), () {
@@ -2002,6 +2083,49 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         if (widget.onCountCheck != null) {
           String msg = widget.onCountCheck!();
           widget.ttsService.speak(msg);
+        }
+        break;
+
+      case VoiceAction.scrollToTop:
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(
+            0,
+            duration: const Duration(milliseconds: 500),
+            curve: Curves.easeOut,
+          );
+        }
+        break;
+      case VoiceAction.scrollToBottom:
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(
+            _scrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 500),
+            curve: Curves.easeOut,
+          );
+        }
+        break;
+      case VoiceAction.scrollUp:
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(
+            (_scrollController.offset - 300).clamp(
+              0,
+              _scrollController.position.maxScrollExtent,
+            ),
+            duration: const Duration(milliseconds: 500),
+            curve: Curves.easeOut,
+          );
+        }
+        break;
+      case VoiceAction.scrollDown:
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(
+            (_scrollController.offset + 300).clamp(
+              0,
+              _scrollController.position.maxScrollExtent,
+            ),
+            duration: const Duration(milliseconds: 500),
+            curve: Curves.easeOut,
+          );
         }
         break;
 
@@ -2084,6 +2208,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     _answerController.dispose();
     widget.ttsService.stop();
     _audioPlayer.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -2251,8 +2376,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
   }
 
   Future<void> _processAudioAnswer(String audioPath) async {
-    final prefs = await SharedPreferences.getInstance();
-    final apiKey = prefs.getString('gemini_api_key');
+    final String? apiKey = dotenv.env['GEMINI_API_KEY'];
     String transcribedText = "";
     if (apiKey != null && apiKey.isNotEmpty) {
       try {
@@ -2263,8 +2387,11 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         );
       } catch (e) {
         String err = e.toString();
-        if (err.toLowerCase().contains("quota") || err.toLowerCase().contains("limit")) {
-          widget.ttsService.speak("AI capacity reached. Please wait a minute and retry.");
+        if (err.toLowerCase().contains("quota") ||
+            err.toLowerCase().contains("limit")) {
+          widget.ttsService.speak(
+            "AI capacity reached. Please wait a minute and retry.",
+          );
         }
         transcribedText = "[Transcription Failed: $err]";
       }
@@ -2334,7 +2461,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     // PicovoiceService handoff is handled by startListening
     widget.ttsService.speak("Listening again.");
     // Wait for "Listening again" to finish to avoid crosstalk
-    await Future.delayed(const Duration(milliseconds: 1500)); 
+    await Future.delayed(const Duration(milliseconds: 1500));
     _startListening(append: false);
   }
 
@@ -2486,6 +2613,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
               children: [
                 Expanded(
                   child: SingleChildScrollView(
+                    controller: _scrollController,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
