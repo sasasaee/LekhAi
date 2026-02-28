@@ -115,9 +115,11 @@ class _VoiceAlertDialogState extends State<VoiceAlertDialog> {
         if (widget.onViewPdf != null) widget.onViewPdf!();
         break;
       case VoiceAction.shareFile:
+      case VoiceAction.sharePdf:
         if (widget.onSharePdf != null) widget.onSharePdf!();
         break;
       case VoiceAction.saveFile:
+      case VoiceAction.savePdfToDownloads:
         // Handle save to downloads specifically if callback exists, else fall through to existing saveResult logic?
         // Actually, saveFile is mapped from "save to downloads".
         if (widget.onSaveToDownloads != null) {

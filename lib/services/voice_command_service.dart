@@ -1206,14 +1206,20 @@ class VoiceCommandService {
             action = VoiceAction
                 .saveResult; // Map 'save' to saveResult for dialogs/forms
           else if (actionSlot == 'save to downloads' ||
+              actionSlot == 'save to download' ||
               actionSlot == 'download')
-            action = VoiceAction.saveFile;
+            action = VoiceAction
+                .savePdfToDownloads; // Standardize to savePdfToDownloads
           else if (actionSlot.contains('screen'))
             action = VoiceAction.describeScreen;
           else if (actionSlot == 'go back' || actionSlot == 'return')
             action = VoiceAction.goBack;
           else if (actionSlot == 'read context')
             action = VoiceAction.readContext;
+          else if (actionSlot == 'view pdf' || actionSlot == 'view p d f')
+            action = VoiceAction.viewPdf;
+          else if (actionSlot == 'share pdf' || actionSlot == 'share p d f')
+            action = VoiceAction.sharePdf;
         } else if (scrollSlot != null) {
           if (scrollSlot.contains('up') || scrollSlot == 'scroll up') {
             action = VoiceAction.scrollUp;
@@ -1336,12 +1342,18 @@ class VoiceCommandService {
             action = VoiceAction.enterExamMode;
           else if (act == 'convert') {
             action = VoiceAction.convertFile;
-          } else if (act == 'save') {
-            action = VoiceAction.saveFile;
+          } else if (act == 'save' ||
+              act == 'save to downloads' ||
+              act == 'save to download') {
+            action = VoiceAction.savePdfToDownloads;
           } else if (act == 'reset') {
             action = VoiceAction.resetPreferences;
-          } else if (act.contains('view pdf') || act.contains('open pdf')) {
+          } else if (act.contains('view pdf') ||
+              act.contains('view p d f') ||
+              act.contains('open pdf')) {
             action = VoiceAction.viewPdf;
+          } else if (act.contains('share pdf') || act.contains('share p d f')) {
+            action = VoiceAction.sharePdf;
           }
         }
         break;
@@ -1380,11 +1392,15 @@ class VoiceCommandService {
             action = VoiceAction.retry;
           } else if (['cancel'].contains(resp)) {
             action = VoiceAction.cancelAction;
-          } else if (['view pdf'].contains(resp)) {
+          } else if (['view pdf', 'view p d f'].contains(resp)) {
             action = VoiceAction.viewPdf;
-          } else if (['share pdf', 'share'].contains(resp)) {
+          } else if (['share pdf', 'share p d f', 'share'].contains(resp)) {
             action = VoiceAction.sharePdf;
-          } else if (['save to downloads', 'save'].contains(resp)) {
+          } else if ([
+            'save to downloads',
+            'save to download',
+            'save',
+          ].contains(resp)) {
             action = VoiceAction.savePdfToDownloads;
           }
         }
