@@ -14,6 +14,7 @@ import 'voice_command_service.dart';
 import 'accessibility_service.dart';
 import 'tts_service.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart'; // Added
 
 enum PicovoiceState {
   idle, // Waiting for Wake Word (Porcupine running)
@@ -48,7 +49,7 @@ class PicovoiceService {
   ); // Added for detailed errors
 
   // Configuration
-  String? _accessKey = "Access key Here";
+  String? _accessKey = dotenv.env['PICOVOICE_ACCESS_KEY'];
 
   // Default models placeholders
   final String _keywordPath =
@@ -59,7 +60,8 @@ class PicovoiceService {
   bool _isInitialized = false;
   bool _isEnabled = true; // Default to true
   bool _isStarting = false; // Prevention latch for concurrent starts
-  bool _isPorcupineRunning = false; // Internal tracking of Porcupine engine state
+  bool _isPorcupineRunning =
+      false; // Internal tracking of Porcupine engine state
 
   PicovoiceService._internal();
 
@@ -112,10 +114,11 @@ class PicovoiceService {
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    final storedKey = prefs.getString('picovoice_access_key');
-    if (storedKey != null && storedKey.isNotEmpty) {
-      _accessKey = storedKey;
-    }
+
+    // Always fall back to dotenv. Preferences update might have overridden it temporarily in dev,
+    // but the source of truth should remain .env. We read from dotenv directly.
+    _accessKey = dotenv.env['PICOVOICE_ACCESS_KEY'];
+
     // Check if voice commands are enabled
     _isEnabled = prefs.getBool('voice_commands_enabled') ?? true;
   }
@@ -149,7 +152,9 @@ class PicovoiceService {
     debugPrint("Picovoice: Using AccessKey: ${_accessKey?.substring(0, 5)}...");
 
     if (_isPorcupineRunning) {
-      debugPrint("Picovoice: Engines already running. Stopping before re-init.");
+      debugPrint(
+        "Picovoice: Engines already running. Stopping before re-init.",
+      );
       await _stopEngines();
     }
 
@@ -176,7 +181,8 @@ class PicovoiceService {
         _wakeWordCallback,
         errorCallback: _errorCallback,
       );
-      _isPorcupineRunning = true; // fromKeywordPaths automatically starts the engines
+      _isPorcupineRunning =
+          true; // fromKeywordPaths automatically starts the engines
       debugPrint("Picovoice: Porcupine engine started.");
 
       // Initialize Rhino (Speech-to-Intent)
@@ -246,16 +252,21 @@ class PicovoiceService {
     } catch (e) {
       debugPrint("Picovoice: Error switching to Rhino: $e");
       // Try to recover
-      stateNotifier.value = PicovoiceState.error; // Changed from idle to error for better visibility
+      stateNotifier.value = PicovoiceState
+          .error; // Changed from idle to error for better visibility
       // Attempt to restart Porcupine if it's not running
       if (!_isPorcupineRunning) {
         try {
           await _porcupineManager?.start();
           _isPorcupineRunning = true;
           stateNotifier.value = PicovoiceState.idle;
-          debugPrint("Picovoice: Porcupine restarted after Rhino switch error.");
+          debugPrint(
+            "Picovoice: Porcupine restarted after Rhino switch error.",
+          );
         } catch (restartError) {
-          debugPrint("Picovoice: Error restarting Porcupine after Rhino switch error: $restartError");
+          debugPrint(
+            "Picovoice: Error restarting Porcupine after Rhino switch error: $restartError",
+          );
           errorNotifier.value = "Failed to recover after Rhino switch error.";
         }
       }
@@ -383,7 +394,8 @@ class PicovoiceService {
       debugPrint("Picovoice: Resuming after TTS");
       // Add a stabilization delay to ensure native audio session is fully released
       await Future.delayed(const Duration(milliseconds: 500));
-      if (!_tts.isSpeaking && stateNotifier.value == PicovoiceState.ttsSpeaking) {
+      if (!_tts.isSpeaking &&
+          stateNotifier.value == PicovoiceState.ttsSpeaking) {
         _isStarting = true;
         try {
           if (!_isPorcupineRunning) {

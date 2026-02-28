@@ -4,23 +4,16 @@ context:
       - Get Started
       - (@polite) @nav_action $destination:destination
       - (@polite) show me $destination:destination
-      - @nav_action $itemType:itemType $pv.TwoDigitInteger:itemNumber
-      - (@polite) go back
+      - "@nav_action $itemType:itemType $pv.TwoDigitInteger:itemNumber"
       - go back to summary
       - back to list
-
     AppControl:
+      - (@polite) $scroll:scroll_action
       - (@polite) $action:action
       - I want to $action:action
-      - (@polite) scroll down
-      - (@polite) scroll up
-      - (@polite) scroll to top
-      - (@polite) scroll to bottom
     ChangePages:
-      - (@polite) @direction_action $direction:direction page
-      - (@polite) @direction_action $direction:direction question
-      - (@polite) $direction:direction question
-      - (@polite) $direction:direction page
+      - (@polite) (@direction_action) $direction:direction page
+      - (@polite) (@direction_action) $direction:direction question
     readContent:
       - (@polite) @read_action question
       - (@polite) @read_action this page
@@ -44,7 +37,7 @@ context:
       - (@polite) @scan_action from $source:source
       - (@polite) use $scan_choice:scan_choice
       - (@polite) choose $scan_choice:scan_choice
-      - @nav_action $source:source
+      - "@nav_action $source:source"
     process:
       - (@polite) $processAction:processAction
       - (@polite) $processAction:processAction result
@@ -80,7 +73,8 @@ context:
       - (@polite) character count
     formControl:
       - (@polite) @edit_action $formItem:item
-      - (@polite) @edit_action exam time $pv.SingleDigitInteger:hour hour $pv.TwoDigitInteger:minute minutes
+      - (@polite) @edit_action exam time $pv.SingleDigitInteger:hour hour
+        $pv.TwoDigitInteger:minute minutes
       - (@polite) @edit_action exam time $pv.TwoDigitInteger:minutes minutes
       - (@polite) @edit_action time $pv.TwoDigitInteger:minutes minutes
       - (@polite) @edit_action total time
@@ -104,7 +98,22 @@ context:
       - (@polite) select option $pv.TwoDigitInteger:optionNumber
       - (@polite) choose option $pv.TwoDigitInteger:optionNumber
       - (@polite) option $pv.TwoDigitInteger:optionNumber
+    examProgress:
+      - (@polite) how much $progress_state:state
+      - (@polite) how many questions $progress_state:state
+      - (@polite) how many $progress_state:state
+      - (@polite) what is the $progress_state:state of questions
   slots:
+    progress_state:
+      - time has passed
+      - time passed
+      - time remaining
+      - remaining
+      - answered
+      - total
+      - left
+      - completed
+      - done
     formItem:
       - student name
       - my name
@@ -113,6 +122,7 @@ context:
       - my ID
       - ID
     destination:
+      - back
       - home
       - take exam
       - read p d f
@@ -137,15 +147,27 @@ context:
       - skip
       - skip naming
       - save
+      - submit
+      - describe screen
+      - what is on my screen
+      - what is on this screen
+      - what is on the screen 
+      - what's on my screen
+      - what's on this screen
+      - what's on the screen 
+      - read this screen
+      - read what is on this screen
+      - read what is on the screen 
+      - read what's on this screen
+      - read what's on the screen 
       - go back
       - return
-
+      - read context
     itemType:
       - paper
       - file
       - document
       - question
-
     direction:
       - forward
       - back
@@ -210,12 +232,21 @@ context:
       - retry
       - discard
       - no thank you
+      - cancel
+      - view p d f
+      - share p d f
+      - save to downloads
+      - save p d f
     state:
-      - "on"
-      - "off"
+      - on
+      - off
       - reset
       - save
-
+    scroll:
+      - scroll to bottom
+      - scroll to top
+      - scroll down
+      - scroll up
   macros:
     polite:
       - please
@@ -223,6 +254,7 @@ context:
       - can you
       - I want to
     nav_action:
+      - go
       - go to
       - navigate to
       - take me to

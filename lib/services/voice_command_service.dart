@@ -4,17 +4,20 @@ import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'tts_service.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart'; // Added
 import 'gemini_paper_service.dart';
 import 'paper_storage_service.dart'; // Added
 import '../pdf_viewer_screen.dart';
 // import '../take_exam_screen.dart';
 import '../ocr_screen.dart';
-import '../paper_detail_screen.dart';
+import '../answer_sheet_screen.dart';
 import '../widgets/accessible_widgets.dart';
 import 'kiosk_service.dart'; // Added
 import 'picovoice_service.dart';
 import 'accessibility_service.dart'; // Added fix for missing class
 import '../widgets/voice_alert_dialog.dart';
+import '../widgets/paper_name_dialog.dart'; // Added
+import 'screen_description_service.dart'; // Added
 
 enum VoiceContext {
   global,
@@ -104,11 +107,13 @@ enum VoiceAction {
   scrollToTop,
   scrollToBottom,
 
-  // File Actions
+  // File/Document Actions
   saveFile,
   convertFile,
   shareFile,
   search,
+  sharePdf,
+  savePdfToDownloads,
 
   // Status Queries (from main)
   checkTime,
@@ -121,6 +126,9 @@ enum VoiceAction {
   confirmExit,
   cancelExam,
   retry,
+  // Screen Reader
+  describeScreen,
+  readContext,
 }
 
 class CommandResult {
@@ -591,7 +599,9 @@ class VoiceCommandService {
       return CommandResult(VoiceAction.readLastSentence);
     }
 
-    if (text.contains("start dictation") || text.contains("start writing") || text.contains("start answer")) {
+    if (text.contains("start dictation") ||
+        text.contains("start writing") ||
+        text.contains("start answer")) {
       return CommandResult(VoiceAction.startDictation);
     }
     if (text.contains("stop dictation") ||
@@ -618,10 +628,15 @@ class VoiceCommandService {
       return CommandResult(VoiceAction.startApp);
     }
 
-    if (text.contains("confirm") || text.contains("yes") || text.contains("correct")) {
+    if (text.contains("confirm") ||
+        text.contains("yes") ||
+        text.contains("correct")) {
       return CommandResult(VoiceAction.confirmAction);
     }
-    if (text.contains("cancel") || text.contains("no") || text.contains("retry")) return CommandResult(VoiceAction.cancelAction);
+    if (text.contains("cancel") ||
+        text.contains("no") ||
+        text.contains("retry"))
+      return CommandResult(VoiceAction.cancelAction);
 
     if (text.contains("student name") || text.contains("my name")) {
       return CommandResult(VoiceAction.setStudentName);
@@ -869,6 +884,31 @@ class VoiceCommandService {
         // Already auto-saved to SharedPreferences in _changeVolume/_changeSpeed
         tts.speak("Settings saved.");
         break;
+      case VoiceAction.describeScreen:
+        // Determine current screen from route
+        final ctx = navigatorKey.currentContext;
+        String screenId = 'home';
+        if (ctx != null) {
+          final routeName = ModalRoute.of(ctx)?.settings.name;
+          if (routeName == '/home' || routeName == null)
+            screenId = 'home';
+          else if (routeName == '/take_exam')
+            screenId = 'take_exam';
+          else if (routeName == '/saved_papers')
+            screenId = 'saved_papers';
+          else if (routeName == '/settings')
+            screenId = 'settings';
+          else if (routeName == '/start')
+            screenId = 'start';
+          else if (routeName == '/paper_detail')
+            screenId = 'paper_detail';
+          else if (routeName == '/exam_info')
+            screenId = 'exam_info';
+          else if (routeName == '/pdf_viewer')
+            screenId = 'pdf_viewer';
+        }
+        ScreenDescriptionService().describeScreen(screenId, tts);
+        break;
       default:
         // Unknown global action
         break;
@@ -980,8 +1020,8 @@ class VoiceCommandService {
               lowerSpeech.contains('back')) {
             action = VoiceAction.previousPage;
           } else {
-            // If navigation intent has no slots, it's likely "go back"
-            action = VoiceAction.goBack;
+            // Only go back if explicitly said, otherwise unknown
+            action = VoiceAction.unknown;
           }
         }
 
@@ -990,9 +1030,12 @@ class VoiceCommandService {
           if (num != null) {
             final itemType = getVal(['itemType']);
             final lowerSpeech = speech?.toLowerCase() ?? "";
-            
+
             // Check itemType slot first, then fallback to speech context
-            if (itemType != null && (itemType == 'paper' || itemType == 'file' || itemType == 'document')) {
+            if (itemType != null &&
+                (itemType == 'paper' ||
+                    itemType == 'file' ||
+                    itemType == 'document')) {
               action = VoiceAction.openPaper;
               payload = num;
             } else if (lowerSpeech.contains('paper') ||
@@ -1115,12 +1158,22 @@ class VoiceCommandService {
 
       case 'AppControl':
         final actionSlot = getVal(['action']);
-        final scrollDir = getVal(['scroll_direction']);
+        final scrollSlot = getVal([
+          'scroll',
+          'scroll_action',
+          'scroll_direction',
+        ]);
 
         if (actionSlot != null) {
           if (actionSlot == 'start') {
-            action = VoiceAction
-                .appendAnswer; // Mapping 'start' to 'appendAnswer' (dictation)
+            final lowerSpeech = speech?.toLowerCase() ?? "";
+            if (lowerSpeech.contains('app') ||
+                lowerSpeech.contains('get started')) {
+              action = VoiceAction.startApp;
+            } else {
+              action = VoiceAction
+                  .appendAnswer; // Mapping 'start' to 'appendAnswer' (dictation)
+            }
           } else if (actionSlot == 'stop')
             action = VoiceAction.stopDictation;
           else if (actionSlot == 'pause')
@@ -1143,7 +1196,7 @@ class VoiceCommandService {
             action = VoiceAction.goBack;
           else if (actionSlot == 'start app')
             action = VoiceAction.startApp;
-          else if (actionSlot == 'confirm')
+          else if (actionSlot == 'confirm' || actionSlot == 'submit')
             action = VoiceAction.confirmAction;
           else if (actionSlot == 'cancel')
             action = VoiceAction.cancelAction;
@@ -1155,22 +1208,39 @@ class VoiceCommandService {
           else if (actionSlot == 'save to downloads' ||
               actionSlot == 'download')
             action = VoiceAction.saveFile;
-        } else if (scrollDir != null) {
-          if (scrollDir == 'up') {
+          else if (actionSlot.contains('screen'))
+            action = VoiceAction.describeScreen;
+          else if (actionSlot == 'go back' || actionSlot == 'return')
+            action = VoiceAction.goBack;
+          else if (actionSlot == 'read context')
+            action = VoiceAction.readContext;
+        } else if (scrollSlot != null) {
+          if (scrollSlot.contains('up') || scrollSlot == 'scroll up') {
             action = VoiceAction.scrollUp;
-          } else if (scrollDir == 'down')
+          } else if (scrollSlot.contains('down') || scrollSlot == 'scroll down')
             action = VoiceAction.scrollDown;
-          else if (scrollDir == 'top')
+          else if (scrollSlot.contains('top'))
             action = VoiceAction.scrollToTop;
-          else if (scrollDir == 'bottom')
+          else if (scrollSlot.contains('bottom'))
             action = VoiceAction.scrollToBottom;
         }
         break;
 
       case 'ChangePages':
         final dir = getVal(['direction']);
-        if (dir == 'next' || dir == 'forward') action = VoiceAction.nextPage;
-        if (dir == 'previous' || dir == 'back') {
+        final dirAct = getVal(['direction_action']);
+
+        String directionStr = (dir ?? dirAct ?? '').toLowerCase();
+
+        // Also check speech fallback if slots are missing due to loose pronunciation
+        if (directionStr.isEmpty && speech != null) {
+          directionStr = speech.toLowerCase();
+        }
+
+        if (directionStr.contains('next') || directionStr.contains('forward')) {
+          action = VoiceAction.nextPage;
+        } else if (directionStr.contains('previous') ||
+            directionStr.contains('back')) {
           action = VoiceAction.previousPage;
         }
         break;
@@ -1196,8 +1266,13 @@ class VoiceCommandService {
               lowerSpeech.contains('back')) {
             action = VoiceAction.previousPage;
           } else {
-            // Case for "Read question", "Read this page", "Repeat question"
-            action = VoiceAction.readQuestion;
+            // Case for "Read question", "Read this page", "Repeat question", "Read context"
+            final lowerSpeech = speech?.toLowerCase() ?? "";
+            if (lowerSpeech.contains('context')) {
+              action = VoiceAction.readContext;
+            } else {
+              action = VoiceAction.readQuestion;
+            }
           }
         }
         break;
@@ -1208,7 +1283,8 @@ class VoiceCommandService {
 
         if (e != null) {
           if (e == 'start exam' || e == 'start') {
-            action = VoiceAction.confirmExamStart; // Or enterExamMode? usually confirmed first
+            action = VoiceAction
+                .confirmExamStart; // Or enterExamMode? usually confirmed first
           } else if (e.contains('finish') ||
               e.contains('submit') ||
               e.contains('end')) {
@@ -1302,6 +1378,14 @@ class VoiceCommandService {
             action = VoiceAction.confirmAction;
           } else if (['no', 'retry', 'discard'].contains(resp)) {
             action = VoiceAction.retry;
+          } else if (['cancel'].contains(resp)) {
+            action = VoiceAction.cancelAction;
+          } else if (['view pdf'].contains(resp)) {
+            action = VoiceAction.viewPdf;
+          } else if (['share pdf', 'share'].contains(resp)) {
+            action = VoiceAction.sharePdf;
+          } else if (['save to downloads', 'save'].contains(resp)) {
+            action = VoiceAction.savePdfToDownloads;
           }
         }
 
@@ -1311,6 +1395,28 @@ class VoiceCommandService {
             action = VoiceAction.selectOption;
             payload = opt;
           }
+        }
+        break;
+
+      case 'examProgress':
+        final state = getVal(['state', 'progress_state']);
+        if (state != null) {
+          if (state == 'remaining' || state == 'left') {
+            action = VoiceAction.checkRemainingQuestions;
+          } else if (state == 'answered' ||
+              state == 'completed' ||
+              state == 'done') {
+            // Usually we announce "X answered out of Y total" for all these queries.
+            action = VoiceAction.checkRemainingQuestions;
+          } else if (state == 'total') {
+            action = VoiceAction.checkTotalQuestions;
+          } else if (state.contains('time')) {
+            // "time has passed", "time passed", "time remaining"
+            action = VoiceAction.checkTime;
+          }
+        } else {
+          // Default to general progress
+          action = VoiceAction.checkTotalQuestions;
         }
         break;
 
@@ -1437,7 +1543,7 @@ class VoiceCommandService {
 
         navigatorKey.currentState?.push(
           MaterialPageRoute(
-            builder: (_) => PaperDetailScreen(
+            builder: (_) => AnswerSheetScreen(
               document: doc,
               ttsService: tts,
               voiceService: this,
@@ -1457,8 +1563,7 @@ class VoiceCommandService {
   }
 
   Future<void> _handleScan() async {
-    final prefs = await SharedPreferences.getInstance();
-    final apiKey = prefs.getString('gemini_api_key');
+    final String? apiKey = dotenv.env['GEMINI_API_KEY'];
     final context = navigatorKey.currentContext;
 
     if (context == null || !context.mounted) return;
@@ -1469,6 +1574,9 @@ class VoiceCommandService {
       builder: (ctx) => VoiceAlertDialog(
         title: const Text('Scan Options'),
         voiceService: this,
+        ttsService: tts,
+        voiceDescription:
+            "Scan Options. Say 'use Gemini' for AI scanning, or 'use local' for offline OCR.",
         content: const Text("Choose your preferred scanning method."),
         onSelectOption: (option) {
           Navigator.pop(ctx);
@@ -1529,18 +1637,17 @@ class VoiceCommandService {
       // The pop will trigger the .then() above, setting _isScanDialogOpen = false
     }
 
-    final prefs = await SharedPreferences.getInstance();
-    final apiKey = prefs.getString('gemini_api_key');
+    final String? apiKey = dotenv.env['GEMINI_API_KEY'];
     if (apiKey != null && apiKey.isNotEmpty) {
       tts.speak("Selecting Gemini AI.");
       _processGeminiFlow(apiKey);
     } else {
-      tts.speak("Gemini API Key missing. Please set it in preferences.");
+      tts.speak("Gemini API Key missing. Please set it in your dotenv file.");
       final context = navigatorKey.currentContext;
       if (context != null && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text("Gemini API Key missing. Please set in Preferences."),
+            content: Text("Gemini API Key missing. Please set in .env file."),
           ),
         );
       }
@@ -1607,51 +1714,21 @@ class VoiceCommandService {
 
       if (isCancelled || !context.mounted) return;
 
-      // Ask for Rename
-      // Using VoiceAlertDialog
+      // Announce the generated name and ask for confirmation
+      tts.speak(
+        "Paper named ${doc.name}. Say 'Confirm' to save, or dictate a new name.",
+      );
+
+      // Ask for Name via voice-enabled dialog
       String? paperName = await showDialog<String>(
         context: context,
         barrierDismissible: false,
-        builder: (ctx) {
-          final TextEditingController nameController = TextEditingController(
-            text: doc.name,
-          );
-          return VoiceAlertDialog(
-            title: const Text("Name this Paper"),
-            voiceService: this,
-            content: TextField(
-              controller: nameController,
-              autofocus: true,
-              decoration: const InputDecoration(
-                hintText: "e.g. Physics Midterm",
-                labelText: "Paper Name",
-              ),
-            ),
-            onConfirm: () {
-              if (nameController.text.trim().isNotEmpty) {
-                Navigator.pop(ctx, nameController.text.trim());
-              } else {
-                Navigator.pop(ctx, null);
-              }
-            },
-            onSkip: () => Navigator.pop(ctx, null),
-            onCancel: () => Navigator.pop(ctx, null),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, null), // Skip/Default
-                child: const Text("Skip"),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  if (nameController.text.trim().isNotEmpty) {
-                    Navigator.pop(ctx, nameController.text.trim());
-                  }
-                },
-                child: const Text("Save"),
-              ),
-            ],
-          );
-        },
+        builder: (ctx) => PaperNameDialog(
+          initialName: doc.name ?? '',
+          ttsService: tts,
+          picovoiceService: picovoiceService,
+          voiceService: this,
+        ),
       );
 
       if (paperName != null && paperName.isNotEmpty) {
@@ -1667,7 +1744,7 @@ class VoiceCommandService {
 
       navigatorKey.currentState?.push(
         MaterialPageRoute(
-          builder: (_) => PaperDetailScreen(
+          builder: (_) => AnswerSheetScreen(
             document: doc,
             ttsService: tts,
             voiceService: this,
@@ -1684,8 +1761,11 @@ class VoiceCommandService {
       String userMessage = "Error processing paper with Gemini AI.";
       final errorStr = e.toString().toLowerCase();
 
-      if (errorStr.contains("quota") || errorStr.contains("429") || errorStr.contains("limit")) {
-        userMessage = "Gemini API quota exceeded or rate limited. Please check your billing or wait a few minutes before trying again.";
+      if (errorStr.contains("quota") ||
+          errorStr.contains("429") ||
+          errorStr.contains("limit")) {
+        userMessage =
+            "Gemini API quota exceeded or rate limited. Please check your billing or wait a few minutes before trying again.";
       } else if (errorStr.contains("key")) {
         userMessage = "Invalid Gemini API key. Please check your settings.";
       }

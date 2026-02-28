@@ -14,7 +14,8 @@ class GeminiPaperService {
 
   Future<ParsedDocument> processImage(String imagePath, String apiKey) async {
     // 1. Find a valid model name dynamically
-    final modelName = _cachedModelName ?? await _findValidModel(apiKey) ?? 'gemini-1.5-flash';
+    final modelName =
+        _cachedModelName ?? await _findValidModel(apiKey) ?? 'gemini-1.5-flash';
     _cachedModelName = modelName;
     debugPrint("GeminiService using model: $modelName");
 
@@ -60,14 +61,19 @@ class GeminiPaperService {
         final json = jsonDecode(response.body);
         final models = json['models'] as List;
 
-        final availableModels = models.map((m) {
-          final name = m['name'].toString().replaceFirst('models/', '');
-          final supportedMethods = m['supportedGenerationMethods'] as List?;
-          return {
-            'name': name,
-            'supportsGenerate': supportedMethods?.contains('generateContent') ?? false,
-          };
-        }).where((m) => m['supportsGenerate'] == true).map((m) => m['name'] as String).toList();
+        final availableModels = models
+            .map((m) {
+              final name = m['name'].toString().replaceFirst('models/', '');
+              final supportedMethods = m['supportedGenerationMethods'] as List?;
+              return {
+                'name': name,
+                'supportsGenerate':
+                    supportedMethods?.contains('generateContent') ?? false,
+              };
+            })
+            .where((m) => m['supportsGenerate'] == true)
+            .map((m) => m['name'] as String)
+            .toList();
 
         debugPrint("Available Gemini models: $availableModels");
 
@@ -91,13 +97,17 @@ class GeminiPaperService {
           orElse: () => '',
         );
         if (flashFallback.isNotEmpty) {
-          debugPrint("Priority match failed, falling back to flash: $flashFallback");
+          debugPrint(
+            "Priority match failed, falling back to flash: $flashFallback",
+          );
           return flashFallback;
         }
 
         // Final fallback
         if (availableModels.isNotEmpty) {
-          debugPrint("Final fallback to first available: ${availableModels.first}");
+          debugPrint(
+            "Final fallback to first available: ${availableModels.first}",
+          );
           return availableModels.first;
         }
       }
@@ -106,7 +116,6 @@ class GeminiPaperService {
     }
     return null; // Fallback to default in processImage
   }
-
 
   String _buildPrompt() {
     return """
@@ -214,14 +223,22 @@ class GeminiPaperService {
     );
   }
 
-  Future<String> transcribeAudio(String audioPath, String apiKey) async {
-    final modelName = _cachedModelName ?? await _findValidModel(apiKey) ?? 'gemini-1.5-flash';
+  Future<String> transcribeAudio(
+    String audioPath,
+    String apiKey, {
+    String? contextPrompt,
+  }) async {
+    final modelName =
+        _cachedModelName ?? await _findValidModel(apiKey) ?? 'gemini-1.5-flash';
     _cachedModelName = modelName;
     final model = GenerativeModel(model: modelName, apiKey: apiKey);
 
     final audioBytes = await File(audioPath).readAsBytes();
-    final prompt =
+    String prompt =
         "Transcribe the following audio exactly as spoken. Do not add any commentary or extra text.";
+    if (contextPrompt != null && contextPrompt.isNotEmpty) {
+      prompt += "\n\nCRITICAL INSTRUCTIONS:\n$contextPrompt";
+    }
 
     try {
       final response = await model.generateContent([

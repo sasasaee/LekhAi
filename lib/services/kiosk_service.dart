@@ -78,6 +78,6 @@ class KioskService extends WidgetsBindingObserver {
     );
 
     // In a real scenario, you might want to auto-submit or lock the screen further.
-    // For now, we just log it. The PaperDetailScreen could poll this count.
+    // For now, we just log it. The AnswerSheetScreen could poll this count.
   }
 }

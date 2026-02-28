@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 // import 'dart:convert'; // Unused
 import 'services/paper_storage_service.dart';
 import 'services/tts_service.dart';
-import 'paper_detail_screen.dart';
+import 'answer_sheet_screen.dart';
 import 'models/paper_model.dart'; // Import models
 import 'services/voice_command_service.dart';
 import 'services/accessibility_service.dart';
@@ -16,6 +16,7 @@ import 'widgets/voice_alert_dialog.dart';
 
 import 'exam_info_screen.dart';
 import 'services/picovoice_service.dart';
+import 'services/screen_description_service.dart'; // Added
 import 'dart:async';
 // import 'services/stt_service.dart'; // Removed
 
@@ -64,8 +65,10 @@ class _SavedPapersScreenState extends State<SavedPapersScreen> {
     if (widget.examMode) {
       // Exam sequence initiation handled by PaperDetailScreen logic now.
     } else {
-      widget.ttsService.speak("Welcome to saved papers.");
-      widget.ttsService.speak("Welcome to saved papers.");
+      ScreenDescriptionService().announceScreen(
+        'saved_papers',
+        widget.ttsService,
+      );
     }
     _initVoiceCommandListener();
   }
@@ -136,6 +139,12 @@ class _SavedPapersScreenState extends State<SavedPapersScreen> {
       case VoiceAction.goBack:
         Navigator.pop(context);
         break;
+      case VoiceAction.describeScreen:
+        ScreenDescriptionService().describeScreen(
+          'saved_papers',
+          widget.ttsService,
+        );
+        break;
       case VoiceAction.scrollUp:
         _scrollUp();
         break;
@@ -204,9 +213,9 @@ class _SavedPapersScreenState extends State<SavedPapersScreen> {
   //   }
   // }
 
-  // Removed _startExamSequence, _beginExam, _readCurrentQuestion, _nextQuestion as they are handled in PaperDetailScreen now.
+  // Removed _startExamSequence, _beginExam, _readCurrentQuestion, _nextQuestion as they are handled in AnswerSheetScreen now.
 
-  // _confirmEndExam moved to PaperDetailScreen
+  // _confirmEndExam moved to AnswerSheetScreen
 
   // Removed unused _finishExam method
 
@@ -279,7 +288,7 @@ class _SavedPapersScreenState extends State<SavedPapersScreen> {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => PaperDetailScreen(
+          builder: (_) => AnswerSheetScreen(
             document: doc,
             ttsService: widget.ttsService,
             voiceService: widget.voiceService,
@@ -416,7 +425,9 @@ class _SavedPapersScreenState extends State<SavedPapersScreen> {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              (Theme.of(context).cardTheme.color ?? Theme.of(context).primaryColor).withValues(alpha: 0.8),
+              (Theme.of(context).cardTheme.color ??
+                      Theme.of(context).primaryColor)
+                  .withValues(alpha: 0.8),
               Theme.of(context).scaffoldBackgroundColor,
               Colors.black,
             ],
