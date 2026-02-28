@@ -75,7 +75,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
         break;
 
       case VoiceAction.goBack:
-        widget.ttsService.speak("Exiting preferences.");
+        widget.ttsService.speak("Exiting settings.");
         Navigator.pop(context);
         break;
 
@@ -130,7 +130,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     await widget.ttsService
         .resetPreferences(); // Resets speed/volume in prefs/engine
 
-    widget.ttsService.speak("Preferences have been reset.");
+    widget.ttsService.speak("Settings have been reset.");
     AccessibilityService().trigger(AccessibilityEvent.warning);
   }
 
@@ -230,13 +230,13 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       AccessibilityService().oneTapAnnounce,
     );
 
-    widget.ttsService.speak("Preferences saved successfully.");
+    widget.ttsService.speak("Settings saved successfully.");
     AccessibilityService().trigger(AccessibilityEvent.success);
 
     if (mounted) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Preferences saved')));
+      ).showSnackBar(const SnackBar(content: Text('Settings saved')));
     }
   }
 
@@ -246,7 +246,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: Text(
-          'Preferences',
+          'Settings',
           style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
         ),
         centerTitle: true,

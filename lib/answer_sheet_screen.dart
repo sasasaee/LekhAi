@@ -145,7 +145,7 @@ class _AnswerSheetScreenState extends State<AnswerSheetScreen> {
 
     // Audio Prompt
     widget.ttsService.speak(
-      "Exam will start in locked mode. Say Start to confirm. Or Cancel to exit.",
+      "Exam will start in locked mode. Say Start Exam to confirm. Or Cancel to exit.",
     );
 
     // Visual Dialog
@@ -271,9 +271,13 @@ class _AnswerSheetScreenState extends State<AnswerSheetScreen> {
     });
 
     _startExamTimer();
-
+    
     int minutes = _remainingSeconds ~/ 60;
-    widget.ttsService.speak("Exam started. You have $minutes minutes.");
+    widget.ttsService.speak(
+      "Exam started. You have $minutes minutes. "
+      "Say 'go to question 1' to start answering, 'check time' to hear the remaining minutes, "
+      "or 'read context' to hear the paper instructions. Best of Luck.",
+    );
   }
 
   @override
@@ -590,9 +594,13 @@ class _AnswerSheetScreenState extends State<AnswerSheetScreen> {
       case VoiceAction.cancelExam:
         if (_isExamFinished) {
           // Close dialog + exit screen
-          if (Navigator.canPop(context)) Navigator.pop(context); // pop dialog
-          if (mounted && Navigator.canPop(context))
-            Navigator.pop(context); // pop screen
+          if (mounted) {
+            Navigator.pushNamedAndRemoveUntil(
+              context,
+              '/home',
+              (route) => false,
+            );
+          }
         } else if (!_kioskEnabled) {
           await widget.ttsService.speak("Exiting paper.");
           if (mounted) Navigator.pop(context);
@@ -640,8 +648,12 @@ class _AnswerSheetScreenState extends State<AnswerSheetScreen> {
         break;
 
       case VoiceAction.scanQuestions:
-        widget.ttsService.speak("Scanning new page.");
-        _onAddPage(context);
+        if (widget.examMode) {
+          widget.ttsService.speak("Cannot scan new pages during an exam.");
+        } else {
+          widget.ttsService.speak("Scanning new page.");
+          _onAddPage(context);
+        }
         break;
 
       case VoiceAction.shareFile:
@@ -1408,33 +1420,38 @@ class _AnswerSheetScreenState extends State<AnswerSheetScreen> {
             ),
           ),
         ),
-        floatingActionButton: Container(
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: LinearGradient(
-              colors: [
-                Theme.of(context).primaryColor,
-                Theme.of(context).primaryColorDark,
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Theme.of(context).primaryColor.withOpacity(0.4),
-                blurRadius: 12,
-                offset: const Offset(0, 6),
+        floatingActionButton: widget.examMode
+            ? null
+            : Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    colors: [
+                      Theme.of(context).primaryColor,
+                      Theme.of(context).primaryColorDark,
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Theme.of(context).primaryColor.withOpacity(0.4),
+                      blurRadius: 12,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: FloatingActionButton(
+                  onPressed: () => _onAddPage(context),
+                  backgroundColor: Colors.transparent,
+                  elevation: 0,
+                  tooltip: 'Add Page',
+                  child: const Icon(
+                    Icons.add_a_photo_outlined,
+                    color: Colors.white,
+                  ),
+                ),
               ),
-            ],
-          ),
-          child: FloatingActionButton(
-            onPressed: () => _onAddPage(context),
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-            tooltip: 'Add Page',
-            child: const Icon(Icons.add_a_photo_outlined, color: Colors.white),
-          ),
-        ),
       ),
     ); // Close PopScope
   }
@@ -1576,8 +1593,11 @@ class _AnswerSheetScreenState extends State<AnswerSheetScreen> {
             voiceService: widget.voiceService,
             title: const Text("Exam Completed"),
             onCancel: () {
-              Navigator.pop(ctx);
-              Navigator.pop(context); // Exit AnswerSheetScreen
+              Navigator.pushNamedAndRemoveUntil(
+                context,
+                '/home',
+                (route) => false,
+              );
             },
             onViewPdf: () => _viewPdf(pdfFile.path),
             onSharePdf: () => _sharePdf(pdfFile.path),
@@ -1629,8 +1649,11 @@ class _AnswerSheetScreenState extends State<AnswerSheetScreen> {
             actions: [
               AccessibleTextButton(
                 onPressed: () {
-                  Navigator.pop(ctx);
-                  Navigator.pop(context); // Exit AnswerSheetScreen
+                  Navigator.pushNamedAndRemoveUntil(
+                    context,
+                    '/home',
+                    (route) => false,
+                  );
                 },
                 child: const Text("Close & Exit"),
               ),

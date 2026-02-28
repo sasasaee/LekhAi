@@ -170,7 +170,7 @@ class _StartPageState extends State<StartPage> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             const Text(
-                              "Get Started",
+                              "Start App",
                               style: TextStyle(
                                 fontSize: 24, 
                                 fontWeight: FontWeight.w800, 

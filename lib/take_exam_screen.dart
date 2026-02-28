@@ -222,7 +222,7 @@ class _TakeExamScreenState extends State<TakeExamScreen> {
                   const SizedBox(height: 20),
                   _ExamActionTile(
                     icon: Icons.settings_outlined,
-                    label: "Preferences",
+                    label: "Settings",
                     subLabel: "Configure Settings",
                     color: const Color(0xFF8B5CF6),
                     delay: 600,

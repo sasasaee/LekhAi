@@ -405,6 +405,10 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
       barrierDismissible: false,
       builder: (ctx) => VoiceAlertDialog(
         voiceService: widget.voiceService,
+        onRetry: () {
+          Navigator.pop(ctx);
+          _handleRetry();
+        },
         onConfirm: () async {
           Navigator.pop(ctx);
           if (_currentDictationField == DictationField.name) {
@@ -453,13 +457,7 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
           AccessibleTextButton(
             onPressed: () {
               Navigator.pop(ctx);
-              _discardAudio();
-              if (_currentDictationField == DictationField.name) {
-                FocusScope.of(context).requestFocus(_nameFocus);
-              } else if (_currentDictationField == DictationField.id) {
-                FocusScope.of(context).requestFocus(_idFocus);
-              }
-              widget.picovoiceService.resumeListening();
+              _handleRetry();
             },
             child: const Text("Retry"),
           ),
@@ -487,6 +485,17 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
         ],
       ),
     );
+  }
+
+  void _handleRetry() {
+    _discardAudio();
+    if (_currentDictationField == DictationField.name) {
+      FocusScope.of(context).requestFocus(_nameFocus);
+    } else if (_currentDictationField == DictationField.id) {
+      FocusScope.of(context).requestFocus(_idFocus);
+    }
+    // Restart listening immediately
+    _startListening();
   }
 
   void _discardAudio() {
@@ -549,7 +558,7 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
       "Starting exam for $_name with $hours hours and $minutes minutes duration.",
     );
 
-    Navigator.pushReplacement(
+    Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => AnswerSheetScreen(
@@ -565,7 +574,14 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
           picovoiceService: widget.picovoiceService,
         ),
       ),
-    );
+    ).then((_) {
+      if (mounted) {
+        ScreenDescriptionService().announceScreen(
+          'exam_info',
+          widget.ttsService,
+        );
+      }
+    });
   }
 
   @override

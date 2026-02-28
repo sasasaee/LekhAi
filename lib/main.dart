@@ -253,9 +253,6 @@ class _HomeScreenState extends State<HomeScreen>
       case VoiceAction.goToSettings:
         Navigator.pushNamed(context, '/settings');
         break;
-      case VoiceAction.goToSavedPapers:
-        _openSavedPapers();
-        break;
       case VoiceAction.goToTakeExam:
         _openTakeExam();
         break;
@@ -525,22 +522,13 @@ class _HomeScreenState extends State<HomeScreen>
                         ),
                         const SizedBox(height: 20),
                         _DashboardCard(
-                          icon: Icons.question_answer_outlined,
-                          label: "Saved Papers",
-                          subLabel: "Review Archives",
-                          color: const Color(0xFF10B981), // Green
-                          delay: 800,
-                          onTap: _openSavedPapers,
-                        ),
-                        const SizedBox(height: 20),
-                        _DashboardCard(
                           icon: Icons.settings_outlined,
-                          label: "Preferences",
+                          label: "Settings",
                           subLabel: "Customize App",
                           color: const Color(0xFF8B5CF6), // Violet
-                          delay: 900,
+                          delay: 800,
                           onTap: () async {
-                            widget.ttsService.speak("Opening preferences.");
+                            widget.ttsService.speak("Opening settings.");
                             if (!context.mounted) return;
                             Navigator.push(
                               context,
