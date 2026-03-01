@@ -159,10 +159,10 @@ class _SavedPapersScreenState extends State<SavedPapersScreen> {
 
   void _scrollUp() {
     if (_scrollController.hasClients) {
-      final pos = _scrollController.offset - 300;
+      final pos = _scrollController.offset - 500;
       _scrollController.animateTo(
         pos.clamp(0.0, _scrollController.position.maxScrollExtent),
-        duration: 300.ms,
+        duration: const Duration(milliseconds: 500),
         curve: Curves.easeOut,
       );
     }
@@ -170,10 +170,10 @@ class _SavedPapersScreenState extends State<SavedPapersScreen> {
 
   void _scrollDown() {
     if (_scrollController.hasClients) {
-      final pos = _scrollController.offset + 300;
+      final pos = _scrollController.offset + 500;
       _scrollController.animateTo(
         pos.clamp(0.0, _scrollController.position.maxScrollExtent),
-        duration: 300.ms,
+        duration: const Duration(milliseconds: 500),
         curve: Curves.easeOut,
       );
     }

@@ -105,6 +105,14 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
         }
         break;
 
+      case VoiceAction.toggleHaptic:
+        _setHaptics(!AccessibilityService().enabled);
+        break;
+
+      case VoiceAction.toggleVoiceCommands:
+        _setVoiceCommands(!_voiceCommandsEnabled);
+        break;
+
       case VoiceAction.describeScreen:
         ScreenDescriptionService().describeScreen(
           'settings',
@@ -139,6 +147,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     double newVolume = (oldVol + (increase ? 0.1 : -0.1)).clamp(0.0, 1.0);
     widget.voiceService.volumeNotifier.value = newVolume;
     await widget.ttsService.setVolume(newVolume);
+    _persistSettings(); // Auto-save
     widget.ttsService.speak(
       "Volume ${increase ? 'increased' : 'decreased'} to ${(newVolume * 100).toInt()} percent.",
     );
@@ -149,6 +158,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     double newSpeed = (oldSpeed + (increase ? 0.25 : -0.25)).clamp(0.5, 2.0);
     widget.voiceService.speedNotifier.value = newSpeed;
     await widget.ttsService.setSpeed(newSpeed * 0.5);
+    _persistSettings(); // Auto-save
     widget.ttsService.speak(
       "Speed ${increase ? 'increased' : 'decreased'} to ${newSpeed.toStringAsFixed(2)}.",
     );
@@ -164,6 +174,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     setState(() {
       AccessibilityService().setEnabled(enabled);
     });
+    _persistSettings(); // Auto-save
     if (enabled) AccessibilityService().trigger(AccessibilityEvent.action);
     widget.ttsService.speak(
       "Haptic feedback ${enabled ? 'enabled' : 'disabled'}.",
@@ -181,6 +192,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     final sp = await SharedPreferences.getInstance();
     await sp.setBool('voice_commands_enabled', enabled);
     await widget.picovoiceService?.setEnabled(enabled);
+    _persistSettings(); // Auto-save
     widget.ttsService.speak(
       "Voice commands ${enabled ? 'enabled' : 'disabled'}.",
     );
@@ -217,11 +229,10 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     }
   }
 
-  Future<void> _savePreferences() async {
+  Future<void> _persistSettings() async {
     final speed = widget.voiceService.speedNotifier.value;
     final volume = widget.voiceService.volumeNotifier.value;
 
-    // 1. Persist
     await widget.ttsService.savePreferences(speed: speed, volume: volume);
     await widget.ttsService.saveHapticPreference(
       AccessibilityService().enabled,
@@ -229,7 +240,10 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
     await widget.ttsService.saveOneTapAnnouncePreference(
       AccessibilityService().oneTapAnnounce,
     );
+  }
 
+  Future<void> _savePreferences() async {
+    await _persistSettings();
     widget.ttsService.speak("Settings saved successfully.");
     AccessibilityService().trigger(AccessibilityEvent.success);
 
@@ -318,6 +332,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                                 onChanged: (v) {
                                   widget.voiceService.speedNotifier.value = v;
                                   widget.ttsService.setSpeed(v * 0.5);
+                                  _persistSettings(); // Auto-save
                                 },
                               ),
                             ],
@@ -357,6 +372,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                                 onChanged: (v) {
                                   widget.voiceService.volumeNotifier.value = v;
                                   widget.ttsService.setVolume(v);
+                                  _persistSettings(); // Auto-save
                                 },
                               ),
                             ],
@@ -389,6 +405,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                       setState(() {
                         AccessibilityService().setEnabled(val);
                       });
+                      _persistSettings(); // Auto-save
                       if (val) {
                         AccessibilityService().trigger(
                           AccessibilityEvent.action,
@@ -424,6 +441,7 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                       final sp = await SharedPreferences.getInstance();
                       await sp.setBool('voice_commands_enabled', val);
                       await widget.picovoiceService?.setEnabled(val);
+                      _persistSettings(); // Auto-save
                       if (val) {
                         widget.ttsService.speak("Voice commands enabled.");
                       } else {
@@ -437,29 +455,6 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
                 // Buttons
                 Row(
                   children: [
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: _savePreferences,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blueAccent,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          elevation: 8,
-                          shadowColor: Colors.blueAccent.withValues(alpha: 0.4),
-                        ),
-                        child: Text(
-                          'Save',
-                          style: GoogleFonts.outfit(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
                     Expanded(
                       child: OutlinedButton(
                         onPressed: _reset,

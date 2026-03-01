@@ -32,7 +32,7 @@ class ScreenDescriptionService {
         "Say 'open paper' followed by a number to view one, or 'delete paper' followed by a number to remove it.",
     'settings':
         "Settings screen. You can adjust speech speed and volume, toggle haptic feedback, "
-        "and enable or disable voice commands. Say 'reset' to restore defaults or 'save' to confirm changes.",
+        "and enable or disable voice commands. Say 'reset' to restore defaults.",
     'exam_info':
         "Exam Setup screen. You need to set your name, student ID, and exam time before starting. "
         "Say 'set name', 'set ID', or 'set time' followed by the value. "

@@ -142,7 +142,7 @@ class _AnswerSheetScreenState extends State<AnswerSheetScreen> {
 
     // Audio Prompt
     widget.ttsService.speak(
-      "Exam will start in locked mode. The instructions are: Say 'go to question 1' to start answering, 'How much time remaining' to hear the remaining minutes, or 'read context' to hear the paper instructions. Say 'Start Exam' to confirm, or 'Cancel' to exit.",
+      "Exam will start in locked mode. The instructions are: Say 'go to question 1' to start answering, 'How much time remaining' to hear the remaining minutes, or 'read context' to hear the paper instructions. Say 'scroll up' or 'scroll down' to navigate the paper. Say 'Start Exam' to confirm, or 'Cancel' to exit.",
     );
 
     // Visual Dialog
@@ -162,14 +162,19 @@ class _AnswerSheetScreenState extends State<AnswerSheetScreen> {
             _handleCancelConfirmation();
           },
           title: const Text("Exam Mode Confirmation"),
-          content: const Text(
-            "The app will be locked to prevent exiting.\n\n"
-            "Instructions:\n"
-            "• Say 'go to question 1' to start answering.\n"
-            "• Say 'how much time remaining' to hear the clock.\n"
-            "• Say 'how many question remaining' to know questions left to answer.\n"
-            "• Say 'read context' to hear the paper instructions.\n\n"
-            "Do you want to proceed?",
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: const [
+              Text("The app will be locked to prevent exiting.\n"),
+              Text("Instructions:"),
+              Text("• Say 'go to question 1' to start answering."),
+              Text("• Say 'how much time remaining' to hear the clock."),
+              Text("• Say 'how many question remaining' to know questions left."),
+              Text("• Say 'read context' to hear instructions."),
+              Text("• Say 'scroll up' or 'scroll down' to navigate."),
+              Text("\nDo you want to proceed?"),
+            ],
           ),
           actions: [
             AccessibleTextButton(
@@ -274,10 +279,10 @@ class _AnswerSheetScreenState extends State<AnswerSheetScreen> {
     });
 
     _startExamTimer();
-    
+
     int minutes = _remainingSeconds ~/ 60;
     widget.ttsService.speak(
-      "Exam started. You have $minutes minutes. Best of Luck. "
+      "Exam started. You have $minutes minutes. Best of Luck. ",
     );
   }
 
@@ -509,25 +514,6 @@ class _AnswerSheetScreenState extends State<AnswerSheetScreen> {
   void _executeVoiceCommand(CommandResult result) async {
     if (!(ModalRoute.of(context)?.isCurrent ?? false)) return;
     switch (result.action) {
-      case VoiceAction.scrollToTop:
-        if (_scrollController.hasClients) {
-          _scrollController.animateTo(
-            0,
-            duration: const Duration(milliseconds: 500),
-            curve: Curves.easeOut,
-          );
-        }
-        break;
-      case VoiceAction.scrollToBottom:
-        if (_scrollController.hasClients) {
-          _scrollController.animateTo(
-            _scrollController.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 500),
-            curve: Curves.easeOut,
-          );
-        }
-        break;
-
       case VoiceAction.confirmExamStart:
         if (_isWaitingForConfirmation) {
           // If dialog is open, pop it first (we know it's top of stack)
@@ -669,6 +655,14 @@ class _AnswerSheetScreenState extends State<AnswerSheetScreen> {
         _scrollDown();
         break;
 
+      case VoiceAction.scrollToTop:
+        _scrollToTop();
+        break;
+
+      case VoiceAction.scrollToBottom:
+        _scrollToBottom();
+        break;
+
       case VoiceAction.setExamTime:
         if (!_kioskEnabled && !_showCountdown) {
           final int? mins = result.payload;
@@ -768,7 +762,7 @@ class _AnswerSheetScreenState extends State<AnswerSheetScreen> {
 
   void _scrollUp() {
     if (_scrollController.hasClients) {
-      final pos = _scrollController.offset - 300;
+      final pos = _scrollController.offset - 500;
       _scrollController.animateTo(
         pos.clamp(0.0, _scrollController.position.maxScrollExtent),
         duration: 300.ms,
@@ -779,10 +773,26 @@ class _AnswerSheetScreenState extends State<AnswerSheetScreen> {
 
   void _scrollDown() {
     if (_scrollController.hasClients) {
-      final pos = _scrollController.offset + 300;
+      final pos = _scrollController.offset + 500;
       _scrollController.animateTo(
         pos.clamp(0.0, _scrollController.position.maxScrollExtent),
         duration: 300.ms,
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
+  void _scrollToTop() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(0, duration: 400.ms, curve: Curves.easeOut);
+    }
+  }
+
+  void _scrollToBottom() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: 400.ms,
         curve: Curves.easeOut,
       );
     }
@@ -1306,9 +1316,14 @@ class _AnswerSheetScreenState extends State<AnswerSheetScreen> {
                         );
                       } else if (item is _QuestionItem) {
                         final q = item.question;
-                        final qTitle = q.number != null
-                            ? "Q${q.number}"
-                            : "Question";
+                        // Guard against double-prefix: Gemini normalizes to '9',
+                        // but be safe if a raw 'Q9' slips through.
+                        final rawNum = q.number ?? '';
+                        final qTitle = rawNum.isEmpty
+                            ? 'Question'
+                            : rawNum.startsWith(RegExp(r'[Qq]'))
+                            ? rawNum.toUpperCase()
+                            : 'Q$rawNum';
                         final marks = q.marks != null ? "(${q.marks})" : "";
 
                         return Container(
@@ -2056,7 +2071,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
           final currentText = _answerController.text;
           _history.add(currentText); // Save current to history before redoing
           if (_history.length > 50) _history.removeAt(0);
-          
+
           setState(() {
             _answerController.text = _redoStack.removeLast();
           });
@@ -2068,32 +2083,36 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
 
       case VoiceAction.deleteLastWord:
         setState(() {
-          _answerController.text =
-              StringUtils.removeLastWord(_answerController.text);
+          _answerController.text = StringUtils.removeLastWord(
+            _answerController.text,
+          );
         });
         widget.ttsService.speak("Deleted last word.");
         break;
 
       case VoiceAction.deleteLastSentence:
         setState(() {
-          _answerController.text =
-              StringUtils.removeLastSentence(_answerController.text);
+          _answerController.text = StringUtils.removeLastSentence(
+            _answerController.text,
+          );
         });
         widget.ttsService.speak("Deleted last sentence.");
         break;
 
       case VoiceAction.deleteLastLine:
         setState(() {
-          _answerController.text =
-              StringUtils.removeLastLine(_answerController.text);
+          _answerController.text = StringUtils.removeLastLine(
+            _answerController.text,
+          );
         });
         widget.ttsService.speak("Deleted last line.");
         break;
 
       case VoiceAction.deleteLastParagraph:
         setState(() {
-          _answerController.text =
-              StringUtils.removeLastParagraph(_answerController.text);
+          _answerController.text = StringUtils.removeLastParagraph(
+            _answerController.text,
+          );
         });
         widget.ttsService.speak("Deleted last paragraph.");
         break;
@@ -2110,24 +2129,27 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
 
       case VoiceAction.uppercaseLastWord:
         setState(() {
-          _answerController.text =
-              StringUtils.uppercaseLastWord(_answerController.text);
+          _answerController.text = StringUtils.uppercaseLastWord(
+            _answerController.text,
+          );
         });
         widget.ttsService.speak("Changed to uppercase.");
         break;
 
       case VoiceAction.lowercaseLastWord:
         setState(() {
-          _answerController.text =
-              StringUtils.lowercaseLastWord(_answerController.text);
+          _answerController.text = StringUtils.lowercaseLastWord(
+            _answerController.text,
+          );
         });
         widget.ttsService.speak("Changed to lowercase.");
         break;
 
       case VoiceAction.capitalizeLastWord:
         setState(() {
-          _answerController.text =
-              StringUtils.capitalizeLastWord(_answerController.text);
+          _answerController.text = StringUtils.capitalizeLastWord(
+            _answerController.text,
+          );
         });
         widget.ttsService.speak("Capitalized last word.");
         break;
@@ -2138,8 +2160,9 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         break;
 
       case VoiceAction.goToEnd:
-        _answerController.selection =
-            TextSelection.collapsed(offset: _answerController.text.length);
+        _answerController.selection = TextSelection.collapsed(
+          offset: _answerController.text.length,
+        );
         widget.ttsService.speak("Cursor at end.");
         break;
 
@@ -2652,15 +2675,21 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     String processed = StringUtils.stripWakeWordsAndCommands(transcribedText);
 
     // --- AUDIO MERGING FOR APPENDING ---
-    if (_isAppending && widget.question.audioPath != null && _tempAudioPath != null) {
+    if (_isAppending &&
+        widget.question.audioPath != null &&
+        _tempAudioPath != null) {
       final oldAudioFile = File(widget.question.audioPath!);
       if (await oldAudioFile.exists()) {
         final tempDir = await getTemporaryDirectory();
-        final mergedPath = '${tempDir.path}/merged_temp_${DateTime.now().millisecondsSinceEpoch}.wav';
-        
+        final mergedPath =
+            '${tempDir.path}/merged_temp_${DateTime.now().millisecondsSinceEpoch}.wav';
+
         final success = await AudioUtils.mergeWavFiles(
-            widget.question.audioPath!, _tempAudioPath!, mergedPath);
-            
+          widget.question.audioPath!,
+          _tempAudioPath!,
+          mergedPath,
+        );
+
         if (success) {
           _discardAudio();
           _tempAudioPath = mergedPath;
@@ -2678,7 +2707,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         // Cursor-aware insertion
         final currentText = _answerController.text;
         final selection = _answerController.selection;
-        
+
         // Determine insertion point
         int startPos = selection.start;
         if (startPos < 0) startPos = currentText.length;
@@ -2688,17 +2717,23 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         // Determine prefix/suffix spacing
         String prefix = "";
         String suffix = "";
-        
-        if (startPos > 0 && !currentText[startPos - 1].contains(RegExp(r'\s'))) {
+
+        if (startPos > 0 &&
+            !currentText[startPos - 1].contains(RegExp(r'\s'))) {
           prefix = " ";
         }
-        if (endPos < currentText.length && !currentText[endPos].contains(RegExp(r'\s'))) {
+        if (endPos < currentText.length &&
+            !currentText[endPos].contains(RegExp(r'\s'))) {
           suffix = " ";
         }
 
-        final newText = currentText.replaceRange(startPos, endPos, prefix + processed + suffix);
+        final newText = currentText.replaceRange(
+          startPos,
+          endPos,
+          prefix + processed + suffix,
+        );
         _answerController.text = newText;
-        
+
         // Position cursor after inserted text
         _answerController.selection = TextSelection.collapsed(
           offset: startPos + prefix.length + processed.length + suffix.length,
@@ -2706,7 +2741,9 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
       } else {
         // Replace Mode (Overwrite)
         _answerController.text = processed;
-        _answerController.selection = TextSelection.collapsed(offset: processed.length);
+        _answerController.selection = TextSelection.collapsed(
+          offset: processed.length,
+        );
       }
     });
     await Future.delayed(const Duration(milliseconds: 100));
@@ -2833,12 +2870,22 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     widget.question.answer = _answerController.text;
     if (_tempAudioPath != null) {
       try {
-        final safeName = (widget.studentName ?? "student").replaceAll(RegExp(r'[^\w]'), '_');
-        final safeId = (widget.studentId ?? "id").replaceAll(RegExp(r'[^\w]'), '_');
-        final safeExam = (widget.examName ?? "exam").replaceAll(RegExp(r'[^\w]'), '_');
-        
-        final fileName = '${safeExam}_${safeId}_${safeName}_q${widget.question.number ?? "x"}_${DateTime.now().millisecondsSinceEpoch}.wav';
-        
+        final safeName = (widget.studentName ?? "student").replaceAll(
+          RegExp(r'[^\w]'),
+          '_',
+        );
+        final safeId = (widget.studentId ?? "id").replaceAll(
+          RegExp(r'[^\w]'),
+          '_',
+        );
+        final safeExam = (widget.examName ?? "exam").replaceAll(
+          RegExp(r'[^\w]'),
+          '_',
+        );
+
+        final fileName =
+            '${safeExam}_${safeId}_${safeName}_q${widget.question.number ?? "x"}_${DateTime.now().millisecondsSinceEpoch}.wav';
+
         Directory? targetDir;
         if (Platform.isAndroid) {
           targetDir = Directory('/storage/emulated/0/Download');
@@ -2854,7 +2901,11 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
           targetDir = await getApplicationDocumentsDirectory();
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text("Warning: Could not access Downloads. Saved to App folder.")),
+              const SnackBar(
+                content: Text(
+                  "Warning: Could not access Downloads. Saved to App folder.",
+                ),
+              ),
             );
           }
         }
@@ -2864,20 +2915,20 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         setState(() {
           widget.question.audioPath = permPath;
         });
-        
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text("Audio saved to Downloads: $fileName")),
           );
         }
-        
+
         _discardAudio();
       } catch (e) {
         debugPrint("Error saving audio: $e");
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Error saving audio: $e")),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text("Error saving audio: $e")));
         }
       }
     }

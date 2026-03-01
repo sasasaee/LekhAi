@@ -13,6 +13,50 @@ class GeminiPaperService {
 
   static String? _cachedModelName;
 
+  /// Processes multiple images in parallel and merges their sections
+  /// into a single [ParsedDocument], sorted by question number.
+  Future<ParsedDocument> processMultipleImages(
+    List<String> imagePaths,
+    String apiKey,
+  ) async {
+    if (imagePaths.isEmpty) {
+      throw ArgumentError('imagePaths must not be empty');
+    }
+    if (imagePaths.length == 1) {
+      return processImage(imagePaths.first, apiKey);
+    }
+
+    // Process all images concurrently
+    final results = await Future.wait(
+      imagePaths.map((path) => processImage(path, apiKey)),
+    );
+
+    // Collect all sections
+    final mergedSections = <ParsedSection>[];
+    for (final doc in results) {
+      mergedSections.addAll(doc.sections);
+    }
+
+    // Sort sections by the minimum numeric question number they contain,
+    // so that selecting images in any order still produces correct sequence.
+    mergedSections.sort((a, b) {
+      int minNum(ParsedSection s) {
+        if (s.questions.isEmpty) return 999999;
+        return s.questions
+            .map((q) => int.tryParse(q.number ?? '') ?? 999999)
+            .reduce((v, e) => v < e ? v : e);
+      }
+
+      return minNum(a).compareTo(minNum(b));
+    });
+
+    return ParsedDocument(
+      header: results.first.header,
+      sections: mergedSections,
+      name: results.first.name,
+    );
+  }
+
   Future<ParsedDocument> processImage(String imagePath, String apiKey) async {
     final modelName = await _getModelName(apiKey);
     debugPrint("Gemini: Using model: $modelName");
@@ -73,7 +117,9 @@ class GeminiPaperService {
             .map((m) => m['name'] as String)
             .toList();
 
-        debugPrint("Gemini: Found ${availableModels.length} models: $availableModels");
+        debugPrint(
+          "Gemini: Found ${availableModels.length} models: $availableModels",
+        );
 
         // Prioritized list of stable models
         const prioritizedModels = [
@@ -92,11 +138,15 @@ class GeminiPaperService {
         }
 
         if (availableModels.isNotEmpty) {
-          debugPrint("Gemini: Falling back to first available: ${availableModels.first}");
+          debugPrint(
+            "Gemini: Falling back to first available: ${availableModels.first}",
+          );
           return availableModels.first;
         }
       } else {
-        debugPrint("Gemini: Failed to list models (${response.statusCode}): ${response.body}");
+        debugPrint(
+          "Gemini: Failed to list models (${response.statusCode}): ${response.body}",
+        );
       }
     } catch (e) {
       debugPrint("Gemini: Error listing models: $e");
@@ -164,6 +214,12 @@ class GeminiPaperService {
     """;
   }
 
+  /// Strips leading 'Q' or 'q' characters that Gemini may include in numbers.
+  /// e.g. "Q9" → "9", "Q10" → "10", "1" → "1"
+  String _normalizeNumber(String raw) {
+    return raw.replaceAll(RegExp(r'[^0-9]'), '');
+  }
+
   ParsedDocument _parseResponse(String jsonString) {
     // Clean up potential markdown blocks if API returns ```json ... ```
     final initialClean = jsonString.replaceAll(
@@ -189,7 +245,7 @@ class GeminiPaperService {
         for (var q in sec['questions']) {
           questions.add(
             ParsedQuestion(
-              number: q['number']?.toString() ?? '',
+              number: _normalizeNumber(q['number']?.toString() ?? ''),
               prompt: q['prompt']?.toString() ?? '',
               body:
                   (q['body'] as List?)?.map((e) => e.toString()).toList() ?? [],

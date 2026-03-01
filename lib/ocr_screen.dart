@@ -2,8 +2,11 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:file_picker/file_picker.dart';
 
 import 'services/ocr_service.dart';
+import 'services/gemini_paper_service.dart';
 import 'services/paper_storage_service.dart';
 import 'services/tts_service.dart';
 import 'services/question_segmentation_service.dart';
@@ -51,15 +54,15 @@ class OcrScreen extends StatefulWidget {
 class _OcrScreenState extends State<OcrScreen> {
   // ... (unchanged state variables and methods)
   final OcrService _ocrService = OcrService();
+  final GeminiPaperService _geminiService = GeminiPaperService();
   final PaperStorageService _storageService = PaperStorageService();
   final QuestionSegmentationService _segmenter = QuestionSegmentationService();
   final ImagePicker _picker = ImagePicker();
 
-  // final SttService _sttService = SttService(); // Removed
-  // final bool _isListening = false; // Removed
-
   bool _isProcessing = false;
-  File? _imageFile;
+  File? _imageFile; // used for single-camera capture preview
+  List<File> _imageFiles = []; // used for multi-image gallery selection
+  bool _isGeminiMode = false; // true when using Gemini (multi-image)
   ParsedDocument? _doc;
   List<OcrLine> _rawLines = [];
 
@@ -100,7 +103,7 @@ class _OcrScreenState extends State<OcrScreen> {
         if (!_isProcessing) _pickImage(ImageSource.camera);
         break;
       case VoiceAction.scanGallery:
-        if (!_isProcessing) _pickImage(ImageSource.gallery);
+        if (!_isProcessing) _pickMultipleImages();
         break;
       case VoiceAction.saveResult:
         _saveParsed();
@@ -139,6 +142,8 @@ class _OcrScreenState extends State<OcrScreen> {
 
       setState(() {
         _imageFile = File(image.path);
+        _imageFiles = [];
+        _isGeminiMode = false;
         _isProcessing = true;
         _doc = null;
         _rawLines = [];
@@ -149,6 +154,75 @@ class _OcrScreenState extends State<OcrScreen> {
       AccessibilityService().trigger(AccessibilityEvent.error);
       widget.ttsService.speak("Error picking image");
       setState(() => _isProcessing = false);
+    }
+  }
+
+  /// Opens a file browser allowing the user to pick MULTIPLE images.
+  /// Uses file_picker for reliable multi-select on all Android OEMs.
+  Future<void> _pickMultipleImages() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: true,
+        type: FileType.image,
+      );
+      if (result == null || result.files.isEmpty) return;
+
+      final paths = result.files
+          .where((f) => f.path != null)
+          .map((f) => f.path!)
+          .toList();
+      if (paths.isEmpty) return;
+
+      setState(() {
+        _imageFiles = paths.map((p) => File(p)).toList();
+        _imageFile = null;
+        _isGeminiMode = true;
+        _isProcessing = true;
+        _doc = null;
+        _rawLines = [];
+      });
+
+      await _processMultipleImages(paths);
+    } catch (e) {
+      AccessibilityService().trigger(AccessibilityEvent.error);
+      widget.ttsService.speak("Error picking images");
+      setState(() => _isProcessing = false);
+    }
+  }
+
+  /// Sends all selected images to Gemini AI and merges the results.
+  Future<void> _processMultipleImages(List<String> paths) async {
+    try {
+      AccessibilityService().trigger(AccessibilityEvent.loading);
+      final apiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
+      if (apiKey.isEmpty) {
+        throw Exception('GEMINI_API_KEY not set in .env');
+      }
+
+      widget.ttsService.speak(
+        "Processing ${paths.length} image${paths.length > 1 ? 's' : ''} with Gemini AI…",
+      );
+
+      final doc = await _geminiService.processMultipleImages(paths, apiKey);
+
+      final qCount = doc.sections.fold<int>(
+        0,
+        (sum, s) => sum + s.questions.length,
+      );
+
+      setState(() => _doc = doc);
+      widget.ttsService.speak(
+        qCount == 0
+            ? "Images processed, but I could not detect questions clearly."
+            : "Extracted $qCount questions from ${paths.length} image${paths.length > 1 ? 's' : ''}. Tap save to store.",
+      );
+      AccessibilityService().trigger(AccessibilityEvent.success);
+    } catch (e) {
+      AccessibilityService().trigger(AccessibilityEvent.error);
+      widget.ttsService.speak("Error processing images with Gemini.");
+      debugPrint("Multi-image Gemini error: $e");
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
     }
   }
 
@@ -413,11 +487,9 @@ class _OcrScreenState extends State<OcrScreen> {
                     Expanded(
                       child: _GlassButton(
                         icon: Icons.photo_library_outlined,
-                        label: "Gallery",
+                        label: "Multi-Image",
                         color: Theme.of(context).colorScheme.secondary,
-                        onTap: _isProcessing
-                            ? null
-                            : () => _pickImage(ImageSource.gallery),
+                        onTap: _isProcessing ? null : _pickMultipleImages,
                       ),
                     ),
                   ],
@@ -485,7 +557,8 @@ class _OcrScreenState extends State<OcrScreen> {
                     ),
                   ).animate().fadeIn(duration: 800.ms),
 
-                if (_imageFile != null)
+                // Single camera capture preview
+                if (_imageFile != null && !_isGeminiMode)
                   Container(
                     height: 240,
                     decoration: BoxDecoration(
@@ -499,6 +572,43 @@ class _OcrScreenState extends State<OcrScreen> {
                       borderRadius: BorderRadius.circular(16),
                       child: Image.file(_imageFile!, fit: BoxFit.contain),
                     ),
+                  ).animate().fadeIn(),
+
+                // Multi-image thumbnail strip
+                if (_imageFiles.isNotEmpty)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text(
+                          "${_imageFiles.length} image${_imageFiles.length > 1 ? 's' : ''} selected",
+                          style: GoogleFonts.outfit(
+                            color: Colors.white70,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                      SizedBox(
+                        height: 100,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: _imageFiles.length,
+                          separatorBuilder: (_, _) => const SizedBox(width: 8),
+                          itemBuilder: (context, i) {
+                            return ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: Image.file(
+                                _imageFiles[i],
+                                width: 90,
+                                height: 100,
+                                fit: BoxFit.cover,
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
                   ).animate().fadeIn(),
 
                 const SizedBox(height: 16),
