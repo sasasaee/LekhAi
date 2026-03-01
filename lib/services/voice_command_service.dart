@@ -8,7 +8,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart'; // Added
 import 'gemini_paper_service.dart';
 import 'paper_storage_service.dart'; // Added
 import '../pdf_viewer_screen.dart';
-// import '../take_exam_screen.dart';
+import '../take_exam_screen.dart'; // Uncommented
 import '../ocr_screen.dart';
 import '../answer_sheet_screen.dart';
 import '../widgets/accessible_widgets.dart';
@@ -1894,16 +1894,15 @@ class VoiceCommandService {
 
       // Auto-save the document
       await _storageService.saveDocument(doc);
-      tts.speak("Saved as ${doc.name}");
+      tts.speak("The scanned paper is saved.");
 
       navigatorKey.currentState?.push(
         MaterialPageRoute(
-          builder: (_) => AnswerSheetScreen(
-            document: doc,
+          builder: (_) => TakeExamScreen(
             ttsService: tts,
             voiceService: this,
+            accessibilityService: AccessibilityService(),
             picovoiceService: picovoiceService,
-            timestamp: DateTime.now().toString(),
           ),
         ),
       );

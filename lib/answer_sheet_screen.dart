@@ -142,7 +142,7 @@ class _AnswerSheetScreenState extends State<AnswerSheetScreen> {
 
     // Audio Prompt
     widget.ttsService.speak(
-      "Exam will start in locked mode. Say Start Exam to confirm. Or Cancel to exit.",
+      "Exam will start in locked mode. The instructions are: Say 'go to question 1' to start answering, 'How much time remaining' to hear the remaining minutes, or 'read context' to hear the paper instructions. Say 'Start Exam' to confirm, or 'Cancel' to exit.",
     );
 
     // Visual Dialog
@@ -163,7 +163,13 @@ class _AnswerSheetScreenState extends State<AnswerSheetScreen> {
           },
           title: const Text("Exam Mode Confirmation"),
           content: const Text(
-            "The app will be locked to prevent exiting.\nDo you want to proceed?",
+            "The app will be locked to prevent exiting.\n\n"
+            "Instructions:\n"
+            "• Say 'go to question 1' to start answering.\n"
+            "• Say 'how much time remaining' to hear the clock.\n"
+            "• Say 'how many question remaining' to know questions left to answer.\n"
+            "• Say 'read context' to hear the paper instructions.\n\n"
+            "Do you want to proceed?",
           ),
           actions: [
             AccessibleTextButton(
@@ -271,9 +277,7 @@ class _AnswerSheetScreenState extends State<AnswerSheetScreen> {
     
     int minutes = _remainingSeconds ~/ 60;
     widget.ttsService.speak(
-      "Exam started. You have $minutes minutes. "
-      "Say 'go to question 1' to start answering, 'check time' to hear the remaining minutes, "
-      "or 'read context' to hear the paper instructions. Best of Luck.",
+      "Exam started. You have $minutes minutes. Best of Luck. "
     );
   }
 

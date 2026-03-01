@@ -25,7 +25,8 @@ class ScreenDescriptionService {
         "Say the name of any option to navigate, or say 'what is on my screen' anytime for help.",
     'take_exam':
         "Take Exam screen. "
-        "You can scan Papers, go to saved papers, or access settings.",
+        "You can scan Papers, go to saved papers, or access settings."
+        "Say 'go to' followed by where you want to go.",
     'saved_papers':
         "Saved Papers screen. Your saved documents are listed here. "
         "Say 'open paper' followed by a number to view one, or 'delete paper' followed by a number to remove it.",
