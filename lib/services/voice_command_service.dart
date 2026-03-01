@@ -1020,6 +1020,11 @@ class VoiceCommandService {
             action = VoiceAction.goToSettings;
           else if (dest == 'read p d f' || dest == 'read_pdf')
             action = VoiceAction.goToReadPDF;
+          else if (dest == 'scan paper' ||
+              dest == 'scan questions' ||
+              dest == 'scan_paper' ||
+              dest == 'scan_questions')
+            action = VoiceAction.scanQuestions;
           else if (dest == 'back')
             action = VoiceAction.goBack;
         } else if (itemNumStr != null) {
