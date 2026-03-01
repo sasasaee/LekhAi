@@ -170,7 +170,9 @@ class _AnswerSheetScreenState extends State<AnswerSheetScreen> {
               Text("Instructions:"),
               Text("• Say 'go to question 1' to start answering."),
               Text("• Say 'how much time remaining' to hear the clock."),
-              Text("• Say 'how many question remaining' to know questions left."),
+              Text(
+                "• Say 'how many question remaining' to know questions left.",
+              ),
               Text("• Say 'read context' to hear instructions."),
               Text("• Say 'scroll up' or 'scroll down' to navigate."),
               Text("\nDo you want to proceed?"),
@@ -2473,6 +2475,8 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     await widget.ttsService.stop();
 
     setState(() => _currentVolume = newVolume);
+    // Sync with global notifier so voice commands stay in sync
+    widget.voiceService.volumeNotifier.value = newVolume;
     await widget.ttsService.setVolume(newVolume);
     await widget.ttsService.savePreferences(
       speed: _displaySpeed,
@@ -2489,7 +2493,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
   // --- SPEED LOGIC ---
   void _changeSpeed() async {
     double nextDisplaySpeed = _displaySpeed + 0.25;
-    if (nextDisplaySpeed > 1.75) {
+    if (nextDisplaySpeed > 2.0) {
       nextDisplaySpeed = 0.5;
     }
 
@@ -2500,6 +2504,8 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     await widget.ttsService.stop();
 
     setState(() => _displaySpeed = nextDisplaySpeed);
+    // Sync with global notifier so voice commands stay in sync
+    widget.voiceService.speedNotifier.value = nextDisplaySpeed;
 
     await widget.ttsService.setSpeed(nextDisplaySpeed * 0.5);
     await widget.ttsService.savePreferences(
@@ -3284,6 +3290,10 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                                 backgroundColor: Colors.white10,
                                 foregroundColor: Colors.white,
                                 elevation: 0,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                minimumSize: const Size(0, 44),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(10),
                                 ),
@@ -3302,6 +3312,10 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
                                 backgroundColor: Colors.white10,
                                 foregroundColor: Colors.white,
                                 elevation: 0,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                minimumSize: const Size(0, 44),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(10),
                                 ),

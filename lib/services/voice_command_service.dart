@@ -1196,9 +1196,8 @@ class VoiceCommandService {
             payload = null; // Trigger prompt
           }
         } else {
-          // Fallback for other form commands
+          // Fallback for other form commands — stay silent
           action = VoiceAction.unknown;
-          tts.speak("Please use manual input for form fields.");
         }
         break;
 
