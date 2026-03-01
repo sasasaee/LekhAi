@@ -30,7 +30,7 @@ class AudioRecorderService {
         // Start recording to file
         await _audioRecorder.start(
           const RecordConfig(
-            encoder: AudioEncoder.aacLc, // Good balance of quality/size
+            encoder: AudioEncoder.wav, // Changed to WAV for easier merging
             bitRate: 128000,
             sampleRate: 44100,
           ),

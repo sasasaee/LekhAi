@@ -10,6 +10,7 @@ import 'services/picovoice_service.dart';
 import 'services/accessibility_service.dart';
 import 'main.dart'; 
 import 'widgets/picovoice_mic_icon.dart'; 
+import 'package:flutter_native_splash/flutter_native_splash.dart';
 
 class StartPage extends StatefulWidget {
   final TtsService ttsService;
@@ -36,8 +37,9 @@ class _StartPageState extends State<StartPage> {
   @override
   void initState() {
     super.initState();
-    widget.ttsService.speak(
-      "Welcome to LekhAi. Your intelligent study companion. Say Start App to begin.",
+    FlutterNativeSplash.remove();
+    widget.ttsService.speakAndWait(
+      "Welcome to LekhAi, your intelligent study companion. Say 'Hey LekhAi' before every voice command. Say 'Start App' to begin.",
     );
     _subscribeToVoiceCommands();
   }
@@ -170,7 +172,7 @@ class _StartPageState extends State<StartPage> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             const Text(
-                              "Get Started",
+                              "Start App",
                               style: TextStyle(
                                 fontSize: 24, 
                                 fontWeight: FontWeight.w800, 

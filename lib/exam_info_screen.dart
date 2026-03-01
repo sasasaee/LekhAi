@@ -345,25 +345,39 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
         );
       } catch (e) {
         transcribedText = "[Transcription Failed: $e]";
+      } finally {
+        if (mounted) {
+          if (_isTranscribingDialogOpen) {
+            Navigator.of(context, rootNavigator: true).pop();
+            _isTranscribingDialogOpen = false;
+          }
+          setState(() {
+            _isProcessingAudio = false;
+          });
+        }
       }
     } else {
       transcribedText = "[No API Key - Audio Saved. Type answer manually.]";
       widget.ttsService.speak(
         "No API Key found. Audio saved, please type manually.",
       );
+      if (mounted) {
+        if (_isTranscribingDialogOpen) {
+          Navigator.of(context, rootNavigator: true).pop();
+          _isTranscribingDialogOpen = false;
+        }
+        setState(() {
+          _isProcessingAudio = false;
+        });
+      }
     }
     if (!mounted) return;
 
-    if (_isTranscribingDialogOpen) {
-      Navigator.of(context, rootNavigator: true).pop();
-      _isTranscribingDialogOpen = false;
+    if (transcribedText.startsWith("[Transcription Failed:")) {
+      return;
     }
 
     String processed = StringUtils.stripWakeWordsAndCommands(transcribedText);
-
-    setState(() {
-      _isProcessingAudio = false;
-    });
 
     await Future.delayed(const Duration(milliseconds: 100));
     _onDictationFinished(processed);
@@ -405,6 +419,10 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
       barrierDismissible: false,
       builder: (ctx) => VoiceAlertDialog(
         voiceService: widget.voiceService,
+        onRetry: () {
+          Navigator.pop(ctx);
+          _handleRetry();
+        },
         onConfirm: () async {
           Navigator.pop(ctx);
           if (_currentDictationField == DictationField.name) {
@@ -453,13 +471,7 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
           AccessibleTextButton(
             onPressed: () {
               Navigator.pop(ctx);
-              _discardAudio();
-              if (_currentDictationField == DictationField.name) {
-                FocusScope.of(context).requestFocus(_nameFocus);
-              } else if (_currentDictationField == DictationField.id) {
-                FocusScope.of(context).requestFocus(_idFocus);
-              }
-              widget.picovoiceService.resumeListening();
+              _handleRetry();
             },
             child: const Text("Retry"),
           ),
@@ -487,6 +499,17 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
         ],
       ),
     );
+  }
+
+  void _handleRetry() {
+    _discardAudio();
+    if (_currentDictationField == DictationField.name) {
+      FocusScope.of(context).requestFocus(_nameFocus);
+    } else if (_currentDictationField == DictationField.id) {
+      FocusScope.of(context).requestFocus(_idFocus);
+    }
+    // Restart listening immediately
+    _startListening();
   }
 
   void _discardAudio() {
@@ -549,7 +572,7 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
       "Starting exam for $_name with $hours hours and $minutes minutes duration.",
     );
 
-    Navigator.pushReplacement(
+    Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => AnswerSheetScreen(
@@ -565,7 +588,14 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
           picovoiceService: widget.picovoiceService,
         ),
       ),
-    );
+    ).then((_) {
+      if (mounted) {
+        ScreenDescriptionService().announceScreen(
+          'exam_info',
+          widget.ttsService,
+        );
+      }
+    });
   }
 
   @override

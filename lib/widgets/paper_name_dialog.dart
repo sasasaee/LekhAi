@@ -206,18 +206,23 @@ class _PaperNameDialogState extends State<PaperNameDialog> {
       } catch (e) {
         transcribed = '';
         widget.ttsService.speak("Transcription failed. Please try again.");
+      } finally {
+        if (mounted && _isTranscribingDialogOpen) {
+          Navigator.of(context, rootNavigator: true).pop();
+          _isTranscribingDialogOpen = false;
+        }
       }
     } else {
       widget.ttsService.speak(
         "No API Key found. Please type the name manually.",
       );
+      if (mounted && _isTranscribingDialogOpen) {
+        Navigator.of(context, rootNavigator: true).pop();
+        _isTranscribingDialogOpen = false;
+      }
     }
 
     if (!mounted) return;
-    if (_isTranscribingDialogOpen) {
-      Navigator.of(context, rootNavigator: true).pop();
-      _isTranscribingDialogOpen = false;
-    }
 
     final processed = StringUtils.stripWakeWordsAndCommands(transcribed).trim();
     if (processed.isEmpty) {

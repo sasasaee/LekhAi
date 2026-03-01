@@ -110,20 +110,11 @@ class StringUtils {
       }
     }
 
-    // Remove any trailing punctuation
     processed = processed.trim();
-    while (processed.endsWith(',') || processed.endsWith('.')) {
-      processed = processed.substring(0, processed.length - 1).trim();
-    }
-
-    // Final sweeps
-    if (processed.toLowerCase().endsWith(" stop")) {
-      processed = processed.substring(0, processed.length - 5).trim();
-    }
-    for (var wakeWord in wakeWordVariations) {
-      if (processed.toLowerCase().endsWith(" $wakeWord")) {
-         processed = processed.substring(0, processed.length - (wakeWord.length + 1)).trim();
-      }
+    // Remove leading punctuation that might be residue from wake word stripping
+    // e.g. "Hey Lekhai. How are you?" -> ". How are you?"
+    while (processed.isNotEmpty && (processed.startsWith('.') || processed.startsWith(',') || processed.startsWith('?') || processed.startsWith('!'))) {
+      processed = processed.substring(1).trim();
     }
 
     return processed.trim();
@@ -148,5 +139,89 @@ class StringUtils {
     // Extract only digits
     processed = processed.replaceAll(RegExp(r'[^0-9]'), '');
     return processed;
+  }
+
+  static String removeLastWord(String text) {
+    if (text.trim().isEmpty) return "";
+    List<String> words = text.trim().split(RegExp(r'\s+'));
+    if (words.length <= 1) return "";
+    return words.sublist(0, words.length - 1).join(" ");
+  }
+
+  static String removeLastSentence(String text) {
+    if (text.trim().isEmpty) return "";
+    // Split by sentence terminators followed by optional space
+    // Using a more robust regex that looks for .?! followed by space or end of string
+    final regex = RegExp(r'(?<=[.?!])(?=\s|$)');
+    List<String> sentences = text.trim().split(regex);
+    
+    // Clean up empty entries from split
+    sentences = sentences.where((s) => s.trim().isNotEmpty).toList();
+
+    if (sentences.isEmpty) return "";
+    if (sentences.length == 1) return "";
+    
+    return sentences.sublist(0, sentences.length - 1).join("").trimRight();
+  }
+
+  static String removeLastParagraph(String text) {
+    if (text.trim().isEmpty) return "";
+    List<String> paragraphs = text.split(RegExp(r'\n+'));
+    if (paragraphs.length <= 1) return "";
+    return paragraphs.sublist(0, paragraphs.length - 1).join("\n\n");
+  }
+
+  static String removeLastLine(String text) {
+    if (text.trim().isEmpty) return "";
+    List<String> lines = text.split('\n');
+    if (lines.length <= 1) return "";
+    return lines.sublist(0, lines.length - 1).join("\n");
+  }
+
+  static String uppercaseLastWord(String text) {
+    if (text.trim().isEmpty) return "";
+    List<String> words = text.split(RegExp(r'(\s+)')); // Keep delimiters
+    for (int i = words.length - 1; i >= 0; i--) {
+      if (words[i].trim().isNotEmpty) {
+        words[i] = words[i].toUpperCase();
+        break;
+      }
+    }
+    return words.join("");
+  }
+
+  static String lowercaseLastWord(String text) {
+    if (text.trim().isEmpty) return "";
+    List<String> words = text.split(RegExp(r'(\s+)'));
+    for (int i = words.length - 1; i >= 0; i--) {
+      if (words[i].trim().isNotEmpty) {
+        words[i] = words[i].toLowerCase();
+        break;
+      }
+    }
+    return words.join("");
+  }
+
+  static String capitalizeLastWord(String text) {
+    if (text.trim().isEmpty) return "";
+    List<String> words = text.split(RegExp(r'(\s+)'));
+    for (int i = words.length - 1; i >= 0; i--) {
+      if (words[i].trim().isNotEmpty) {
+        String w = words[i];
+        if (w.length > 1) {
+          words[i] = w[0].toUpperCase() + w.substring(1).toLowerCase();
+        } else {
+          words[i] = w.toUpperCase();
+        }
+        break;
+      }
+    }
+    return words.join("");
+  }
+
+  static String getLastWord(String text) {
+    if (text.trim().isEmpty) return "";
+    final words = text.trim().split(RegExp(r'\s+'));
+    return words.last;
   }
 }

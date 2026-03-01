@@ -176,4 +176,33 @@ void main() {
       voiceService.executeIntent('navigation', {'pageNumber': '10'});
     },
   );
+
+  test('VoiceCommandService maps "play audio" to playAudioAnswer', () async {
+    expectLater(
+      voiceService.commandStream,
+      emits(
+        predicate<CommandResult>(
+          (result) => result.action == VoiceAction.playAudioAnswer,
+        ),
+      ),
+    );
+
+    voiceService.executeIntent('readContent', {}, 'play audio');
+  });
+
+  test('VoiceCommandService maps slotless "readContent" intent to playAudioAnswer',
+      () async {
+    expectLater(
+      voiceService.commandStream,
+      emits(
+        predicate<CommandResult>(
+          (result) => result.action == VoiceAction.playAudioAnswer,
+        ),
+      ),
+    );
+
+    // This simulates a Picovoice Rhino inference that understands the intent
+    // but provides no slots (literal phrase "play audio" in the YAML).
+    voiceService.executeIntent('readContent', {});
+  });
 }

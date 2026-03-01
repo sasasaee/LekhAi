@@ -20,6 +20,7 @@ import 'preferences_screen.dart';
 import 'saved_papers_screen.dart';
 import 'pdf_viewer_screen.dart';
 import 'start_page.dart'; // Imported StartPage
+import 'package:flutter_native_splash/flutter_native_splash.dart';
 
 // import 'dart:ui';
 // import 'package:shared_preferences/shared_preferences.dart';
@@ -32,22 +33,41 @@ import 'start_page.dart'; // Imported StartPage
 // import 'widgets/animated_button.dart';
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+  FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
+  
   await dotenv.load(fileName: ".env");
-  runApp(MyApp());
+  
+  // Initialize core services at the top level
+  final ttsService = TtsService();
+  final accessibilityService = AccessibilityService();
+  final picovoiceService = PicovoiceService();
+  final voiceCommandService = VoiceCommandService(ttsService, picovoiceService);
+
+  // Initialize Picovoice Service (Async)
+  await picovoiceService.init(voiceCommandService);
+
+  runApp(MyApp(
+    ttsService: ttsService,
+    accessibilityService: accessibilityService,
+    voiceCommandService: voiceCommandService,
+    picovoiceService: picovoiceService,
+  ));
 }
 
 class MyApp extends StatelessWidget {
-  // Initialize core services at the top level
-  final TtsService ttsService = TtsService();
-  final AccessibilityService accessibilityService = AccessibilityService();
-  late final VoiceCommandService voiceCommandService;
-  final PicovoiceService picovoiceService = PicovoiceService(); // Added
+  final TtsService ttsService;
+  final AccessibilityService accessibilityService;
+  final VoiceCommandService voiceCommandService;
+  final PicovoiceService picovoiceService;
 
-  MyApp({super.key}) {
-    // Inject TTS and Picovoice into the Voice Command Service
-    voiceCommandService = VoiceCommandService(ttsService, picovoiceService);
-  }
+  const MyApp({
+    super.key,
+    required this.ttsService,
+    required this.accessibilityService,
+    required this.voiceCommandService,
+    required this.picovoiceService,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -55,11 +75,11 @@ class MyApp extends StatelessWidget {
       title: 'LekhAi',
       navigatorKey: voiceCommandService.navigatorKey,
       theme: AppTheme.darkTheme,
-      home: SplashScreen(
+      home: StartPage(
         ttsService: ttsService,
         voiceService: voiceCommandService,
         accessibilityService: accessibilityService,
-        picovoiceService: picovoiceService, // Passed
+        picovoiceService: picovoiceService,
       ),
       debugShowCheckedModeBanner: false,
       routes: {
@@ -91,90 +111,7 @@ class MyApp extends StatelessWidget {
   }
 }
 
-// ---------------------- Splash Screen ----------------------
-
-class SplashScreen extends StatefulWidget {
-  final TtsService ttsService;
-  final VoiceCommandService voiceService;
-  final AccessibilityService accessibilityService;
-  final PicovoiceService picovoiceService;
-
-  const SplashScreen({
-    super.key,
-    required this.ttsService,
-    required this.voiceService,
-    required this.accessibilityService,
-    required this.picovoiceService,
-  });
-
-  @override
-  State<SplashScreen> createState() => _SplashScreenState();
-}
-
-class _SplashScreenState extends State<SplashScreen> {
-  @override
-  void initState() {
-    super.initState();
-
-    // Initialize Picovoice Service (Async)
-    widget.picovoiceService.init(widget.voiceService);
-
-    Timer(const Duration(seconds: 3), () {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          settings: const RouteSettings(name: '/start'),
-          builder: (_) => StartPage(
-            // Navigate to StartPage first
-            ttsService: widget.ttsService,
-            voiceService: widget.voiceService,
-            accessibilityService: widget.accessibilityService,
-            picovoiceService: widget.picovoiceService,
-          ),
-        ),
-      );
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Theme.of(context).primaryColor.withValues(alpha: 0.2),
-              Theme.of(context).scaffoldBackgroundColor,
-            ],
-          ),
-        ),
-        child: Center(
-          child:
-              Hero(
-                    tag:
-                        'app_logo', // Hero tag for smooth transition to StartPage
-                    child: Image.asset(
-                      'assets/images/logo.png',
-                      width: 260,
-                      height: 260,
-                    ),
-                  )
-                  .animate(
-                    onPlay: (controller) => controller.repeat(reverse: true),
-                  )
-                  .scale(
-                    duration: const Duration(seconds: 2),
-                    begin: const Offset(1, 1),
-                    end: const Offset(1.05, 1.05),
-                  )
-                  .fadeIn(duration: const Duration(milliseconds: 800)),
-        ),
-      ),
-    );
-  }
-}
+// SplashScreen class removed as we are using native splash screen only.
 
 // ---------------------- Home Screen ----------------------
 
@@ -252,9 +189,6 @@ class _HomeScreenState extends State<HomeScreen>
         break;
       case VoiceAction.goToSettings:
         Navigator.pushNamed(context, '/settings');
-        break;
-      case VoiceAction.goToSavedPapers:
-        _openSavedPapers();
         break;
       case VoiceAction.goToTakeExam:
         _openTakeExam();
@@ -525,22 +459,13 @@ class _HomeScreenState extends State<HomeScreen>
                         ),
                         const SizedBox(height: 20),
                         _DashboardCard(
-                          icon: Icons.question_answer_outlined,
-                          label: "Saved Papers",
-                          subLabel: "Review Archives",
-                          color: const Color(0xFF10B981), // Green
-                          delay: 800,
-                          onTap: _openSavedPapers,
-                        ),
-                        const SizedBox(height: 20),
-                        _DashboardCard(
                           icon: Icons.settings_outlined,
-                          label: "Preferences",
+                          label: "Settings",
                           subLabel: "Customize App",
                           color: const Color(0xFF8B5CF6), // Violet
-                          delay: 900,
+                          delay: 800,
                           onTap: () async {
-                            widget.ttsService.speak("Opening preferences.");
+                            widget.ttsService.speak("Opening settings.");
                             if (!context.mounted) return;
                             Navigator.push(
                               context,

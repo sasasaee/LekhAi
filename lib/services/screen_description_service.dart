@@ -19,13 +19,14 @@ class ScreenDescriptionService {
 
   static const Map<String, String> _fullDescriptions = {
     'start':
-        "Welcome to LekhAi. Your intelligent study companion. Say 'Start App' or tap the screen to begin.",
+        "Welcome to LekhAi, your intelligent study companion. Say 'Hey LekhAi' before every voice command. Say 'Start App' to begin.",
     'home':
-        "Home Screen. You have four options: Take Exam, Saved Papers, Read PDF, and Settings. "
+        "Home Screen. You have three options: Take Exam, Read PDF, and Settings. "
         "Say the name of any option to navigate, or say 'what is on my screen' anytime for help.",
     'take_exam':
         "Take Exam screen. "
-        "You can scan Papers, Go to saved papers to give exam, or, access preferences.",
+        "You can scan Papers, go to saved papers, or access settings."
+        "Say 'go to' followed by where you want to go.",
     'saved_papers':
         "Saved Papers screen. Your saved documents are listed here. "
         "Say 'open paper' followed by a number to view one, or 'delete paper' followed by a number to remove it.",
