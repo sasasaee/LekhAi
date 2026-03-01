@@ -22,7 +22,7 @@ class ScreenDescriptionService {
         "Welcome to LekhAi, your intelligent study companion. Say 'Hey LekhAi' before every voice command. Say 'Start App' to begin.",
     'home':
         "Home Screen. You have three options: Take Exam, Read PDF, and Settings. "
-        "Say the name of any option to navigate, or say 'what is on my screen' anytime for help.",
+        "Say 'go to' followed by where you want to go, or say 'what is on my screen' anytime for help.",
     'take_exam':
         "Take Exam screen. "
         "You can scan Papers, go to saved papers, or access settings."
@@ -42,8 +42,7 @@ class ScreenDescriptionService {
         "Say 'read question' to hear the current question, 'start' to begin writing your answer, "
         "or 'next question' and 'previous question' to navigate.",
     'pdf_viewer':
-        "PDF Viewer screen. You can zoom in, zoom out, reset zoom, or go to a specific page. "
-        "Say 'go to page' followed by a number, or 'read this page' to hear the content.",
+        "PDF Viewer screen. ",
     'ocr':
         "OCR Processing screen. The scanned document is being processed. "
         "Once complete, you can save or rename the file.",

@@ -30,9 +30,20 @@ class TtsService {
 
   VoidCallback? _defaultCompletionHandler;
 
-  void _init() {
-    _tts.setVolume(1.0);
-    _tts.setSpeechRate(1.0);
+  void _init() async {
+    await _tts.setVolume(1.0);
+    await _tts.setSpeechRate(1.0);
+    
+    // Smooth audio transitions on iOS
+    await _tts.setIosAudioCategory(
+      IosTextToSpeechAudioCategory.playback,
+      [
+        IosTextToSpeechAudioCategoryOptions.allowBluetooth,
+        IosTextToSpeechAudioCategoryOptions.allowBluetoothA2DP,
+        IosTextToSpeechAudioCategoryOptions.mixWithOthers,
+      ],
+      IosTextToSpeechAudioMode.defaultMode,
+    );
 
     _setupHandlers();
 
@@ -108,46 +119,25 @@ class TtsService {
     if (!_initialized) return;
 
     // Signal START immediately to pause STT
-    _isSpeaking = true;
-    _speakingController.add(true);
-
-    await _tts.stop();
+    if (!_isSpeaking) {
+      _isSpeaking = true;
+      _speakingController.add(true);
+    }
 
     final processedText = _preprocessText(text);
     _lastText = processedText;
     _currentWordStart = 0;
     _isPaused = false;
 
-    final completer = Completer<void>();
+    // Use native queue mode so multiple chunks flow seamlessly without flutter-side delays
+    await _tts.setQueueMode(1); // 1 = QUEUE_ADD: Add to the end of the queue
+    
+    debugPrint("TTS → About to call queued platform speak()");
+    await _tts.speak(processedText);
 
-    _tts.setCompletionHandler(() {
-      completer.complete();
-    });
-
-    _tts.setCancelHandler(() {
-      if (!completer.isCompleted) completer.complete();
-    });
-
-    try {
-      await _tts.speak(processedText);
-      // Timeout based on text length: ~1.5 sec per 10 chars + 3 sec buffer
-      // This prevents hanging forever if completion handler is missed
-      final timeoutDuration = Duration(
-        seconds: (processedText.length / 10).ceil() + 2,
-      );
-      await completer.future.timeout(timeoutDuration, onTimeout: () {
-        debugPrint(
-          "TTS: Completion timeout ($timeoutDuration) - Processing continuing...",
-        );
-      });
-    } finally {
-      // Signal END
-      _isSpeaking = false;
-      _speakingController.add(false);
-
-      // Restore global handlers
-      _setupHandlers(); 
-    }
+    // Give it a brief moment to register the speech start, but do not block 
+    // the caller (pdf loop) from preparing the next chunk.
+    await Future.delayed(const Duration(milliseconds: 50));
   }
 
   // Speaks text immediately
