@@ -19,6 +19,7 @@ import 'package:share_plus/share_plus.dart'; // Added for Share PDF
 import 'widgets/voice_alert_dialog.dart'; // Added
 import 'package:flutter_dotenv/flutter_dotenv.dart'; // Added
 import 'utils/string_utils.dart'; // Added for fuzzy matching
+import 'utils/audio_utils.dart'; // Added for audio merging
 
 // --- PAPER DETAIL SCREEN ---
 
@@ -814,6 +815,9 @@ class _AnswerSheetScreenState extends State<AnswerSheetScreen> {
           voiceService: widget.voiceService,
           accessibilityService: widget.accessibilityService,
           picovoiceService: widget.picovoiceService,
+          studentName: widget.studentName,
+          studentId: widget.studentId,
+          examName: _document.name,
           onNext: () {
             _openNextQuestion(prevQ, replace: true);
           },
@@ -872,6 +876,9 @@ class _AnswerSheetScreenState extends State<AnswerSheetScreen> {
           voiceService: widget.voiceService,
           accessibilityService: widget.accessibilityService,
           picovoiceService: widget.picovoiceService,
+          studentName: widget.studentName,
+          studentId: widget.studentId,
+          examName: _document.name,
           onNext: () {
             // Replace current with next (recursive)
             _openNextQuestion(nextQ, replace: true);
@@ -940,6 +947,9 @@ class _AnswerSheetScreenState extends State<AnswerSheetScreen> {
           voiceService: widget.voiceService,
           accessibilityService: widget.accessibilityService,
           picovoiceService: widget.picovoiceService,
+          studentName: widget.studentName,
+          studentId: widget.studentId,
+          examName: _document.name,
           onNext: () {
             _openNextQuestion(target!, replace: true);
           },
@@ -1382,6 +1392,9 @@ class _AnswerSheetScreenState extends State<AnswerSheetScreen> {
                                             widget.accessibilityService,
                                         picovoiceService:
                                             widget.picovoiceService,
+                                        studentName: widget.studentName,
+                                        studentId: widget.studentId,
+                                        examName: _document.name,
                                         onNext: () {
                                           Navigator.pop(context);
                                           _openNextQuestion(q);
@@ -1826,6 +1839,9 @@ class SingleQuestionScreen extends StatefulWidget {
   final String Function()? onTimeCheck; // Added
   final String Function()? onCountCheck; // Added
   final bool isExamMode; // Added
+  final String? studentName;
+  final String? studentId;
+  final String? examName;
 
   const SingleQuestionScreen({
     super.key,
@@ -1841,6 +1857,9 @@ class SingleQuestionScreen extends StatefulWidget {
     this.onTimeCheck,
     this.onCountCheck,
     this.isExamMode = false, // Added
+    this.studentName,
+    this.studentId,
+    this.examName,
   });
 
   @override
@@ -1952,6 +1971,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
       VoiceAction.checkTime,
       VoiceAction.checkTotalQuestions,
       VoiceAction.checkRemainingQuestions,
+      VoiceAction.playAudioAnswer,
     ].contains(result.action);
 
     if (!isCurrent && !isSafeCommand) return;
@@ -2142,7 +2162,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
 
       case VoiceAction.playAudioAnswer:
         if (widget.question.audioPath != null) {
-          await widget.ttsService.speak("Playing answer.");
+          if (_isReading) _onStopPressed();
           await _audioPlayer.play(DeviceFileSource(widget.question.audioPath!));
         } else {
           await widget.ttsService.speak("No audio answer recorded.");
@@ -2544,7 +2564,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     await Future.delayed(const Duration(milliseconds: 600));
     final tempDir = await getTemporaryDirectory();
     _tempAudioPath =
-        '${tempDir.path}/temp_answer_${DateTime.now().millisecondsSinceEpoch}.m4a';
+        '${tempDir.path}/temp_answer_${DateTime.now().millisecondsSinceEpoch}.wav';
     try {
       await _audioRecorderService.startRecording(_tempAudioPath!);
       setState(() {
@@ -2626,6 +2646,25 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
 
     // --- POST-PROCESSING: Strip Wake Word and Stop Command ---
     String processed = StringUtils.stripWakeWordsAndCommands(transcribedText);
+
+    // --- AUDIO MERGING FOR APPENDING ---
+    if (_isAppending && widget.question.audioPath != null && _tempAudioPath != null) {
+      final oldAudioFile = File(widget.question.audioPath!);
+      if (await oldAudioFile.exists()) {
+        final tempDir = await getTemporaryDirectory();
+        final mergedPath = '${tempDir.path}/merged_temp_${DateTime.now().millisecondsSinceEpoch}.wav';
+        
+        final success = await AudioUtils.mergeWavFiles(
+            widget.question.audioPath!, _tempAudioPath!, mergedPath);
+            
+        if (success) {
+          _discardAudio();
+          _tempAudioPath = mergedPath;
+        } else {
+          debugPrint("Failed to merge audio files.");
+        }
+      }
+    }
 
     setState(() {
       _isProcessingAudio = false;
@@ -2790,17 +2829,52 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
     widget.question.answer = _answerController.text;
     if (_tempAudioPath != null) {
       try {
-        final appDir = await getApplicationDocumentsDirectory();
-        final fileName =
-            'answer_q${widget.question.number ?? "x"}_${DateTime.now().millisecondsSinceEpoch}.m4a';
-        final permPath = '${appDir.path}/$fileName';
+        final safeName = (widget.studentName ?? "student").replaceAll(RegExp(r'[^\w]'), '_');
+        final safeId = (widget.studentId ?? "id").replaceAll(RegExp(r'[^\w]'), '_');
+        final safeExam = (widget.examName ?? "exam").replaceAll(RegExp(r'[^\w]'), '_');
+        
+        final fileName = '${safeExam}_${safeId}_${safeName}_q${widget.question.number ?? "x"}_${DateTime.now().millisecondsSinceEpoch}.wav';
+        
+        Directory? targetDir;
+        if (Platform.isAndroid) {
+          targetDir = Directory('/storage/emulated/0/Download');
+        } else {
+          targetDir = await getDownloadsDirectory();
+        }
+
+        if (targetDir != null && !targetDir.existsSync()) {
+          targetDir.createSync(recursive: true);
+        }
+
+        if (targetDir == null) {
+          targetDir = await getApplicationDocumentsDirectory();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text("Warning: Could not access Downloads. Saved to App folder.")),
+            );
+          }
+        }
+
+        final permPath = '${targetDir.path}/$fileName';
         await File(_tempAudioPath!).copy(permPath);
         setState(() {
           widget.question.audioPath = permPath;
         });
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Audio saved to Downloads: $fileName")),
+          );
+        }
+        
         _discardAudio();
       } catch (e) {
         debugPrint("Error saving audio: $e");
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Error saving audio: $e")),
+          );
+        }
       }
     }
   }

@@ -317,7 +317,7 @@ class VoiceCommandService {
           text.contains("play answer") ||
           text.contains("listen") ||
           text.contains("play the answer")) {
-        return CommandResult(VoiceAction.readAnswer);
+        return CommandResult(VoiceAction.playAudioAnswer);
       }
       if (text.contains("context") || text.contains("read context")) {
         return CommandResult(VoiceAction.toggleReadContext);
@@ -629,6 +629,11 @@ class VoiceCommandService {
     }
     if (text.contains("read question") || text.contains("repeat question")) {
       return CommandResult(VoiceAction.readQuestion);
+    }
+    if (text.contains("play audio") ||
+        text.contains("play answer") ||
+        text.contains("listen")) {
+      return CommandResult(VoiceAction.playAudioAnswer);
     }
     if (text.contains("read my answer") || text.contains("read answer")) {
       return CommandResult(VoiceAction.readAnswer);
@@ -999,53 +1004,27 @@ class VoiceCommandService {
       // --- USER YAML INTENTS ---
       case 'navigation':
         final dest = getVal(['destination']);
+        final itemType = getVal(['itemType']);
         final itemNumStr = getVal(['itemNumber']);
         final pageNumStr = getVal(['pageNumber']);
+        final lowerSpeech = speech?.toLowerCase() ?? "";
 
         if (dest != null) {
-          if (intentStringContains(dest, ['home', 'main menu'])) {
+          if (dest == 'home')
             action = VoiceAction.goToHome;
-          } else if (intentStringContains(dest, ['exam', 'take'])) {
-            action = VoiceAction.goToTakeExam;
-          } else if (intentStringContains(dest, ['saved', 'cards'])) {
+          else if (dest == 'saved papers' || dest == 'saved_papers')
             action = VoiceAction.goToSavedPapers;
-          } else if (intentStringContains(dest, ['pdf', 'read'])) {
-            action = VoiceAction.goToReadPDF;
-          } else if (intentStringContains(dest, ['setting', 'preference'])) {
+          else if (dest == 'take exam' || dest == 'take_exam')
+            action = VoiceAction.goToTakeExam;
+          else if (dest == 'settings' || dest == 'preferences')
             action = VoiceAction.goToSettings;
-          } else if (intentStringContains(dest, ['scan'])) {
-            action = VoiceAction.scanQuestions;
-          } else if (intentStringContains(dest, ['back', 'previous'])) {
+          else if (dest == 'read p d f' || dest == 'read_pdf')
+            action = VoiceAction.goToReadPDF;
+          else if (dest == 'back')
             action = VoiceAction.goBack;
-          } else if (intentStringContains(dest, [
-            'start',
-            'app',
-            'get started',
-          ])) {
-            action = VoiceAction.startApp;
-          }
-        } else if (itemNumStr == null && pageNumStr == null) {
-          final lowerSpeech = speech?.toLowerCase() ?? "";
-          if (lowerSpeech.contains('summary') || lowerSpeech.contains('list')) {
-            action = VoiceAction.goBack;
-          } else if (lowerSpeech.contains('next') ||
-              lowerSpeech.contains('forward')) {
-            action = VoiceAction.nextPage;
-          } else if (lowerSpeech.contains('previous') ||
-              lowerSpeech.contains('back')) {
-            action = VoiceAction.previousPage;
-          } else {
-            // Only go back if explicitly said, otherwise unknown
-            action = VoiceAction.unknown;
-          }
-        }
-
-        if (itemNumStr != null) {
+        } else if (itemNumStr != null) {
           int? num = int.tryParse(itemNumStr);
           if (num != null) {
-            final itemType = getVal(['itemType']);
-            final lowerSpeech = speech?.toLowerCase() ?? "";
-
             // Check itemType slot first, then fallback to speech context
             if (itemType != null &&
                 (itemType == 'paper' ||
@@ -1054,9 +1033,7 @@ class VoiceCommandService {
               action = VoiceAction.openPaper;
               payload = num;
             } else if (lowerSpeech.contains('paper') ||
-                lowerSpeech.contains('file') ||
-                (dest != null &&
-                    intentStringContains(dest, ['paper', 'file']))) {
+                lowerSpeech.contains('file')) {
               action = VoiceAction.openPaper;
               payload = num;
             } else {
@@ -1071,6 +1048,17 @@ class VoiceCommandService {
             action = VoiceAction.goToPage;
             payload = p;
           }
+        } else if (lowerSpeech.contains('get started')) {
+          action = VoiceAction.startApp;
+        } else if (lowerSpeech.contains('summary') ||
+            lowerSpeech.contains('back to list')) {
+          action = VoiceAction.goBack;
+        } else if (lowerSpeech.contains('next') ||
+            lowerSpeech.contains('forward')) {
+          action = VoiceAction.nextPage;
+        } else if (lowerSpeech.contains('previous') ||
+            lowerSpeech.contains('back')) {
+          action = VoiceAction.previousPage;
         }
         break;
 
@@ -1308,9 +1296,14 @@ class VoiceCommandService {
               target == 'what I wrote' ||
               (lowerSpeech.contains('answer') &&
                   !lowerSpeech.contains('clear') &&
-                  !lowerSpeech.contains('erase')) ||
+                  !lowerSpeech.contains('erase') &&
+                  !lowerSpeech.contains('play')) ||
               lowerSpeech.contains('wrote')) {
             action = VoiceAction.readAnswer;
+          } else if (lowerSpeech.contains('play audio') ||
+              lowerSpeech.contains('play answer') ||
+              lowerSpeech.contains('listen')) {
+            action = VoiceAction.playAudioAnswer;
           } else if (target == 'this page' || lowerSpeech.contains('this page')) {
             action = VoiceAction.readQuestion;
           } else if (target == 'context' || lowerSpeech.contains('context')) {
@@ -1322,6 +1315,10 @@ class VoiceCommandService {
             action = VoiceAction.readLastWord;
           } else if (target == 'question') {
             action = VoiceAction.readQuestion;
+          } else {
+            // Literal "play audio" or "read answer" with no slots
+            // In Rhino, 'play audio' might result in readContent intent with no slots.
+            action = VoiceAction.playAudioAnswer;
           }
           final itemNumStr = getVal(['itemNumber']);
           if (itemNumStr != null) {
@@ -1362,10 +1359,10 @@ class VoiceCommandService {
           } else if (e.contains('confirm')) {
             action = VoiceAction.confirmExamStart;
           }
-        } else if (lowerSpeech.contains('confirm exit')) {
+        } else {
+          // No slots found for examControl intent
+          // Heuristic: Rhino 'confirm exit' usually has no slots
           action = VoiceAction.confirmExit;
-        } else if (lowerSpeech.contains('exit')) {
-          action = VoiceAction.goBack;
         }
         break;
 
