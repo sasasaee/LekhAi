@@ -53,6 +53,18 @@ enum VoiceAction {
   overwriteAnswer,
   clearAnswer,
   readLastSentence,
+  undo,
+  redo,
+  deleteLastWord,
+  deleteLastSentence,
+  deleteLastLine,
+  deleteLastParagraph,
+  newParagraph,
+  uppercaseLastWord,
+  capitalizeLastWord,
+  lowercaseLastWord,
+  goToStart,
+  goToEnd,
   // New Context Specific Actions
   scanCamera,
   scanGallery,
@@ -86,6 +98,9 @@ enum VoiceAction {
   resumeReading,
   restartReading,
   playAudioAnswer,
+  checkQuestionStatus,
+  help,
+  readLastWord,
   toggleReadContext,
   // PDF Actions
   zoomIn,
@@ -1092,6 +1107,11 @@ class VoiceCommandService {
             action = VoiceAction.enableFeature;
           }
           payload = feat;
+
+          if (feat.contains('context')) {
+            action = VoiceAction.toggleReadContext;
+            payload = (state != 'off' && state != 'disable');
+          }
         } else if (state != null || lowerSpeech.isNotEmpty) {
           final lower = (state ?? lowerSpeech).toLowerCase();
           if (lower.contains('reset')) {
@@ -1182,10 +1202,28 @@ class VoiceCommandService {
             action = VoiceAction.resumeReading;
           else if (actionSlot == 'clear answer')
             action = VoiceAction.clearAnswer;
+          else if (actionSlot == 'undo')
+            action = VoiceAction.undo;
+          else if (actionSlot == 'redo')
+            action = VoiceAction.redo;
+          else if (actionSlot == 'uppercase')
+            action = VoiceAction.uppercaseLastWord;
+          else if (actionSlot == 'capitalize')
+            action = VoiceAction.capitalizeLastWord;
+          else if (actionSlot == 'lowercase')
+            action = VoiceAction.lowercaseLastWord;
+          else if (actionSlot == 'new paragraph')
+            action = VoiceAction.newParagraph;
           else if (actionSlot == 'read answer')
             action = VoiceAction.readAnswer;
-          else if (actionSlot == 'edit answer')
+          else if (actionSlot == 'edit answer' ||
+              actionSlot == 'modify' ||
+              actionSlot == 'append')
             action = VoiceAction.appendAnswer;
+          else if (actionSlot == 'rewrite' ||
+              actionSlot == 'overwrite' ||
+              actionSlot == 'replace')
+            action = VoiceAction.overwriteAnswer;
           else if (actionSlot == 'open question')
             action = VoiceAction.goToQuestion;
           else if (actionSlot == 'open paper' || actionSlot == 'select paper')
@@ -1254,31 +1292,51 @@ class VoiceCommandService {
       case 'readContent':
         final ra = getVal(['readAction']);
         if (ra == 'stop' || ra == 'pause') {
-          // If we are in 'question' context, 'stop' usually means stop dictation
-          // Global navigation will handle the fallback if no screen captures it.
           action = VoiceAction.stopDictation;
-        } else if (ra == 'resume')
+        } else if (ra == 'resume') {
           action = VoiceAction.resumeReading;
-        else if (ra == 'start')
-          action = VoiceAction
-              .appendAnswer; // Map 'start answering' etc to dictation
-        else if (ra == 'restart')
+        } else if (ra == 'start') {
+          action = VoiceAction.appendAnswer;
+        } else if (ra == 'restart') {
           action = VoiceAction.restartReading;
-        else {
+        } else {
+          final target = getVal(['read_target']);
           final lowerSpeech = speech?.toLowerCase() ?? "";
-          if (lowerSpeech.contains('next') || lowerSpeech.contains('forward')) {
+
+          if (target == 'answer' ||
+              target == 'my answer' ||
+              target == 'what I wrote' ||
+              (lowerSpeech.contains('answer') &&
+                  !lowerSpeech.contains('clear') &&
+                  !lowerSpeech.contains('erase')) ||
+              lowerSpeech.contains('wrote')) {
+            action = VoiceAction.readAnswer;
+          } else if (target == 'this page' || lowerSpeech.contains('this page')) {
+            action = VoiceAction.readQuestion;
+          } else if (target == 'context' || lowerSpeech.contains('context')) {
+            action = VoiceAction.readContext;
+          } else if (target == 'last sentence' ||
+              lowerSpeech.contains('last sentence')) {
+            action = VoiceAction.readLastSentence;
+          } else if (target == 'last word' || lowerSpeech.contains('last word')) {
+            action = VoiceAction.readLastWord;
+          } else if (target == 'question') {
+            action = VoiceAction.readQuestion;
+          }
+          final itemNumStr = getVal(['itemNumber']);
+          if (itemNumStr != null) {
+            int? num = int.tryParse(itemNumStr);
+            if (num != null) {
+              action = VoiceAction.goToQuestion;
+              payload = num;
+              payload2 = true; // Use payload2 as a flag to "read after navigating"
+            }
+          } else if (lowerSpeech.contains('next') ||
+              lowerSpeech.contains('forward')) {
             action = VoiceAction.nextPage;
           } else if (lowerSpeech.contains('previous') ||
               lowerSpeech.contains('back')) {
             action = VoiceAction.previousPage;
-          } else {
-            // Case for "Read question", "Read this page", "Repeat question", "Read context"
-            final lowerSpeech = speech?.toLowerCase() ?? "";
-            if (lowerSpeech.contains('context')) {
-              action = VoiceAction.readContext;
-            } else {
-              action = VoiceAction.readQuestion;
-            }
           }
         }
         break;
@@ -1358,7 +1416,82 @@ class VoiceCommandService {
         }
         break;
 
-      case 'deleteItem':
+      case 'EditingControl':
+        final unit = getVal(['edit_unit']);
+        final pos = getVal(['text_position']);
+        final lowerSpeech = speech?.toLowerCase() ?? "";
+
+        if (lowerSpeech.contains('undo')) {
+          action = VoiceAction.undo;
+        } else if (lowerSpeech.contains('redo')) {
+          action = VoiceAction.redo;
+        } else if (lowerSpeech.contains('clear answer') ||
+            lowerSpeech.contains('erase answer') ||
+            lowerSpeech.contains('remove answer') ||
+            lowerSpeech.contains('discard answer')) {
+          action = VoiceAction.clearAnswer;
+        } else if (lowerSpeech.contains('new paragraph')) {
+          action = VoiceAction.newParagraph;
+        } else if (lowerSpeech.contains('uppercase')) {
+          action = VoiceAction.uppercaseLastWord;
+        } else if (lowerSpeech.contains('capitalize')) {
+          action = VoiceAction.capitalizeLastWord;
+        } else if (lowerSpeech.contains('lowercase')) {
+          action = VoiceAction.lowercaseLastWord;
+        } else if (unit != null) {
+          if (unit == 'word') action = VoiceAction.deleteLastWord;
+          if (unit == 'sentence') action = VoiceAction.deleteLastSentence;
+          if (unit == 'line') action = VoiceAction.deleteLastLine;
+          if (unit == 'paragraph') action = VoiceAction.deleteLastParagraph;
+        } else if (pos != null) {
+          if (pos == 'start' || pos == 'beginning' || pos == 'top')
+            action = VoiceAction.goToStart;
+          if (pos == 'end' || pos == 'bottom') action = VoiceAction.goToEnd;
+        } else {
+          // Fallback for speech if slots missed
+          if (lowerSpeech.contains('delete') ||
+              lowerSpeech.contains('remove') ||
+              lowerSpeech.contains('clear') ||
+              lowerSpeech.contains('erase')) {
+            if (lowerSpeech.contains('word'))
+              action = VoiceAction.deleteLastWord;
+            else if (lowerSpeech.contains('sentence'))
+              action = VoiceAction.deleteLastSentence;
+            else if (lowerSpeech.contains('paragraph'))
+              action = VoiceAction.deleteLastParagraph;
+            else if (lowerSpeech.contains('answer'))
+              action = VoiceAction.clearAnswer;
+            else
+              action = VoiceAction.deleteLastWord; // Default
+          } else if (lowerSpeech.contains('undo')) {
+            action = VoiceAction.undo;
+          } else if (lowerSpeech.contains('redo')) {
+            action = VoiceAction.redo;
+          } else if (lowerSpeech.contains('new paragraph')) {
+            action = VoiceAction.newParagraph;
+          } else if (lowerSpeech.contains('uppercase')) {
+            action = VoiceAction.uppercaseLastWord;
+          } else if (lowerSpeech.contains('capitalize')) {
+            action = VoiceAction.capitalizeLastWord;
+          } else if (lowerSpeech.contains('lowercase')) {
+            action = VoiceAction.lowercaseLastWord;
+          } else if (lowerSpeech.contains('go to')) {
+            if (lowerSpeech.contains('start') ||
+                lowerSpeech.contains('beginning'))
+              action = VoiceAction.goToStart;
+            else if (lowerSpeech.contains('end') ||
+                lowerSpeech.contains('bottom')) action = VoiceAction.goToEnd;
+          }
+        }
+        
+        // If we caught the EditingControl intent but no action determined via slots/speech,
+        // it means Rhino matched a slotless rule like 'undo' or 'redo' while speech fallback is null.
+        if (action == VoiceAction.unknown) {
+          debugPrint("VoiceCommandService: EditingControl intent matched but no slots or speech data to disambiguate.");
+        }
+        break;
+
+  case 'deleteItem':
         final itemNumStr = getVal(['itemNumber']);
         if (itemNumStr != null) {
           int? num = int.tryParse(itemNumStr);
@@ -1412,6 +1545,14 @@ class VoiceCommandService {
             payload = opt;
           }
         }
+        break;
+
+      case 'questionStatus':
+        action = VoiceAction.checkQuestionStatus;
+        break;
+
+      case 'helpQuery':
+        action = VoiceAction.help;
         break;
 
       case 'examProgress':

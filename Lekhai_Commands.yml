@@ -15,13 +15,8 @@ context:
       - (@polite) (@direction_action) $direction:direction page
       - (@polite) (@direction_action) $direction:direction question
     readContent:
-      - (@polite) @read_action question
-      - (@polite) @read_action this page
-      - (@polite) @read_action last sentence
-      - (@polite) @read_action context
-      - (@polite) @read_action answer
-      - (@polite) @read_action my answer
-      - (@polite) @read_action what I wrote
+      - (@polite) @read_action $read_target:read_target
+      - (@polite) @read_action $itemType:itemType $pv.TwoDigitInteger:itemNumber
       - (@polite) $readAction:readAction answering
       - (@polite) $readAction:readAction speaking
       - (@polite) $readAction:readAction dictation
@@ -103,6 +98,14 @@ context:
       - (@polite) how many questions $progress_state:state
       - (@polite) how many $progress_state:state
       - (@polite) what is the $progress_state:state of questions
+    questionStatus:
+      - (@polite) is this question answered
+      - (@polite) did I answer this
+      - (@polite) status of this question
+    helpQuery:
+      - (@polite) help
+      - (@polite) what can I say
+      - (@polite) list commands
   slots:
     progress_state:
       - time has passed
@@ -139,6 +142,11 @@ context:
       - clear answer
       - edit answer
       - read answer
+      - append
+      - rewrite
+      - overwrite
+      - modify
+      - replace
       - exit
       - close
       - stop app
@@ -213,11 +221,21 @@ context:
     feature:
       - haptics
       - voice commands
+      - context reading
     edit_unit:
       - word
       - line
       - sentence
       - paragraph
+    read_target:
+      - question
+      - this page
+      - last sentence
+      - context
+      - answer
+      - my answer
+      - last word
+      - what I wrote
     text_position:
       - start
       - end
@@ -281,11 +299,16 @@ context:
       - input
       - write
       - update
+      - append
+      - rewrite
+      - overwrite
+      - modify
     remove_action:
       - delete
       - remove
       - clear
       - erase
+      - discard
     share_action:
       - share
       - send

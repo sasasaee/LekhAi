@@ -4,6 +4,7 @@ import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:http/http.dart' as http;
 import '../models/paper_model.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class GeminiPaperService {
   static final GeminiPaperService _instance = GeminiPaperService._internal();
@@ -13,11 +14,8 @@ class GeminiPaperService {
   static String? _cachedModelName;
 
   Future<ParsedDocument> processImage(String imagePath, String apiKey) async {
-    // 1. Find a valid model name dynamically
-    final modelName =
-        _cachedModelName ?? await _findValidModel(apiKey) ?? 'gemini-1.5-flash';
-    _cachedModelName = modelName;
-    debugPrint("GeminiService using model: $modelName");
+    final modelName = await _getModelName(apiKey);
+    debugPrint("Gemini: Using model: $modelName");
 
     final model = GenerativeModel(
       model: modelName,
@@ -55,7 +53,7 @@ class GeminiPaperService {
       final url = Uri.parse(
         'https://generativelanguage.googleapis.com/v1beta/models?key=$apiKey',
       );
-      final response = await http.get(url);
+      final response = await http.get(url).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body);
@@ -75,46 +73,35 @@ class GeminiPaperService {
             .map((m) => m['name'] as String)
             .toList();
 
-        debugPrint("Available Gemini models: $availableModels");
+        debugPrint("Gemini: Found ${availableModels.length} models: $availableModels");
 
         // Prioritized list of stable models
         const prioritizedModels = [
+          'gemini-2.5-flash',
           'gemini-1.5-flash',
+          'gemini-2.0-flash-exp',
+          'gemini-2.0-flash',
           'gemini-1.5-pro',
-          'gemini-1.0-pro',
         ];
 
         for (final pModel in prioritizedModels) {
           if (availableModels.contains(pModel)) {
-            debugPrint("Selected prioritized model: $pModel");
+            debugPrint("Gemini: Selected prioritized model: $pModel");
             return pModel;
           }
         }
 
-        // Fallback to any 'flash' model if prioritized ones aren't available
-        final flashFallback = availableModels.firstWhere(
-          (m) => m.contains('flash'),
-          orElse: () => '',
-        );
-        if (flashFallback.isNotEmpty) {
-          debugPrint(
-            "Priority match failed, falling back to flash: $flashFallback",
-          );
-          return flashFallback;
-        }
-
-        // Final fallback
         if (availableModels.isNotEmpty) {
-          debugPrint(
-            "Final fallback to first available: ${availableModels.first}",
-          );
+          debugPrint("Gemini: Falling back to first available: ${availableModels.first}");
           return availableModels.first;
         }
+      } else {
+        debugPrint("Gemini: Failed to list models (${response.statusCode}): ${response.body}");
       }
     } catch (e) {
-      debugPrint("Error listing models: $e");
+      debugPrint("Gemini: Error listing models: $e");
     }
-    return null; // Fallback to default in processImage
+    return 'gemini-2.5-flash'; // Return a hard default
   }
 
   String _buildPrompt() {
@@ -228,14 +215,13 @@ class GeminiPaperService {
     String apiKey, {
     String? contextPrompt,
   }) async {
-    final modelName =
-        _cachedModelName ?? await _findValidModel(apiKey) ?? 'gemini-1.5-flash';
-    _cachedModelName = modelName;
+    final modelName = await _getModelName(apiKey);
+    debugPrint("Gemini: Using model for transcription: $modelName");
     final model = GenerativeModel(model: modelName, apiKey: apiKey);
 
     final audioBytes = await File(audioPath).readAsBytes();
     String prompt =
-        "Transcribe the following audio exactly as spoken. Do not add any commentary or extra text.";
+        "Transcribe the following audio. Add appropriate punctuation and capitalization. Do not add any commentary or extra text.";
     if (contextPrompt != null && contextPrompt.isNotEmpty) {
       prompt += "\n\nCRITICAL INSTRUCTIONS:\n$contextPrompt";
     }
@@ -259,5 +245,17 @@ class GeminiPaperService {
       debugPrint("Gemini Transcription Error: $e");
       rethrow;
     }
+  }
+
+  Future<String> _getModelName(String apiKey) async {
+    final envModel = dotenv.env['GEMINI_MODEL'];
+    if (envModel != null && envModel.isNotEmpty) {
+      return envModel;
+    }
+    if (_cachedModelName != null) {
+      return _cachedModelName!;
+    }
+    _cachedModelName = await _findValidModel(apiKey);
+    return _cachedModelName ?? 'gemini-2.5-flash';
   }
 }

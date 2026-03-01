@@ -54,7 +54,7 @@ class PicovoiceService {
   // Default models placeholders
   final String _keywordPath =
       "assets/picovoice/Hey-lek-ai_en_android_v4_0_0.ppn";
-  final String _contextPath = "assets/picovoice/lekhai_commands_sahil.rhn";
+  final String _contextPath = "assets/picovoice/lekhai_en_android_v4_0_0.rhn";
 
   bool _isInitialized = false;
   bool _isEnabled = true; // Default to true

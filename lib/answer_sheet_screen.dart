@@ -27,15 +27,11 @@ import 'widgets/accessible_widgets.dart'; // Added
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:ui';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'dart:async';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'services/picovoice_service.dart';
 import 'services/screen_description_service.dart'; // Added
 import 'widgets/picovoice_mic_icon.dart';
 import 'dart:convert';
-// import 'package:permission_handler/permission_handler.dart'; // Added for Save PDF permissions
-// import 'package:path_provider/path_provider.dart'; // Added for downloads path
-// import 'exam_info_screen.dart';
-// import 'dart:convert';
 
 class AnswerSheetScreen extends StatefulWidget {
   final ParsedDocument document;
@@ -1872,6 +1868,18 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
   // Hands-Free State
   bool _isAppending = true;
 
+  // History for Undo/Redo
+  final List<String> _history = [];
+  final List<String> _redoStack = [];
+
+  void _pushToHistory() {
+    final currentText = _answerController.text;
+    if (_history.isNotEmpty && _history.last == currentText) return;
+    _history.add(currentText);
+    if (_history.length > 50) _history.removeAt(0);
+    _redoStack.clear();
+  }
+
   StreamSubscription? _commandSubscription;
 
   @override
@@ -1935,7 +1943,18 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
   }
 
   void _executeVoiceCommand(CommandResult result) async {
-    if (!(ModalRoute.of(context)?.isCurrent ?? false)) return;
+    final isCurrent = ModalRoute.of(context)?.isCurrent ?? false;
+    final isSafeCommand = [
+      VoiceAction.undo,
+      VoiceAction.redo,
+      VoiceAction.readAnswer,
+      VoiceAction.readQuestion,
+      VoiceAction.checkTime,
+      VoiceAction.checkTotalQuestions,
+      VoiceAction.checkRemainingQuestions,
+    ].contains(result.action);
+
+    if (!isCurrent && !isSafeCommand) return;
 
     // --- READING PHASE GUARD ---
     if (_isReading) {
@@ -1951,6 +1970,27 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
       }
       // Reject others
       return;
+    }
+
+    // Push current state to history before any destructive voice command
+    // to capture any manual typing done since last voice action.
+    final destructiveActions = [
+      VoiceAction.clearAnswer,
+      VoiceAction.deleteLastWord,
+      VoiceAction.deleteLastSentence,
+      VoiceAction.deleteLastParagraph,
+      VoiceAction.deleteLastLine,
+      VoiceAction.newParagraph,
+      VoiceAction.startDictation,
+      VoiceAction.overwriteAnswer,
+      VoiceAction.appendAnswer,
+      VoiceAction.uppercaseLastWord,
+      VoiceAction.lowercaseLastWord,
+      VoiceAction.capitalizeLastWord,
+    ];
+
+    if (destructiveActions.contains(result.action)) {
+      _pushToHistory();
     }
 
     switch (result.action) {
@@ -1975,8 +2015,121 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         _clearAnswer();
         break;
 
+      case VoiceAction.undo:
+        if (_history.isNotEmpty) {
+          _redoStack.add(_answerController.text);
+          setState(() {
+            _answerController.text = _history.removeLast();
+          });
+          widget.ttsService.speak("Undo.");
+        } else {
+          widget.ttsService.speak("Nothing to undo.");
+        }
+        break;
+
+      case VoiceAction.redo:
+        if (_redoStack.isNotEmpty) {
+          final currentText = _answerController.text;
+          _history.add(currentText); // Save current to history before redoing
+          if (_history.length > 50) _history.removeAt(0);
+          
+          setState(() {
+            _answerController.text = _redoStack.removeLast();
+          });
+          widget.ttsService.speak("Redo.");
+        } else {
+          widget.ttsService.speak("Nothing to redo.");
+        }
+        break;
+
+      case VoiceAction.deleteLastWord:
+        setState(() {
+          _answerController.text =
+              StringUtils.removeLastWord(_answerController.text);
+        });
+        widget.ttsService.speak("Deleted last word.");
+        break;
+
+      case VoiceAction.deleteLastSentence:
+        setState(() {
+          _answerController.text =
+              StringUtils.removeLastSentence(_answerController.text);
+        });
+        widget.ttsService.speak("Deleted last sentence.");
+        break;
+
+      case VoiceAction.deleteLastLine:
+        setState(() {
+          _answerController.text =
+              StringUtils.removeLastLine(_answerController.text);
+        });
+        widget.ttsService.speak("Deleted last line.");
+        break;
+
+      case VoiceAction.deleteLastParagraph:
+        setState(() {
+          _answerController.text =
+              StringUtils.removeLastParagraph(_answerController.text);
+        });
+        widget.ttsService.speak("Deleted last paragraph.");
+        break;
+
+      case VoiceAction.newParagraph:
+        setState(() {
+          if (_answerController.text.isNotEmpty &&
+              !_answerController.text.endsWith('\n')) {
+            _answerController.text += "\n\n";
+          }
+        });
+        widget.ttsService.speak("New paragraph.");
+        break;
+
+      case VoiceAction.uppercaseLastWord:
+        setState(() {
+          _answerController.text =
+              StringUtils.uppercaseLastWord(_answerController.text);
+        });
+        widget.ttsService.speak("Changed to uppercase.");
+        break;
+
+      case VoiceAction.lowercaseLastWord:
+        setState(() {
+          _answerController.text =
+              StringUtils.lowercaseLastWord(_answerController.text);
+        });
+        widget.ttsService.speak("Changed to lowercase.");
+        break;
+
+      case VoiceAction.capitalizeLastWord:
+        setState(() {
+          _answerController.text =
+              StringUtils.capitalizeLastWord(_answerController.text);
+        });
+        widget.ttsService.speak("Capitalized last word.");
+        break;
+
+      case VoiceAction.goToStart:
+        _answerController.selection = const TextSelection.collapsed(offset: 0);
+        widget.ttsService.speak("Cursor at beginning.");
+        break;
+
+      case VoiceAction.goToEnd:
+        _answerController.selection =
+            TextSelection.collapsed(offset: _answerController.text.length);
+        widget.ttsService.speak("Cursor at end.");
+        break;
+
       case VoiceAction.readLastSentence:
         _readLastSentence();
+        break;
+
+      case VoiceAction.readLastWord:
+        String lastWord = StringUtils.getLastWord(_answerController.text);
+        if (lastWord.isNotEmpty) {
+          widget.ttsService.speak("Last word: $lastWord");
+        } else {
+          widget.ttsService.speak("No text found.");
+        }
         break;
 
       case VoiceAction.pauseReading:
@@ -1997,7 +2150,11 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         break;
 
       case VoiceAction.toggleReadContext:
-        setState(() => _playContext = !_playContext);
+        if (result.payload is bool) {
+          setState(() => _playContext = result.payload as bool);
+        } else {
+          setState(() => _playContext = !_playContext);
+        }
         await widget.ttsService.speak(
           "Context reading ${_playContext ? 'enabled' : 'disabled'}.",
         );
@@ -2009,6 +2166,8 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
           // Fallback to audio if text is empty but audio exists
           await widget.ttsService.speak("Playing answer.");
           await _audioPlayer.play(DeviceFileSource(widget.question.audioPath!));
+        } else if (textToRead.trim().isEmpty) {
+          widget.ttsService.speak("Your answer is currently empty.");
         } else {
           widget.ttsService.speak("Your current answer is: $textToRead");
         }
@@ -2087,6 +2246,12 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
       case VoiceAction.goToQuestion:
         if (result.payload is int && widget.onJump != null) {
           widget.onJump!(result.payload);
+          if (result.payload2 == true) {
+            // Read after jump
+            Future.delayed(const Duration(milliseconds: 600), () {
+              _onReadPressed();
+            });
+          }
         } else {
           widget.ttsService.speak("Jump not available.");
         }
@@ -2107,6 +2272,20 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
           String msg = widget.onCountCheck!();
           widget.ttsService.speak(msg);
         }
+        break;
+
+      case VoiceAction.checkQuestionStatus:
+        if (_answerController.text.trim().isEmpty) {
+          widget.ttsService.speak("This question is still empty.");
+        } else {
+          widget.ttsService.speak("This question is answered.");
+        }
+        break;
+
+      case VoiceAction.help:
+        widget.ttsService.speak(
+          "Available commands: Start dictation, Read my answer, Undo, Redo, Clear answer, Delete last word or sentence, Go to question number, and Status check.",
+        );
         break;
 
       case VoiceAction.scrollToTop:
@@ -2410,35 +2589,81 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         );
       } catch (e) {
         String err = e.toString();
-        if (err.toLowerCase().contains("quota") ||
+        debugPrint("Transcription Error: $err");
+        if (err.contains("429") ||
+            err.toLowerCase().contains("quota") ||
             err.toLowerCase().contains("limit")) {
           widget.ttsService.speak(
-            "AI capacity reached. Please wait a minute and retry.",
+            "AI limit reached. Please wait one minute before dictating again.",
           );
+        } else {
+          widget.ttsService.speak("Transcription failed. Please try again.");
         }
         transcribedText = "[Transcription Failed: $err]";
+      } finally {
+        if (mounted) {
+          setState(() {
+            _isProcessingAudio = false;
+          });
+        }
       }
     } else {
       transcribedText = "[No API Key - Audio Saved. Type answer manually.]";
       widget.ttsService.speak(
         "No API Key found. Audio saved, please type answer.",
       );
+      if (mounted) {
+        setState(() {
+          _isProcessingAudio = false;
+        });
+      }
     }
     if (!mounted) return;
+
+    if (transcribedText.startsWith("[Transcription Failed:")) {
+      return;
+    }
 
     // --- POST-PROCESSING: Strip Wake Word and Stop Command ---
     String processed = StringUtils.stripWakeWordsAndCommands(transcribedText);
 
     setState(() {
       _isProcessingAudio = false;
-      if (_isAppending && _answerController.text.isNotEmpty) {
-        // Append Mode
-        String separator = _answerController.text.endsWith('.') ? " " : ". ";
-        if (_answerController.text.trim().isEmpty) separator = "";
-        _answerController.text = _answerController.text + separator + processed;
+      _pushToHistory();
+
+      if (_isAppending) {
+        // Cursor-aware insertion
+        final currentText = _answerController.text;
+        final selection = _answerController.selection;
+        
+        // Determine insertion point
+        int startPos = selection.start;
+        if (startPos < 0) startPos = currentText.length;
+        int endPos = selection.end;
+        if (endPos < 0) endPos = currentText.length;
+
+        // Determine prefix/suffix spacing
+        String prefix = "";
+        String suffix = "";
+        
+        if (startPos > 0 && !currentText[startPos - 1].contains(RegExp(r'\s'))) {
+          prefix = " ";
+        }
+        if (endPos < currentText.length && !currentText[endPos].contains(RegExp(r'\s'))) {
+          suffix = " ";
+        }
+
+        final newText = currentText.replaceRange(startPos, endPos, prefix + processed + suffix);
+        _answerController.text = newText;
+        
+        // Position cursor after inserted text
+        _answerController.selection = TextSelection.collapsed(
+          offset: startPos + prefix.length + processed.length + suffix.length,
+        );
       } else {
         // Replace Mode (Overwrite)
         _answerController.text = processed;
+        _answerController.selection = TextSelection.collapsed(offset: processed.length);
       }
     });
     await Future.delayed(const Duration(milliseconds: 100));
@@ -2446,6 +2671,7 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
   }
 
   void _clearAnswer() async {
+    _pushToHistory();
     setState(() {
       _answerController.clear();
     });
@@ -2516,7 +2742,12 @@ class _SingleQuestionScreenState extends State<SingleQuestionScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text("You wrote:\n\n$answer"),
+            ValueListenableBuilder<TextEditingValue>(
+              valueListenable: _answerController,
+              builder: (context, value, child) {
+                return Text("You wrote:\n\n${value.text}");
+              },
+            ),
             if (_tempAudioPath != null)
               TextButton.icon(
                 icon: const Icon(Icons.play_arrow),

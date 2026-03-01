@@ -119,7 +119,7 @@ class _SplashScreenState extends State<SplashScreen> {
     // Initialize Picovoice Service (Async)
     widget.picovoiceService.init(widget.voiceService);
 
-    Timer(const Duration(seconds: 3), () {
+    Timer(const Duration(seconds: 5), () {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(

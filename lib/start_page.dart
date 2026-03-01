@@ -36,8 +36,8 @@ class _StartPageState extends State<StartPage> {
   @override
   void initState() {
     super.initState();
-    widget.ttsService.speak(
-      "Welcome to LekhAi. Your intelligent study companion. Say Start App to begin.",
+    widget.ttsService.speakAndWait(
+      "Welcome to LekhAi, your intelligent study companion. Say 'Hey LekhAi' before every voice command. Say 'Start App' to begin.",
     );
     _subscribeToVoiceCommands();
   }

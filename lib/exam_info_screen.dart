@@ -345,25 +345,39 @@ class _ExamInfoScreenState extends State<ExamInfoScreen> {
         );
       } catch (e) {
         transcribedText = "[Transcription Failed: $e]";
+      } finally {
+        if (mounted) {
+          if (_isTranscribingDialogOpen) {
+            Navigator.of(context, rootNavigator: true).pop();
+            _isTranscribingDialogOpen = false;
+          }
+          setState(() {
+            _isProcessingAudio = false;
+          });
+        }
       }
     } else {
       transcribedText = "[No API Key - Audio Saved. Type answer manually.]";
       widget.ttsService.speak(
         "No API Key found. Audio saved, please type manually.",
       );
+      if (mounted) {
+        if (_isTranscribingDialogOpen) {
+          Navigator.of(context, rootNavigator: true).pop();
+          _isTranscribingDialogOpen = false;
+        }
+        setState(() {
+          _isProcessingAudio = false;
+        });
+      }
     }
     if (!mounted) return;
 
-    if (_isTranscribingDialogOpen) {
-      Navigator.of(context, rootNavigator: true).pop();
-      _isTranscribingDialogOpen = false;
+    if (transcribedText.startsWith("[Transcription Failed:")) {
+      return;
     }
 
     String processed = StringUtils.stripWakeWordsAndCommands(transcribedText);
-
-    setState(() {
-      _isProcessingAudio = false;
-    });
 
     await Future.delayed(const Duration(milliseconds: 100));
     _onDictationFinished(processed);
