@@ -135,7 +135,37 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
   Future<void> _loadPdf() async {
     _doc = await PDFDoc.fromPath(widget.path);
     String text = await _doc!.text;
-    _sentences = text.split(RegExp(r'(?<=[.!?])\s+')); // split by sentence
+    
+    // Split by paragraphs (double newlines) to pass larger chunks to TTS.
+    List<String> rawChunks = text.split(RegExp(r'\n\s*\n'));
+    _sentences = [];
+    
+    for (String chunk in rawChunks) {
+      // Remove all internal newlines and aggressive spacing that trips up TTS engines
+      chunk = chunk.replaceAll(RegExp(r'\s+'), ' ').trim();
+      if (chunk.isEmpty) continue;
+      
+      // Android TextToSpeech limit is 4000 chars, so we split oversized chunks by sentences
+      if (chunk.length > 3500) {
+        Iterable<Match> matches = RegExp(r'[^.!?]+[.!?]+|\s+').allMatches(chunk);
+        String tempSentence = "";
+        for (var match in matches) {
+          String part = match.group(0) ?? "";
+          if ((tempSentence.length + part.length) > 3500) {
+            _sentences.add(tempSentence.trim());
+            tempSentence = part;
+          } else {
+            tempSentence += part;
+          }
+        }
+        if (tempSentence.trim().isNotEmpty) {
+          _sentences.add(tempSentence.trim());
+        }
+      } else {
+        _sentences.add(chunk);
+      }
+    }
+
     _currentIndex = 0;
     _startReading();
   }
@@ -144,25 +174,27 @@ class _PdfViewerScreenState extends State<PdfViewerScreen> {
     if (_isReading) return;
     _isReading = true;
 
+    // Send the first chunk to start immediately
+    if (_sentences.isNotEmpty && _currentIndex < _sentences.length) {
+       await widget.ttsService.speakAndWait(_sentences[_currentIndex]);
+       _currentIndex++;
+    }
+
+    // Continue sending the rest of the chunks sequentially
     while (_currentIndex < _sentences.length) {
-      if (!mounted) break;
+      if (!mounted || !_isReading) break;
 
       if (widget.ttsService.isPaused) {
         await Future.delayed(const Duration(milliseconds: 500));
-        continue; // wait while paused
+        continue;
       }
 
-      // Stop reading if listening to voice command?
-      // Handled by TtsService stream in SttService -> actually STT pauses when TTS speaks.
-      // So here we are fine.
-
-      String sentence = _sentences[_currentIndex].trim();
+      String sentence = _sentences[_currentIndex];
       if (sentence.isNotEmpty) {
         await widget.ttsService.speakAndWait(sentence);
       }
 
       _currentIndex++;
-      await Future.delayed(const Duration(milliseconds: 200));
     }
 
     _isReading = false;
