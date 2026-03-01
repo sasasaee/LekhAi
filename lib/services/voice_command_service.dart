@@ -1,7 +1,7 @@
 import 'dart:async'; // Added
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:image_picker/image_picker.dart';
+
 import 'package:shared_preferences/shared_preferences.dart';
 import 'tts_service.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart'; // Added
@@ -597,6 +597,15 @@ class VoiceCommandService {
     }
 
     if (text.contains("go back")) return CommandResult(VoiceAction.goBack);
+    if (text.contains("scroll up")) return CommandResult(VoiceAction.scrollUp);
+    if (text.contains("scroll down"))
+      return CommandResult(VoiceAction.scrollDown);
+    if (text.contains("scroll to top") || text.contains("scroll top")) {
+      return CommandResult(VoiceAction.scrollToTop);
+    }
+    if (text.contains("scroll to bottom") || text.contains("scroll bottom")) {
+      return CommandResult(VoiceAction.scrollToBottom);
+    }
 
     if (text.contains("append") || text.contains("add to answer")) {
       return CommandResult(VoiceAction.appendAnswer);
@@ -1096,14 +1105,38 @@ class VoiceCommandService {
               lowerSpeech.contains('off') ||
               lowerSpeech.contains('disable')) {
             action = VoiceAction.disableFeature;
-          } else {
+          } else if (state == 'on' ||
+              state == 'enable' ||
+              lowerSpeech.contains('on') ||
+              lowerSpeech.contains('enable')) {
             action = VoiceAction.enableFeature;
+          } else {
+            // No explicit state provided, use toggle if available
+            if (feat.contains('haptic')) {
+              action = VoiceAction.toggleHaptic;
+            } else if (feat.contains('voice command')) {
+              action = VoiceAction.toggleVoiceCommands;
+            } else {
+              action = VoiceAction.enableFeature; // Default fallback
+            }
           }
           payload = feat;
 
           if (feat.contains('context')) {
             action = VoiceAction.toggleReadContext;
-            payload = (state != 'off' && state != 'disable');
+            if (state == 'off' ||
+                state == 'disable' ||
+                lowerSpeech.contains('off') ||
+                lowerSpeech.contains('disable')) {
+              payload = false;
+            } else if (state == 'on' ||
+                state == 'enable' ||
+                lowerSpeech.contains('on') ||
+                lowerSpeech.contains('enable')) {
+              payload = true;
+            } else {
+              payload = null; // Triggers toggle in UI
+            }
           }
         } else if (state != null || lowerSpeech.isNotEmpty) {
           final lower = (state ?? lowerSpeech).toLowerCase();
@@ -1163,21 +1196,30 @@ class VoiceCommandService {
             payload = null; // Trigger prompt
           }
         } else {
-          // Fallback for other form commands
+          // Fallback for other form commands — stay silent
           action = VoiceAction.unknown;
-          tts.speak("Please use manual input for form fields.");
         }
         break;
 
       case 'AppControl':
-        final actionSlot = getVal(['action']);
         final scrollSlot = getVal([
           'scroll',
           'scroll_action',
           'scroll_direction',
+          'scrollAction',
         ]);
+        final actionSlot = getVal(['action']);
 
-        if (actionSlot != null) {
+        if (scrollSlot != null) {
+          if (scrollSlot.contains('up') || scrollSlot == 'scroll up') {
+            action = VoiceAction.scrollUp;
+          } else if (scrollSlot.contains('down') || scrollSlot == 'scroll down')
+            action = VoiceAction.scrollDown;
+          else if (scrollSlot.contains('top'))
+            action = VoiceAction.scrollToTop;
+          else if (scrollSlot.contains('bottom'))
+            action = VoiceAction.scrollToBottom;
+        } else if (actionSlot != null) {
           if (actionSlot == 'start') {
             final lowerSpeech = speech?.toLowerCase() ?? "";
             if (lowerSpeech.contains('app') ||
@@ -1251,15 +1293,6 @@ class VoiceCommandService {
             action = VoiceAction.viewPdf;
           else if (actionSlot == 'share pdf' || actionSlot == 'share p d f')
             action = VoiceAction.sharePdf;
-        } else if (scrollSlot != null) {
-          if (scrollSlot.contains('up') || scrollSlot == 'scroll up') {
-            action = VoiceAction.scrollUp;
-          } else if (scrollSlot.contains('down') || scrollSlot == 'scroll down')
-            action = VoiceAction.scrollDown;
-          else if (scrollSlot.contains('top'))
-            action = VoiceAction.scrollToTop;
-          else if (scrollSlot.contains('bottom'))
-            action = VoiceAction.scrollToBottom;
         }
         break;
 
@@ -1309,14 +1342,16 @@ class VoiceCommandService {
               lowerSpeech.contains('play answer') ||
               lowerSpeech.contains('listen')) {
             action = VoiceAction.playAudioAnswer;
-          } else if (target == 'this page' || lowerSpeech.contains('this page')) {
+          } else if (target == 'this page' ||
+              lowerSpeech.contains('this page')) {
             action = VoiceAction.readQuestion;
           } else if (target == 'context' || lowerSpeech.contains('context')) {
             action = VoiceAction.readContext;
           } else if (target == 'last sentence' ||
               lowerSpeech.contains('last sentence')) {
             action = VoiceAction.readLastSentence;
-          } else if (target == 'last word' || lowerSpeech.contains('last word')) {
+          } else if (target == 'last word' ||
+              lowerSpeech.contains('last word')) {
             action = VoiceAction.readLastWord;
           } else if (target == 'question') {
             action = VoiceAction.readQuestion;
@@ -1331,7 +1366,8 @@ class VoiceCommandService {
             if (num != null) {
               action = VoiceAction.goToQuestion;
               payload = num;
-              payload2 = true; // Use payload2 as a flag to "read after navigating"
+              payload2 =
+                  true; // Use payload2 as a flag to "read after navigating"
             }
           } else if (lowerSpeech.contains('next') ||
               lowerSpeech.contains('forward')) {
@@ -1482,18 +1518,21 @@ class VoiceCommandService {
                 lowerSpeech.contains('beginning'))
               action = VoiceAction.goToStart;
             else if (lowerSpeech.contains('end') ||
-                lowerSpeech.contains('bottom')) action = VoiceAction.goToEnd;
+                lowerSpeech.contains('bottom'))
+              action = VoiceAction.goToEnd;
           }
         }
-        
+
         // If we caught the EditingControl intent but no action determined via slots/speech,
         // it means Rhino matched a slotless rule like 'undo' or 'redo' while speech fallback is null.
         if (action == VoiceAction.unknown) {
-          debugPrint("VoiceCommandService: EditingControl intent matched but no slots or speech data to disambiguate.");
+          debugPrint(
+            "VoiceCommandService: EditingControl intent matched but no slots or speech data to disambiguate.",
+          );
         }
         break;
 
-  case 'deleteItem':
+      case 'deleteItem':
         final itemNumStr = getVal(['itemNumber']);
         if (itemNumStr != null) {
           int? num = int.tryParse(itemNumStr);
@@ -1814,10 +1853,21 @@ class VoiceCommandService {
   }
 
   Future<void> _processGeminiFlow(String apiKey) async {
-    final picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+    // Use FilePicker for reliable multi-select on all Android OEMs
+    final result = await FilePicker.platform.pickFiles(
+      allowMultiple: true,
+      type: FileType.image,
+    );
 
-    if (image == null) return;
+    if (result == null || result.files.isEmpty) return;
+
+    final paths = result.files
+        .where((f) => f.path != null)
+        .map((f) => f.path!)
+        .toList();
+
+    if (paths.isEmpty) return;
+
     final context = navigatorKey.currentContext;
     if (context == null) return;
 
@@ -1836,7 +1886,11 @@ class VoiceCommandService {
             children: [
               const CircularProgressIndicator(),
               const SizedBox(height: 16),
-              const Text("Asking Gemini to analyze..."),
+              Text(
+                paths.length == 1
+                    ? "Asking Gemini to analyze..."
+                    : "Asking Gemini to analyze ${paths.length} images...",
+              ),
             ],
           ),
           actions: [
@@ -1855,19 +1909,12 @@ class VoiceCommandService {
     }
 
     try {
-      // We pass the cancellation check inside? No, Gemini service is future-based.
-      // We wait for it, then check flag. Ideally we could cancel the request,
-      // but standard http/dio futures are hard to cancel without CancelToken.
-      // For now, we just ignore the result if cancelled.
+      final doc = await _geminiService.processMultipleImages(paths, apiKey);
 
-      final doc = await _geminiService.processImage(image.path, apiKey);
-
-      // Close the Progress Dialog if it's still open (and not cancelled via button which closes it)
-      // Actually, if we are here, the dialog is still open unless cancelled.
+      // Close the Progress Dialog
       if (!isCancelled) {
-        if (context.mounted) Navigator.pop(context); // Close Progress Dialog
+        if (context.mounted) Navigator.pop(context);
       } else {
-        // Was cancelled, just return
         return;
       }
 
